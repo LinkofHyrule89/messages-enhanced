@@ -14,3 +14,13 @@ func (b teslaCarBackend) FolderConversations(folder string) (any, error) {
 	return b.a.CarFolderConversations(folder)
 }
 func (b teslaCarBackend) FolderMessages(id string) (any, error) { return b.a.CarFolderMessages(id) }
+func (b teslaCarBackend) PinConversation(id string, pinned bool) (any, error) {
+	return b.a.CarPinConversation(id, pinned)
+}
+
+func (b teslaCarBackend) PinMessage(id string, pinned bool) (any, error) {
+	return b.a.CarPinMessage(id, pinned)
+}
+func (b teslaCarBackend) Pins(conversationID string) (any, error) {
+	return b.a.CarPins(conversationID)
+}

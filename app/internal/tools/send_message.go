@@ -326,6 +326,7 @@ func upsertGoogleConversation(a *app.App, conv *gmproto.Conversation) error {
 			participantsJSON = string(b)
 		}
 	}
+	pinned := conv.GetPinned()
 	lastTS := conv.GetLastMessageTimestamp() / 1000
 	if lastTS == 0 {
 		lastTS = time.Now().UnixMilli()
@@ -337,6 +338,8 @@ func upsertGoogleConversation(a *app.App, conv *gmproto.Conversation) error {
 		Participants:   participantsJSON,
 		LastMessageTS:  lastTS,
 		SourcePlatform: "sms",
+		// Pinned on the phone (read-only flag).
+		GooglePinnedSnapshot: &pinned,
 	})
 }
 

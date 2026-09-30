@@ -18,6 +18,8 @@
     typing: {},           // conv id -> { sender key -> { name, expires } }
     menuFor: null,        // { msg, btn } while the message ⋮ menu is open
     confirmFor: null,     // message awaiting "Delete this message?"
+    pins: [],             // pinned messages of the open conversation, newest pin first
+    convMenuFor: null,    // { conv, btn } while the conversation menu is open
   };
 
   // ---------- helpers ----------
@@ -283,6 +285,12 @@
       renderConversations();
     }).catch(function (e) { if (e.message !== "login required") toast("Couldn't load conversations: " + e.message, "error"); });
   }
+  // Pinned conversations: google_pinned is the phone's pin (read-only,
+  // synced from Google Messages); local_pinned_at_ms is a pin made here
+  // (stored on this server, shared by every signed-in screen, not on the phone).
+  function convPins(c) { return { phone: !!(c && c.google_pinned), local: !!(c && c.local_pinned_at_ms > 0) }; }
+  function isConvPinned(c) { var p = convPins(c); return p.phone || p.local; }
+  function byRecency(a, b) { return (b.LastMessageTS || 0) - (a.LastMessageTS || 0); }
   function renderConversations() {
     var box = $("convItems");
     box.textContent = "";
@@ -292,134 +300,506 @@
         !f ? "No conversations yet" : f.loading ? "Loading " + f.label + "…" : f.error ? "Couldn't load " + f.label + ": " + f.error : "No " + f.label.toLowerCase() + " conversations"));
       return;
     }
-    state.convs.forEach(function (c) {
-      var b = el("button", "conv" + (c.ConversationID === state.current ? " active" : "") + (c.UnreadCount > 0 ? " unread" : ""));
-      b.type = "button";
-      b.dataset.id = c.ConversationID;
-      var av = buildAvatar(c, "avatar");
-      var mid = el("div", "conv-mid");
-      var nameRow = el("div", "conv-name", convName(c));
-      if (PLATFORM[c.source_platform]) nameRow.appendChild(el("span", "tag", PLATFORM[c.source_platform]));
-      mid.appendChild(nameRow);
-      var typers = typingNames(c.ConversationID);
-      if (typers.length) mid.appendChild(el("div", "conv-preview typing", typingLabel(typers, c.IsGroup)));
-      else mid.appendChild(el("div", "conv-preview", c.last_message_preview || ""));
-      var right = el("div", "conv-right");
-      right.appendChild(el("div", "conv-time", fmtTime(c.LastMessageTS)));
-      if (c.UnreadCount > 0) right.appendChild(el("div", "badge", String(c.UnreadCount)));
-      b.appendChild(av); b.appendChild(mid); b.appendChild(right);
-      b.addEventListener("click", function () { openConversation(c.ConversationID); });
-      box.appendChild(b);
+    // "Pinned" first (phone + local pins, by latest message), then the rest in
+    // their normal order.
+    var pinned = [], rest = [];
+    state.convs.forEach(function (c) { (isConvPinned(c) ? pinned : rest).push(c); });
+    pinned.sort(byRecency);
+    if (pinned.length) {
+      var head = el("div", "conv-section");
+      head.appendChild(svgIcon(PIN_ICON));
+      head.appendChild(document.createTextNode("Pinned"));
+      box.appendChild(head);
+      pinned.forEach(function (c) { box.appendChild(buildConvRow(c)); });
+      if (rest.length) box.appendChild(el("div", "conv-section", state.folder ? "Other " + state.folder.label.toLowerCase() : "Other conversations"));
+    }
+    rest.forEach(function (c) { box.appendChild(buildConvRow(c)); });
+    // A live re-render replaces the rows; keep an open long-press menu tied
+    // to the new row (and fresh data), or close it if the row is gone.
+    var f = state.convMenuFor;
+    if (f && f.btn.id !== "convMenuBtn") {
+      var row = box.querySelector('.conv[data-id="' + CSS.escape(f.conv.ConversationID) + '"]');
+      var fresh = state.convs.find(function (x) { return x.ConversationID === f.conv.ConversationID; });
+      if (row && fresh) { f.btn = row; f.conv = fresh; row.classList.add("open"); } else closeConvMenu();
+    }
+  }
+  function buildConvRow(c) {
+    var pins = convPins(c);
+    var b = el("button", "conv" + (c.ConversationID === state.current ? " active" : "") + (c.UnreadCount > 0 ? " unread" : "") + (pins.phone || pins.local ? " is-pinned" : ""));
+    b.type = "button";
+    b.dataset.id = c.ConversationID;
+    var av = buildAvatar(c, "avatar");
+    var mid = el("div", "conv-mid");
+    var nameRow = el("div", "conv-name", convName(c));
+    if (PLATFORM[c.source_platform]) nameRow.appendChild(el("span", "tag", PLATFORM[c.source_platform]));
+    mid.appendChild(nameRow);
+    var typers = typingNames(c.ConversationID);
+    if (typers.length) mid.appendChild(el("div", "conv-preview typing", typingLabel(typers, c.IsGroup)));
+    else mid.appendChild(el("div", "conv-preview", c.last_message_preview || ""));
+    var right = el("div", "conv-right");
+    var time = el("div", "conv-time");
+    if (pins.phone || pins.local) {
+      var icon = svgIcon(PIN_ICON, "conv-pin" + (pins.phone ? " conv-pin-phone" : ""));
+      var t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      t.textContent = pins.phone ? "Pinned on your phone" : "Pinned";
+      icon.appendChild(t);
+      time.appendChild(icon);
+    }
+    time.appendChild(document.createTextNode(fmtTime(c.LastMessageTS)));
+    right.appendChild(time);
+    if (c.UnreadCount > 0) right.appendChild(el("div", "badge", String(c.UnreadCount)));
+    b.appendChild(av); b.appendChild(mid); b.appendChild(right);
+    if (pins.phone || pins.local) b.setAttribute("aria-label", convName(c) + (pins.phone ? ", pinned on your phone" : ", pinned"));
+    // Long-press (or right-click) opens the conversation menu (Pin / Unpin).
+    attachLongPress(b, function (x, y) { openConvMenu(c, { left: x, top: y, bottom: y }, b); });
+    b.addEventListener("click", function () { openConversation(c.ConversationID); });
+    return b;
+  }
+  // Long-press: fires after 550 ms without moving; the click that follows is
+  // swallowed so the conversation doesn't also open.
+  function attachLongPress(node, onLong) {
+    var timer = null, sx = 0, sy = 0, fired = false;
+    function cancel() { if (timer) { clearTimeout(timer); timer = null; } node.classList.remove("pressing"); }
+    node.addEventListener("pointerdown", function (e) {
+      if (e.button) return;
+      fired = false; sx = e.clientX; sy = e.clientY;
+      cancel();
+      node.classList.add("pressing");
+      timer = setTimeout(function () { timer = null; node.classList.remove("pressing"); fired = true; onLong(sx, sy); }, 550);
+    });
+    node.addEventListener("pointermove", function (e) {
+      if (timer && (Math.abs(e.clientX - sx) > 14 || Math.abs(e.clientY - sy) > 14)) cancel();
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach(function (t) { node.addEventListener(t, cancel); });
+    node.addEventListener("contextmenu", function (e) {
+      e.preventDefault();
+      if (fired) return;
+      cancel(); fired = true;
+      onLong(e.clientX, e.clientY);
+    });
+    node.addEventListener("click", function (e) {
+      if (!fired) return;
+      fired = false;
+      e.preventDefault(); e.stopImmediatePropagation();
+    }, true);
+  }
+
+  // ---------- conversation menu (Pin / Unpin) ----------
+  function openConvMenu(c, anchor, btn) {
+    closeMsgMenu();
+    closeConvMenu();
+    if (!c) { toast("This conversation isn't loaded yet"); return; }
+    state.convMenuFor = { conv: c, btn: btn };
+    btn.classList.add("open");
+    if (btn.id === "convMenuBtn") btn.setAttribute("aria-expanded", "true");
+    var pins = convPins(c), item = $("convMenuPin");
+    var canPin = !state.folder || !!c.local;
+    $("convMenuTitle").textContent = convName(c);
+    item.classList.toggle("is-pinned", pins.phone || pins.local);
+    if (pins.phone) {
+      item.disabled = true;
+      $("convMenuPinLabel").textContent = "Pinned on your phone";
+      $("convMenuPinNote").textContent = "Unpin it in Google Messages on your phone";
+    } else if (!canPin) {
+      item.disabled = true;
+      $("convMenuPinLabel").textContent = "Pin conversation";
+      $("convMenuPinNote").textContent = "Not available: this conversation isn't stored here";
+    } else {
+      item.disabled = false;
+      $("convMenuPinLabel").textContent = pins.local ? "Unpin conversation" : "Pin conversation";
+      $("convMenuPinNote").textContent = pins.local ? "" : "Pinned in Tesla Messages only, not on your phone";
+    }
+    var menu = $("convMenu");
+    menu.hidden = false;
+    placePopover(menu, anchor);
+  }
+  function closeConvMenu() {
+    var f = state.convMenuFor;
+    state.convMenuFor = null;
+    $("convMenu").hidden = true;
+    if (f && f.btn) { f.btn.classList.remove("open"); if (f.btn.id === "convMenuBtn") f.btn.setAttribute("aria-expanded", "false"); }
+  }
+  function setConvPinned(c, pinned) {
+    return postJSON("/api/tesla/conversations/pin", { conversation_id: c.ConversationID, pinned: pinned }).then(function (res) {
+      state.convs.forEach(function (x) {
+        if (x.ConversationID !== res.conversation_id) return;
+        x.local_pinned_at_ms = res.local_pinned_at_ms || 0;
+        x.google_pinned = !!res.google_pinned;
+      });
+      renderConversations();
+      toast(pinned ? "Conversation pinned" : "Conversation unpinned");
+    }).catch(function (e) {
+      if (e.message !== "login required") toast((pinned ? "Couldn't pin: " : "Couldn't unpin: ") + e.message, "error");
     });
   }
 
-  // ---------- per-conversation theme ----------
-  // Client-side only: the choice lives in localStorage ("tm.theme.<conv id>")
-  // and is applied as CSS variables on #threadView. Every sent-bubble/accent
-  // color keeps white text at >= 4.5:1 contrast; received bubbles stay dark.
-  var THEME_KEY = "tm.theme.";
-  var THEME_PRESETS = [
-    { id: "default", name: "Default" },
-    { id: "ocean", name: "Ocean", me: "#1c6e8c", accent: "#0e7490", them: "#1e3a4c" },
-    { id: "sunset", name: "Sunset", me: "#c2410c", accent: "#be185d", them: "#3b2a1f" },
-    { id: "forest", name: "Forest", me: "#237a47", accent: "#15803d", them: "#1f3326" },
-    { id: "mono", name: "Mono", me: "#4b5563", accent: "#6b7280", them: "#2a2d33" },
+  // ---------- per-conversation chat theme ----------
+  // Stored on the server (GET /api/tesla/themes, PUT/DELETE /api/tesla/theme,
+  // custom photos at /api/tesla/theme/background) so the car, a tablet and a
+  // phone all show the same theme. The server stores ids only; the colors
+  // live here. Every sent-bubble / accent color keeps white text >= 4.5:1;
+  // received bubbles stay dark. Over a wallpaper the thread gets a dark scrim
+  // and fully opaque bubbles so text stays readable.
+  var THEME_OLD_KEY = "tm.theme."; // legacy localStorage themes (migrated once)
+  var PALETTES = [
+    { id: "blue",       name: "Blue",       light: "#a8c7fa", me: "#1f5fbf", them: "#26313f", accent: "#2f6fe4", surface: "#0e2a3e" },
+    { id: "periwinkle", name: "Periwinkle", light: "#bac3ff", me: "#4454b8", them: "#2d2f45", accent: "#4f5fcf", surface: "#1b1f3d" },
+    { id: "sky",        name: "Sky",        light: "#86d1ec", me: "#006689", them: "#1e3640", accent: "#00769e", surface: "#0b2b35" },
+    { id: "lilac",      name: "Lilac",      light: "#e3b8ff", me: "#7a3fae", them: "#382b47", accent: "#8a4cc0", surface: "#2a1d38" },
+    { id: "sage",       name: "Sage",       light: "#c3cfb2", me: "#48633e", them: "#2c3628", accent: "#4f6e44", surface: "#1d2a1d" },
+    { id: "coral",      name: "Peach",      light: "#ffb690", me: "#a1461c", them: "#46302a", accent: "#b04e20", surface: "#36221a" },
+    { id: "rose",       name: "Pink",       light: "#ffb1cf", me: "#a6356b", them: "#462a37", accent: "#b53b76", surface: "#361c29" },
+    { id: "gold",       name: "Gold",       light: "#efcf72", me: "#7a5600", them: "#3b3322", accent: "#8a6200", surface: "#2e2612" },
+    { id: "slate",      name: "Slate",      light: "#c4c7cc", me: "#505760", them: "#2b2e34", accent: "#5a626c", surface: "#1e2227" },
   ];
-  var THEME_SWATCHES = ["#1d4ed8", "#0f766e", "#15803d", "#a16207", "#c2410c", "#b91c1c", "#be185d", "#7c3aed", "#475569"];
-  var THEME_DEFAULT_ME = "#2f6fe4", THEME_DEFAULT_THEM = "#262b33";
+  var LEGACY_PRESETS = { ocean: "sky", sunset: "coral", forest: "sage", mono: "slate" };
+  var THEME_DEFAULT = { light: "#9cc3ff", me: "#2f6fe4", them: "#262b33", accent: "#3e8bff", surface: null };
+  var CT_MAX_UPLOAD = 15 * 1024 * 1024;
+  var themes = {};          // conv id -> server theme {palette, color, wallpaper, custom, updated_ms}
+  var themesLoaded = false;
+  var wallpapers = null;    // [{id, name, items:[...]}] (fetched lazily)
+  var wallpaperIndex = {};  // id -> item
+  var ct = null;            // open Chat theme panel state
+
   function darken(hex, f) {
     var n = parseInt(hex.slice(1), 16);
     var r = Math.round(((n >> 16) & 255) * f), g = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
     return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
   }
   function validHex(v) { return typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v); }
-  function loadTheme(id) {
-    try {
-      var t = JSON.parse(localStorage.getItem(THEME_KEY + id) || "null");
-      return t && typeof t === "object" ? t : null;
-    } catch (e) { return null; }
-  }
-  function saveTheme(id, t) {
-    try {
-      if (t) localStorage.setItem(THEME_KEY + id, JSON.stringify(t));
-      else localStorage.removeItem(THEME_KEY + id);
-    } catch (e) {}
-  }
-  // Resolve a stored choice to { me, accent, them } (null = default look).
+  function paletteByID(id) { for (var i = 0; i < PALETTES.length; i++) if (PALETTES[i].id === id) return PALETTES[i]; return null; }
+  // Theme -> colors ({light, me, them, accent, surface}); default look for none.
   function themeColors(t) {
-    if (!t) return null;
-    if (t.preset) {
-      for (var i = 0; i < THEME_PRESETS.length; i++) {
-        var p = THEME_PRESETS[i];
-        if (p.id === t.preset) return p.me ? { me: p.me, accent: p.accent, them: p.them } : null;
-      }
-      return null;
+    var p = t && paletteByID(t.palette);
+    if (p) return p;
+    if (t && validHex(t.color)) return { light: t.color, me: t.color, them: THEME_DEFAULT.them, accent: t.color, surface: null };
+    return THEME_DEFAULT;
+  }
+  function customBgURL(convID, version) {
+    return "/api/tesla/theme/background?conversation_id=" + encodeURIComponent(convID) + "&v=" + encodeURIComponent(version || "");
+  }
+  // Theme -> background image URL (or "").
+  function themeBackground(convID, t) {
+    if (!t) return "";
+    if (t.pendingURL) return t.pendingURL;
+    if (t.custom) return customBgURL(convID, t.custom);
+    if (t.wallpaper) return "/tesla-wallpapers/" + wallpaperFileFor(t.wallpaper);
+    return "";
+  }
+  // Wallpaper URLs are content-hashed; before the list is fetched we only know
+  // the id, so the server theme carries it and we resolve lazily.
+  function wallpaperFileFor(id) {
+    var it = wallpaperIndex[id];
+    return it ? it.file : "";
+  }
+  function paintThemeVars(node, colors) {
+    var s = node.style;
+    s.setProperty("--me", colors.me);
+    s.setProperty("--them", colors.them);
+    s.setProperty("--accent", colors.accent);
+    s.setProperty("--accent-2", darken(colors.accent, 0.8));
+    s.setProperty("--accent-light", colors.light);
+  }
+  function clearThemeVars(node) {
+    ["--me", "--them", "--accent", "--accent-2", "--accent-light"].forEach(function (k) { node.style.removeProperty(k); });
+  }
+  function setWallpaper(node, url) {
+    if (url) {
+      node.style.backgroundImage = "linear-gradient(rgba(6,8,11,.42), rgba(6,8,11,.42)), url(\"" + url.replace(/"/g, "%22") + "\")";
+      node.classList.add("has-wallpaper");
+    } else {
+      node.style.backgroundImage = "";
+      node.classList.remove("has-wallpaper");
     }
-    if (validHex(t.color)) return { me: t.color, accent: t.color, them: null };
-    return null;
   }
   function applyTheme(id) {
-    var v = $("threadView").style, colors = themeColors(id ? loadTheme(id) : null);
-    ["--me", "--accent", "--accent-2", "--them"].forEach(function (k) { v.removeProperty(k); });
-    $("threadView").classList.toggle("themed", !!colors);
-    if (!colors) return;
-    v.setProperty("--me", colors.me);
-    v.setProperty("--accent", colors.accent);
-    v.setProperty("--accent-2", darken(colors.accent, 0.8));
-    if (colors.them) v.setProperty("--them", colors.them);
+    var tv = $("threadView"), t = id ? themes[id] : null;
+    var hasColors = !!(t && (paletteByID(t.palette) || validHex(t.color)));
+    clearThemeVars(tv);
+    tv.classList.toggle("themed", hasColors);
+    if (hasColors) paintThemeVars(tv, themeColors(t));
+    if (t && t.wallpaper && !wallpaperIndex[t.wallpaper]) {
+      setWallpaper(tv, "");
+      loadWallpapers().then(function () { if (state.current === id) applyTheme(id); });
+      return;
+    }
+    setWallpaper(tv, themeBackground(id, t));
   }
-  function themeChoiceKey(t) { return !t ? "preset:default" : t.preset ? "preset:" + t.preset : "color:" + String(t.color).toLowerCase(); }
-  function renderThemeSheet() {
-    var id = state.current, cur = themeChoiceKey(loadTheme(id));
-    var c = state.convs.find(function (x) { return x.ConversationID === id; });
-    $("themeTitle").textContent = "Chat colors" + (c ? " · " + convName(c) : "");
-    var presets = $("themePresets");
-    presets.textContent = "";
-    THEME_PRESETS.forEach(function (p) {
-      var b = el("button", "theme-preset");
-      b.type = "button";
-      var key = "preset:" + p.id;
-      if (key === cur) b.classList.add("selected");
-      b.setAttribute("aria-pressed", key === cur ? "true" : "false");
-      var prev = el("span", "theme-preview");
-      var them = el("span", "theme-chip"); them.style.background = p.them || THEME_DEFAULT_THEM;
-      var me = el("span", "theme-chip"); me.style.background = p.me || THEME_DEFAULT_ME;
-      prev.appendChild(them); prev.appendChild(me);
-      b.appendChild(prev);
-      b.appendChild(el("span", "theme-name", p.name));
-      b.addEventListener("click", function () { chooseTheme(p.id === "default" ? null : { preset: p.id }); });
-      presets.appendChild(b);
+  function loadThemes() {
+    return api("/api/tesla/themes").then(function (res) {
+      themes = (res && res.themes) || {};
+      themesLoaded = true;
+      migrateLocalThemes();
+      if (state.current && !ct) applyTheme(state.current);
+    }).catch(function () {});
+  }
+  function loadWallpapers() {
+    if (wallpapers) return Promise.resolve(wallpapers);
+    if (loadWallpapers.p) return loadWallpapers.p;
+    loadWallpapers.p = api("/api/tesla/wallpapers").then(function (res) {
+      wallpapers = (res && res.categories) || [];
+      wallpapers.forEach(function (c) { c.items.forEach(function (it) { wallpaperIndex[it.id] = it; }); });
+      return wallpapers;
+    }).catch(function (e) { loadWallpapers.p = null; throw e; });
+    return loadWallpapers.p;
+  }
+  function putTheme(id, t) {
+    if (!t || (!t.palette && !t.color && !t.wallpaper && !t.custom)) {
+      return api("/api/tesla/theme?conversation_id=" + encodeURIComponent(id), { method: "DELETE" }).then(function () { delete themes[id]; });
+    }
+    return api("/api/tesla/theme", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: id, theme: { palette: t.palette || "", color: t.color || "", wallpaper: t.wallpaper || "", custom: !!t.custom } }) })
+      .then(function (res) { themes[id] = res.theme; return res.theme; });
+  }
+  // One-time move of old per-device themes (localStorage) to the server. A
+  // conversation that already has a server theme keeps it.
+  function migrateLocalThemes() {
+    var keys = [];
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf(THEME_OLD_KEY) === 0) keys.push(k);
+      }
+    } catch (e) { return; }
+    keys.forEach(function (k) {
+      var id = k.slice(THEME_OLD_KEY.length), old = null;
+      try { old = JSON.parse(localStorage.getItem(k) || "null"); } catch (e) {}
+      var done = function () { try { localStorage.removeItem(k); } catch (e) {} };
+      if (!id || themes[id] || !old || typeof old !== "object") { done(); return; }
+      var t = null;
+      if (old.preset && LEGACY_PRESETS[old.preset]) t = { palette: LEGACY_PRESETS[old.preset] };
+      else if (validHex(old.color)) t = { color: old.color.toLowerCase() };
+      if (!t) { done(); return; }
+      putTheme(id, t).then(function () { done(); if (state.current === id && !ct) applyTheme(id); }).catch(function () {});
     });
-    var sw = $("themeSwatches");
-    sw.textContent = "";
-    THEME_SWATCHES.forEach(function (hex) {
-      var b = el("button", "theme-swatch");
+  }
+
+  // Re-read one conversation's theme (it may have changed on another device).
+  function refreshTheme(id) {
+    if (!themesLoaded || !id) return;
+    api("/api/tesla/theme?conversation_id=" + encodeURIComponent(id)).then(function (res) {
+      if (!res) return;
+      var before = JSON.stringify(themes[id] || null);
+      if (res.set) themes[id] = res.theme; else delete themes[id];
+      if (JSON.stringify(themes[id] || null) !== before && state.current === id && !ct) applyTheme(id);
+    }).catch(function () {});
+  }
+
+  // ----- Chat theme panel -----
+  function themeKey(t) {
+    t = t || {};
+    return [t.palette || "", t.palette ? "" : (t.color || ""), t.wallpaper || "", t.custom || "", t.pendingURL || ""].join("|");
+  }
+  function openChatTheme() {
+    if (!state.current || state.folder) return;
+    closeMsgMenu();
+    var id = state.current, saved = themes[id] || {};
+    ct = { id: id, view: "main", cat: null, catBefore: null,
+      saved: { palette: saved.palette, color: saved.color, wallpaper: saved.wallpaper, custom: saved.custom },
+      draft: { palette: saved.palette, color: saved.color, wallpaper: saved.wallpaper, custom: saved.custom },
+      pendingFile: null, busy: false };
+    $("themeView").hidden = false;
+    renderChatTheme();
+    loadWallpapers().then(function () { if (ct && ct.id === id) renderChatTheme(); })
+      .catch(function (e) { if (ct) { $("ctCats").textContent = ""; $("ctCats").appendChild(el("div", "ct-empty", "Couldn't load wallpapers: " + e.message)); } });
+    // pick up changes made on another device
+    api("/api/tesla/theme?conversation_id=" + encodeURIComponent(id)).then(function (res) {
+      if (!ct || ct.id !== id || !res) return;
+      if (res.set) themes[id] = res.theme; else delete themes[id];
+      var s = res.set ? res.theme : {};
+      if (themeKey(ct.draft) === themeKey(ct.saved)) {
+        ct.saved = { palette: s.palette, color: s.color, wallpaper: s.wallpaper, custom: s.custom };
+        ct.draft = { palette: s.palette, color: s.color, wallpaper: s.wallpaper, custom: s.custom };
+        renderChatTheme();
+      }
+    }).catch(function () {});
+  }
+  function closeChatTheme() {
+    if (!ct) { $("themeView").hidden = true; return; }
+    if (ct.draft.pendingURL) URL.revokeObjectURL(ct.draft.pendingURL);
+    ct = null;
+    $("themeView").hidden = true;
+    $("ctFile").value = "";
+    if (state.current) applyTheme(state.current);
+  }
+  function ctBack() {
+    if (!ct) return;
+    if (ct.view === "category") {
+      ct.draft = ct.catBefore; ct.view = "main"; ct.cat = null;
+      renderChatTheme();
+      return;
+    }
+    closeChatTheme();
+  }
+  function ctDirty() { return !!ct && themeKey(ct.draft) !== themeKey(ct.saved); }
+  function renderChatTheme() {
+    if (!ct) return;
+    var c = state.convs.find(function (x) { return x.ConversationID === ct.id; });
+    var inCat = ct.view === "category";
+    $("ctTitle").textContent = inCat ? ct.cat.name : "Chat theme";
+    $("ctSub").textContent = inCat ? "Tap a photo to preview it" : (c ? convName(c) + " · " : "") + "Shows on every device you use Messages on";
+    var act = $("ctApply");
+    act.textContent = inCat ? "Next" : (ct.busy ? "Saving…" : "Apply");
+    act.disabled = ct.busy || (inCat ? themeKey(ct.draft) === themeKey(ct.catBefore) : !ctDirty());
+    $("ctReset").disabled = ct.busy || themeKey(ct.draft) === themeKey({});
+    renderCTPreview();
+    $("ctMain").hidden = inCat;
+    $("ctCategory").hidden = !inCat;
+    var colors = themeColors(ct.draft);
+    var panel = $("themeView").querySelector(".ct-options");
+    panel.style.background = colors.surface || "";
+    if (inCat) renderCTCategory(); else renderCTMain();
+  }
+  function renderCTPreview() {
+    var box = $("ctPreview"), t = ct.draft;
+    // Colors go on the whole panel so Apply / Choose a photo / selection
+    // rings follow the palette being previewed.
+    clearThemeVars($("themeView"));
+    paintThemeVars($("themeView"), themeColors(t));
+    var url = themeBackground(ct.id, t);
+    if (!url && t.wallpaper && !wallpaperIndex[t.wallpaper]) url = "";
+    setWallpaper(box, url);
+    var c = state.convs.find(function (x) { return x.ConversationID === ct.id; });
+    $("ctPrevName").textContent = c && c.IsGroup ? "Alex" : "";
+    $("ctPrevName").hidden = !(c && c.IsGroup);
+  }
+  function swatchStyle(p) {
+    // Google-style two-tone circle: light tone on top, sent/received below.
+    return "conic-gradient(from -90deg, " + p.light + " 0 50%, " + p.them + " 50% 75%, " + p.me + " 75% 100%)";
+  }
+  function renderCTMain() {
+    var row = $("ctColors");
+    row.textContent = "";
+    var cur = ct.draft.palette || "";
+    var mk = function (p, label) {
+      var b = el("button", "ct-swatch" + ((p ? p.id : "") === cur && !(p === null && validHex(ct.draft.color)) ? " selected" : ""));
       b.type = "button";
-      b.style.background = hex;
-      b.setAttribute("aria-label", "Bubble color " + hex);
-      var key = "color:" + hex;
-      if (key === cur) { b.classList.add("selected"); b.textContent = "✓"; }
-      b.setAttribute("aria-pressed", key === cur ? "true" : "false");
-      b.addEventListener("click", function () { chooseTheme({ color: hex }); });
-      sw.appendChild(b);
+      b.setAttribute("aria-label", label);
+      b.setAttribute("aria-pressed", b.classList.contains("selected") ? "true" : "false");
+      var dot = el("span", "ct-swatch-dot");
+      dot.style.background = swatchStyle(p || THEME_DEFAULT);
+      b.appendChild(dot);
+      b.addEventListener("click", function () {
+        ct.draft.palette = p ? p.id : "";
+        ct.draft.color = "";
+        renderChatTheme();
+      });
+      return b;
+    };
+    row.appendChild(mk(null, "Default colors"));
+    PALETTES.forEach(function (p) { row.appendChild(mk(p, p.name + " colors")); });
+    if (validHex(ct.draft.color) && !ct.draft.palette) {
+      var legacy = el("button", "ct-swatch selected");
+      legacy.type = "button"; legacy.setAttribute("aria-label", "Current custom color");
+      var d = el("span", "ct-swatch-dot"); d.style.background = ct.draft.color; legacy.appendChild(d);
+      row.appendChild(legacy);
+    }
+    var cats = $("ctCats");
+    cats.textContent = "";
+    var hasPhoto = !!(ct.draft.custom || ct.draft.pendingURL);
+    $("ctRemovePhoto").hidden = !(hasPhoto || ct.draft.wallpaper);
+    $("ctRemovePhoto").textContent = hasPhoto ? "Remove photo" : "Remove wallpaper";
+    if (!wallpapers) { cats.appendChild(el("div", "ct-empty", "Loading wallpapers…")); return; }
+    wallpapers.forEach(function (cat) {
+      var b = el("button", "ct-cat");
+      b.type = "button";
+      var sel = ct.draft.wallpaper && cat.items.some(function (it) { return it.id === ct.draft.wallpaper; });
+      if (sel) b.classList.add("selected");
+      var img = el("img", "ct-cat-img");
+      img.alt = ""; img.loading = "lazy"; img.decoding = "async"; img.draggable = false;
+      img.src = cat.items[0].thumb_url;
+      b.appendChild(img);
+      b.appendChild(el("span", "ct-cat-name", cat.name));
+      b.addEventListener("click", function () {
+        ct.catBefore = { palette: ct.draft.palette, color: ct.draft.color, wallpaper: ct.draft.wallpaper, custom: ct.draft.custom, pendingURL: ct.draft.pendingURL };
+        ct.view = "category"; ct.cat = cat;
+        renderChatTheme();
+        $("ctCategory").scrollTop = 0;
+      });
+      cats.appendChild(b);
     });
   }
-  function chooseTheme(t) {
-    if (!state.current) return;
-    saveTheme(state.current, t);
-    applyTheme(state.current);
-    renderThemeSheet();
+  function renderCTCategory() {
+    var grid = $("ctPhotos");
+    grid.textContent = "";
+    ct.cat.items.forEach(function (it, i) {
+      var b = el("button", "ct-photo" + (ct.draft.wallpaper === it.id ? " selected" : ""));
+      b.type = "button";
+      b.setAttribute("aria-label", it.title + " (" + (i + 1) + " of " + ct.cat.items.length + ")");
+      var img = el("img");
+      img.alt = ""; img.loading = "lazy"; img.decoding = "async"; img.draggable = false;
+      img.src = it.thumb_url;
+      b.appendChild(img);
+      b.addEventListener("click", function () {
+        ct.draft.wallpaper = it.id;
+        ct.draft.custom = "";
+        ct.draft.pendingURL = "";
+        renderChatTheme();
+      });
+      grid.appendChild(b);
+    });
+    var sel = wallpaperIndex[ct.draft.wallpaper];
+    $("ctCredit").textContent = sel && ct.cat.items.indexOf(sel) >= 0
+      ? "Photo: " + sel.title + " · " + sel.author + " · " + sel.license : "";
   }
-  function showThemeSheet(open) {
-    if (open && !state.current) return;
-    $("themeView").hidden = !open;
-    if (open) renderThemeSheet();
+  function ctPrimary() {
+    if (!ct || ct.busy) return;
+    if (ct.view === "category") { ct.view = "main"; ct.cat = null; renderChatTheme(); return; }
+    if (!ctDirty()) return;
+    var id = ct.id, d = ct.draft, file = ct.pendingFile;
+    ct.busy = true; renderChatTheme();
+    var p;
+    if (d.pendingURL && file) {
+      var fd = new FormData();
+      fd.append("conversation_id", id);
+      fd.append("file", file, file.name || "photo.jpg");
+      p = api("/api/tesla/theme/background", { method: "POST", body: fd }).then(function (res) {
+        themes[id] = res.theme;
+        return putTheme(id, { palette: d.palette, color: d.color, custom: true });
+      });
+    } else {
+      p = putTheme(id, { palette: d.palette, color: d.color, wallpaper: d.wallpaper, custom: !!d.custom });
+    }
+    p.then(function () {
+      if (!ct || ct.id !== id) return;
+      closeChatTheme();
+      toast("Chat theme saved");
+    }).catch(function (e) {
+      if (!ct || ct.id !== id) return;
+      ct.busy = false; renderChatTheme();
+      if (e.message !== "login required") toast("Couldn't save the theme: " + e.message, "error");
+    });
+  }
+  function ctReset() {
+    if (!ct) return;
+    if (ct.draft.pendingURL) URL.revokeObjectURL(ct.draft.pendingURL);
+    ct.draft = {}; ct.pendingFile = null;
+    renderChatTheme();
+  }
+  function ctRemovePhoto() {
+    if (!ct) return;
+    if (ct.draft.pendingURL) URL.revokeObjectURL(ct.draft.pendingURL);
+    ct.draft.pendingURL = ""; ct.draft.custom = ""; ct.draft.wallpaper = ""; ct.pendingFile = null;
+    renderChatTheme();
+  }
+  function ctFilePicked() {
+    var f = $("ctFile").files && $("ctFile").files[0];
+    $("ctFile").value = "";
+    if (!f || !ct) return;
+    if (f.size > CT_MAX_UPLOAD) { toast("That photo is too large (15 MB max)", "error"); return; }
+    if (f.type && !/^image\/(jpeg|png|gif|webp)$/i.test(f.type)) { toast("Use a JPEG, PNG, GIF or WebP photo", "error"); return; }
+    if (ct.draft.pendingURL) URL.revokeObjectURL(ct.draft.pendingURL);
+    ct.pendingFile = f;
+    ct.draft.pendingURL = URL.createObjectURL(f);
+    ct.draft.wallpaper = ""; ct.draft.custom = "";
+    renderChatTheme();
   }
 
   // ---------- thread ----------
   function openConversation(id, nameHint) {
     if (state.rec) cancelRecording();
     closeMsgMenu();
+    closeConvMenu();
     closeImageViewer();
     state.current = id;
     var readOnly = !!state.folder;
@@ -431,10 +811,13 @@
     $("threadView").hidden = false;
     var c = state.convs.find(function (x) { return x.ConversationID === id; });
     $("threadTitle").textContent = c ? convName(c) : (nameHint || id);
-    showThemeSheet(false);
+    if (ct) closeChatTheme();
     applyTheme(id);
+    refreshTheme(id);
     state.nodes = {};
     clearReply();
+    state.pins = [];
+    renderPinBanner();
     $("messages").textContent = "";
     renderConversations();
     loadMessages(true);
@@ -445,9 +828,11 @@
   function closeThread() {
     if (state.rec) cancelRecording();
     closeImageViewer();
-    showThemeSheet(false);
+    if (ct) closeChatTheme();
     closeMsgMenu();
     clearReply();
+    closePinList();
+    state.pins = []; renderPinBanner();
     state.current = null; document.body.classList.remove("has-thread", "readonly-thread");
     $("threadView").hidden = true; $("threadEmpty").hidden = false;
   }
@@ -462,9 +847,12 @@
         path = "/api/tesla/folder/messages?conversation_id=" + encodeURIComponent(id);
       }
     }
+    var pinsP = state.folder ? Promise.resolve(null) : loadPins(id);
     return api(path).then(function (msgs) {
-      if (id !== state.current) return;
-      renderMessages((msgs || []).slice().reverse(), scroll);
+      return pinsP.then(function () {
+        if (id !== state.current) return;
+        renderMessages((msgs || []).slice().reverse(), scroll);
+      });
     }).catch(function (e) { if (e.message !== "login required") toast("Couldn't load messages: " + e.message, "error"); });
   }
   // ---------- attachments ----------
@@ -867,7 +1255,27 @@
         bubble.appendChild(el("div", "body", m.MediaID ? "📎 " + (m.MimeType || "attachment") : ""));
       }
       var meta = el("div", "meta", new Date(m.TimestampMS).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
+      if (isPinned(m.MessageID)) {
+        row.classList.add("pinned");
+        var pm = svgIcon(PIN_ICON); pm.setAttribute("class", "pin-mark");
+        meta.insertBefore(pm, meta.firstChild);
+      }
       bubble.appendChild(meta);
+      var mb = el("button", "msg-menu-btn", "⋮");
+      mb.type = "button";
+      mb.setAttribute("aria-label", "More options");
+      mb.setAttribute("aria-haspopup", "menu");
+      mb.title = "More";
+      mb.addEventListener("click", function () {
+        if (state.menuFor && state.menuFor.msg.MessageID === m.MessageID) closeMsgMenu(); else openMsgMenu(mb, m);
+      });
+      if (menuOpenFor && menuOpenFor === m.MessageID) {
+        menuStillThere = true;
+        mb.classList.add("open"); mb.setAttribute("aria-expanded", "true");
+        state.menuFor.btn = mb;
+      }
+      // Sent messages get the ⋮ menu too (left of the bubble).
+      if (m.IsFromMe && !isSendPlaceholder(m)) row.appendChild(mb);
       row.appendChild(bubble);
       if (!m.IsFromMe) {
         var rb = el("button", "reply-btn");
@@ -877,19 +1285,6 @@
         rb.appendChild(svgIcon(REPLY_ICON));
         rb.addEventListener("click", function () { setReplyTo(m); });
         row.appendChild(rb);
-        var mb = el("button", "msg-menu-btn", "⋮");
-        mb.type = "button";
-        mb.setAttribute("aria-label", "More options");
-        mb.setAttribute("aria-haspopup", "menu");
-        mb.title = "More";
-        mb.addEventListener("click", function () {
-          if (state.menuFor && state.menuFor.msg.MessageID === m.MessageID) closeMsgMenu(); else openMsgMenu(mb, m);
-        });
-        if (menuOpenFor && menuOpenFor === m.MessageID) {
-          menuStillThere = true;
-          mb.classList.add("open"); mb.setAttribute("aria-expanded", "true");
-          state.menuFor.btn = mb;
-        }
         row.appendChild(mb);
       }
       box.appendChild(row);
@@ -1012,12 +1407,66 @@
     return s;
   }
   function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {} }
+  // UI zoom: per device (the car and a tablet may want different sizes).
+  // The CSS is px-based, so the whole page is scaled with CSS zoom on <html>;
+  // vh/vw-based sizes divide by --z so full-height layouts and overlays fit.
+  var PREFS = window.TMPrefs; // zoom.js (runs in <head>, before first paint)
+  var ZOOM_STEPS = PREFS.ZOOM_STEPS;
+  function zoomOf(s) { return PREFS.zoomOf(s); }
+  function applyZoom(z) {
+    var s = loadSettings();
+    s.zoom = z;
+    PREFS.apply(s);
+    $("zoomValue").textContent = z + "%";
+    $("zoomOut").disabled = z === ZOOM_STEPS[0];
+    $("zoomIn").disabled = z === ZOOM_STEPS[ZOOM_STEPS.length - 1];
+    var box = $("zoomSteps");
+    if (!box.firstChild) {
+      ZOOM_STEPS.forEach(function (v) {
+        var b = el("button", "zoom-step", v + "%");
+        b.type = "button"; b.dataset.z = v;
+        b.addEventListener("click", function () { setZoom(v); });
+        box.appendChild(b);
+      });
+    }
+    Array.prototype.forEach.call(box.children, function (b) {
+      var on = +b.dataset.z === z;
+      b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  }
+  function setZoom(z) {
+    var s = loadSettings();
+    s.zoom = z;
+    saveSettings(s);
+    closeMsgMenu();
+    applyZoom(z);
+  }
+  function stepZoom(dir) {
+    var i = ZOOM_STEPS.indexOf(zoomOf(loadSettings())) + dir;
+    if (i >= 0 && i < ZOOM_STEPS.length) setZoom(ZOOM_STEPS[i]);
+  }
   function applySettings() {
     var s = loadSettings();
+    applyZoom(zoomOf(s));
     $("attachBtn").hidden = !s.showAttach;
     var sw = $("setAttach");
     sw.setAttribute("aria-checked", s.showAttach ? "true" : "false");
     sw.classList.toggle("on", s.showAttach);
+    var car = PREFS.carMode(s), cm = $("setCarMode");
+    cm.checked = car;
+    $("carModeDesc").textContent = car
+      ? "Big touch controls for the car screen"
+      : "Off: compact layout for a tablet or computer";
+  }
+  // Car Mode (per device, default on): off switches to the denser
+  // tablet/desktop layout (html.desk, see zoom.js and app.css).
+  function setCarMode(on) {
+    var s = loadSettings();
+    s.carMode = !!on;
+    saveSettings(s);
+    closeMsgMenu();
+    closeConvMenu();
+    applySettings();
   }
   function showSettings(open) {
     $("settingsView").hidden = !open;
@@ -1425,17 +1874,40 @@
   // ---------- message menu (⋮) + delete ----------
   // One shared popover, positioned next to the tapped ⋮ button. Closes on an
   // outside tap, Escape, or when the message goes away.
+  function viewportProbe() {
+    var p = $("vpProbe");
+    if (!p) {
+      p = el("div"); p.id = "vpProbe"; p.setAttribute("aria-hidden", "true");
+      p.style.cssText = "position:fixed;inset:0;visibility:hidden;pointer-events:none;z-index:-1";
+      document.body.appendChild(p);
+    }
+    return p;
+  }
   function openMsgMenu(btn, m) {
     closeMsgMenu();
+    closeConvMenu();
     state.menuFor = { msg: m, btn: btn };
     btn.classList.add("open");
     btn.setAttribute("aria-expanded", "true");
     var menu = $("msgMenu");
+    var pinned = isPinned(m.MessageID);
+    $("msgMenuPinLabel").textContent = pinned ? "Unpin" : "Pin";
+    $("msgMenuPin").classList.toggle("is-pinned", pinned);
+    $("msgMenuPin").hidden = !!state.folder || /^(tm-|tmp_)/.test(String(m.MessageID || ""));
     menu.hidden = false;
-    var r = btn.getBoundingClientRect(), mw = menu.offsetWidth, mh = menu.offsetHeight;
-    var left = Math.max(16, Math.min(window.innerWidth - mw - 16, r.left));
+    placePopover(menu, btn.getBoundingClientRect());
+  }
+  // Place a fixed popover below (or above) an anchor rect given in client
+  // coordinates. Works in the menu's own CSS px so this stays right under UI
+  // zoom: a full-viewport fixed probe gives the rect-units -> CSS px factor.
+  function placePopover(menu, br) {
+    var vp = viewportProbe(), pr = vp.getBoundingClientRect();
+    var k = pr.width ? vp.offsetWidth / pr.width : 1, vw = vp.offsetWidth, vh = vp.offsetHeight;
+    var mw = menu.offsetWidth, mh = menu.offsetHeight;
+    var r = { left: (br.left - pr.left) * k, top: (br.top - pr.top) * k, bottom: (br.bottom - pr.top) * k };
+    var left = Math.max(16, Math.min(vw - mw - 16, r.left));
     var top = r.bottom + 10;
-    if (top + mh > window.innerHeight - 16) top = r.top - mh - 10;
+    if (top + mh > vh - 16) top = r.top - mh - 10;
     menu.style.left = left + "px";
     menu.style.top = Math.max(16, top) + "px";
   }
@@ -1477,6 +1949,88 @@
       if (e.message !== "login required") toast("Not deleted: " + e.message, "error");
     });
   }
+
+  // ---------- pinned messages ----------
+  // Stored on this server per conversation (GET /api/tesla/pins, POST
+  // /api/tesla/messages/pin): Google Messages' web protocol (libgm) has no
+  // message-pin action, so pins are shared by every browser on this server
+  // but don't show on the phone.
+  var PIN_ICON = "M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z";
+  function isPinned(id) {
+    for (var i = 0; i < state.pins.length; i++) if (state.pins[i].message_id === id) return true;
+    return false;
+  }
+  function loadPins(id) {
+    return api("/api/tesla/pins?conversation_id=" + encodeURIComponent(id)).then(function (res) {
+      if (id !== state.current) return;
+      state.pins = (res && res.pins) || [];
+      renderPinBanner();
+    }).catch(function () { /* pins are optional; keep the last known list */ });
+  }
+  function pinSnippet(p) {
+    var t = String(p.body || "").replace(/\s+/g, " ").trim();
+    if (!t || GENERIC_MEDIA_BODY[t] || (p.has_media && BARE_FILENAME.test(t))) {
+      var mt = String(p.mime_type || "");
+      t = /^image\//.test(mt) ? "📷 Photo" : /^video\//.test(mt) ? "🎬 Video" : /^audio\//.test(mt) ? "🎤 Audio" : p.has_media ? "📎 Attachment" : "Message";
+    }
+    return t.length > 120 ? t.substring(0, 120) + "…" : t;
+  }
+  function pinAuthor(p) { return p.is_from_me ? "You" : (p.sender_name || "Them"); }
+  function renderPinBanner() {
+    var b = $("pinBanner"), n = state.pins.length;
+    b.hidden = !n || !!state.folder;
+    if (!n) { closePinList(); return; }
+    var p = state.pins[0];
+    $("pinBannerLabel").textContent = n > 1 ? "Pinned · latest of " + n : "Pinned message";
+    $("pinBannerText").textContent = pinAuthor(p) + ": " + pinSnippet(p);
+    $("pinAll").hidden = n < 2;
+    $("pinAllCount").textContent = String(n);
+    if (!$("pinListView").hidden) renderPinList();
+  }
+  function jumpToMessage(id) {
+    var rows = $("messages").querySelectorAll(".msg-row");
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].dataset.id === String(id)) {
+        rows[i].scrollIntoView({ block: "center", behavior: "smooth" });
+        rows[i].classList.add("flash");
+        (function (r) { setTimeout(function () { r.classList.remove("flash"); }, 1400); })(rows[i]);
+        return true;
+      }
+    }
+    toast("That message is older than what's shown here");
+    return false;
+  }
+  function setPinned(m, pinned) {
+    var id = m.MessageID || m.message_id, conv = state.current;
+    return postJSON("/api/tesla/messages/pin", { message_id: id, pinned: pinned }).then(function (res) {
+      if (conv !== state.current) return;
+      state.pins = (res && res.pins) || [];
+      renderPinBanner();
+      loadMessages(false);
+      toast(pinned ? "Message pinned" : "Message unpinned");
+    }).catch(function (e) {
+      if (e.message !== "login required") toast((pinned ? "Couldn't pin: " : "Couldn't unpin: ") + e.message, "error");
+    });
+  }
+  function renderPinList() {
+    var box = $("pinListItems");
+    box.textContent = "";
+    state.pins.forEach(function (p) {
+      var row = el("div", "pin-item");
+      var go = el("button", "pin-item-main");
+      go.type = "button";
+      go.appendChild(el("span", "pin-item-who", pinAuthor(p) + " · " + fmtTime(p.timestamp_ms)));
+      go.appendChild(el("span", "pin-item-text", pinSnippet(p)));
+      go.addEventListener("click", function () { closePinList(); jumpToMessage(p.message_id); });
+      var un = el("button", "btn btn-ghost pin-item-unpin", "Unpin");
+      un.type = "button";
+      un.addEventListener("click", function () { setPinned(p, false); });
+      row.appendChild(go); row.appendChild(un);
+      box.appendChild(row);
+    });
+  }
+  function openPinList() { renderPinList(); $("pinListView").hidden = false; }
+  function closePinList() { $("pinListView").hidden = true; }
 
   // ---------- folders (view only) ----------
   // Archived / Spam / Blocked are listed live from Google Messages
@@ -1788,25 +2342,44 @@
     $("settingsBtn").addEventListener("click", function () { showSettings(true); });
     $("settingsClose").addEventListener("click", function () { showSettings(false); });
     $("settingsView").addEventListener("click", function (e) { if (e.target === $("settingsView")) showSettings(false); });
+    $("setCarMode").addEventListener("change", function () { setCarMode(this.checked); });
     $("setAttach").addEventListener("click", function () {
       var st = loadSettings();
       st.showAttach = !st.showAttach;
       saveSettings(st);
       applySettings();
     });
+    $("zoomOut").addEventListener("click", function () { stepZoom(-1); });
+    $("zoomIn").addEventListener("click", function () { stepZoom(1); });
     applySettings();
+    // Sign out lives in Settings; it asks first, then POSTs /logout.
+    $("signOutBtn").addEventListener("click", function () { showSettings(false); $("signOutView").hidden = false; });
+    $("signOutCancel").addEventListener("click", function () { $("signOutView").hidden = true; });
+    $("signOutView").addEventListener("click", function (e) { if (e.target === $("signOutView")) $("signOutView").hidden = true; });
     $("recDone").addEventListener("click", stopRecording);
     $("recCancel").addEventListener("click", cancelRecording);
     $("threadHeader").addEventListener("click", function (e) {
-      if ($("backBtn").contains(e.target)) return;
-      showThemeSheet(true);
+      if ($("backBtn").contains(e.target) || $("convMenuBtn").contains(e.target)) return;
+      openChatTheme();
     });
-    $("themeClose").addEventListener("click", function () { showThemeSheet(false); });
-    $("themeReset").addEventListener("click", function () { chooseTheme(null); });
-    $("themeView").addEventListener("click", function (e) { if (e.target === $("themeView")) showThemeSheet(false); });
+    $("ctBack").addEventListener("click", ctBack);
+    $("ctApply").addEventListener("click", ctPrimary);
+    $("ctReset").addEventListener("click", ctReset);
+    $("ctRemovePhoto").addEventListener("click", ctRemovePhoto);
+    $("ctChoose").addEventListener("click", function () { $("ctFile").click(); });
+    $("ctFile").addEventListener("change", ctFilePicked);
     $("replyCancel").addEventListener("click", function () { clearReply(); $("input").focus(); });
     $("backBtn").addEventListener("click", function () { closeThread(); renderConversations(); });
     // message menu + delete confirm
+    $("msgMenuPin").addEventListener("click", function () {
+      var f = state.menuFor;
+      closeMsgMenu();
+      if (f) setPinned(f.msg, !isPinned(f.msg.MessageID));
+    });
+    $("pinBannerMain").addEventListener("click", function () { if (state.pins[0]) jumpToMessage(state.pins[0].message_id); });
+    $("pinAll").addEventListener("click", openPinList);
+    $("pinListClose").addEventListener("click", closePinList);
+    $("pinListView").addEventListener("click", function (e) { if (e.target === $("pinListView")) closePinList(); });
     $("msgMenuDelete").addEventListener("click", function () {
       var f = state.menuFor;
       closeMsgMenu();
@@ -1815,6 +2388,24 @@
     $("confirmCancel").addEventListener("click", hideConfirm);
     $("confirmOk").addEventListener("click", confirmDelete);
     $("confirmView").addEventListener("click", function (e) { if (e.target === $("confirmView") && !$("confirmOk").disabled) hideConfirm(); });
+    // conversation menu: ⋮ in the thread header, or long-press a row
+    $("convMenuBtn").addEventListener("click", function () {
+      if (state.convMenuFor && state.convMenuFor.btn === this) { closeConvMenu(); return; }
+      var id = state.current;
+      var c = state.convs.find(function (x) { return x.ConversationID === id; });
+      openConvMenu(c, this.getBoundingClientRect(), this);
+    });
+    $("convMenuPin").addEventListener("click", function () {
+      var f = state.convMenuFor;
+      closeConvMenu();
+      if (f && !this.disabled) setConvPinned(f.conv, !convPins(f.conv).local);
+    });
+    document.addEventListener("pointerdown", function (e) {
+      if (!state.convMenuFor) return;
+      if ($("convMenu").contains(e.target) || (state.convMenuFor.btn && state.convMenuFor.btn.contains(e.target))) return;
+      closeConvMenu();
+    }, true);
+    $("convItems").parentNode.addEventListener("scroll", function () { if (state.convMenuFor) closeConvMenu(); }, { passive: true });
     document.addEventListener("pointerdown", function (e) {
       if (!state.menuFor) return;
       if ($("msgMenu").contains(e.target) || (state.menuFor.btn && state.menuFor.btn.contains(e.target))) return;
@@ -1825,8 +2416,13 @@
       if (e.key !== "Escape") return;
       if (closeImageViewer()) { /* photo viewer first: it's on top */ }
       else if (!$("confirmView").hidden) { if (!$("confirmOk").disabled) hideConfirm(); }
+      else if (!$("signOutView").hidden) $("signOutView").hidden = true;
+      else if (!$("settingsView").hidden) showSettings(false);
+      else if (!$("pinListView").hidden) closePinList();
       else if (state.menuFor) closeMsgMenu();
+      else if (state.convMenuFor) closeConvMenu();
       else if (!$("newChatView").hidden) closeNewChat();
+      else if (ct) ctBack();
       else return;
       e.preventDefault();
     });
@@ -1870,6 +2466,7 @@
     img.addEventListener("load", function () { $("pairEmojiWrap").classList.add("img-ok"); });
     img.addEventListener("error", function () { $("pairEmojiWrap").classList.remove("img-ok"); });
     window.addEventListener("hashchange", route);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) loadThemes(); });
 
     api("/api/tesla/config").then(function (c) {
       state.config = c;
@@ -1879,6 +2476,7 @@
       var m = /[?&]c=([^&]+)/.exec(location.search);
       if (m) openConversation(decodeURIComponent(m[1]));
     });
+    loadThemes();
     fetchTyping();
     refreshPairing();
     setInterval(refreshPairing, 15000);

@@ -338,6 +338,7 @@ func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
 	if conv.GetUnread() {
 		unread = 1
 	}
+	pinned := conv.GetPinned()
 
 	dbConv := &db.Conversation{
 		ConversationID: conv.GetConversationID(),
@@ -346,6 +347,9 @@ func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
 		Participants:   participantsJSON,
 		LastMessageTS:  conv.GetLastMessageTimestamp() / 1000, // microseconds to milliseconds
 		UnreadCount:    unread,
+		// Pinned on the phone (read-only; pin/unpin there is sent as a
+		// conversation update, which lands here).
+		GooglePinnedSnapshot: &pinned,
 	}
 
 	if err := h.Store.ApplyConversationSnapshot(dbConv); err != nil {

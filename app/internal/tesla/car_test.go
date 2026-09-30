@@ -24,6 +24,22 @@ type fakeCar struct {
 	folder    string
 	folderMsg string
 	deleteErr error
+	pins      map[string]bool
+	convPins  map[string]bool
+}
+
+func (f *fakeCar) PinConversation(id string, pinned bool) (any, error) {
+	if id == "missing" {
+		return nil, statusErr{404, "conversation not found"}
+	}
+	if id == "full" {
+		return nil, statusErr{409, "You can pin up to 20 conversations"}
+	}
+	if f.convPins == nil {
+		f.convPins = map[string]bool{}
+	}
+	f.convPins[id] = pinned
+	return map[string]any{"conversation_id": id, "pinned": pinned, "scope": "local"}, nil
 }
 
 func (f *fakeCar) DeleteMessage(id string) (any, error) {
@@ -51,6 +67,109 @@ func (f *fakeCar) FolderConversations(folder string) (any, error) {
 func (f *fakeCar) FolderMessages(id string) (any, error) {
 	f.folderMsg = id
 	return nil, statusErr{503, "Google Messages isn't connected"}
+}
+
+func (f *fakeCar) PinMessage(id string, pinned bool) (any, error) {
+	if id == "missing" {
+		return nil, statusErr{404, "message not found"}
+	}
+	if f.pins == nil {
+		f.pins = map[string]bool{}
+	}
+	f.pins[id] = pinned
+	return map[string]any{"message_id": id, "pinned": pinned, "scope": "local"}, nil
+}
+func (f *fakeCar) Pins(conv string) (any, error) {
+	out := []map[string]string{}
+	for id, on := range f.pins {
+		if on {
+			out = append(out, map[string]string{"message_id": id, "conversation_id": conv})
+		}
+	}
+	return out, nil
+}
+
+func TestCarPinEndpoints(t *testing.T) {
+	car := &fakeCar{}
+	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) { d.Car = car })
+	// login required
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "http://car.example/api/tesla/pins?conversation_id=c1", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("pins without login: %d", rr.Code)
+	}
+	c := login(t, h)
+	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"m1"}`)); rr.Code != 400 {
+		t.Fatalf("missing pinned flag: %d", rr.Code)
+	}
+	if rr := authedReq(t, h, c, http.MethodGet, "/api/tesla/messages/pin", "", nil); rr.Code != 405 {
+		t.Fatalf("GET pin: %d", rr.Code)
+	}
+	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"missing","pinned":true}`)); rr.Code != 404 {
+		t.Fatalf("missing message: %d", rr.Code)
+	}
+	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"m1","pinned":true}`)); rr.Code != 200 {
+		t.Fatalf("pin: %d %s", rr.Code, rr.Body.String())
+	}
+	rr = authedReq(t, h, c, http.MethodGet, "/api/tesla/pins?conversation_id=c1", "", nil)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"message_id":"m1"`) {
+		t.Fatalf("list: %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := authedReq(t, h, c, http.MethodGet, "/api/tesla/pins", "", nil); rr.Code != 400 {
+		t.Fatalf("list without conv: %d", rr.Code)
+	}
+	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"m1","pinned":false}`)); rr.Code != 200 || car.pins["m1"] {
+		t.Fatalf("unpin: %d", rr.Code)
+	}
+	// cross-origin write refused
+	req := httptest.NewRequest(http.MethodPost, "http://car.example/api/tesla/messages/pin", strings.NewReader(`{"message_id":"m1","pinned":true}`))
+	req.Header.Set("Origin", "https://evil.example")
+	req.AddCookie(c)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || car.pins["m1"] {
+		t.Fatalf("cross-origin pin: %d", rr.Code)
+	}
+}
+
+func TestCarConversationPinEndpoint(t *testing.T) {
+	car := &fakeCar{}
+	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) { d.Car = car })
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "http://car.example/api/tesla/conversations/pin", strings.NewReader(`{"conversation_id":"c1","pinned":true}`)))
+	if rr.Code < 300 || car.convPins["c1"] {
+		t.Fatalf("pin without login: %d", rr.Code)
+	}
+	c := login(t, h)
+	const path = "/api/tesla/conversations/pin"
+	if rr := authedReq(t, h, c, http.MethodGet, path, "", nil); rr.Code != 405 {
+		t.Fatalf("GET: %d", rr.Code)
+	}
+	for body, want := range map[string]int{
+		`{"conversation_id":"c1"}`:                    400,
+		`{"pinned":true}`:                             400,
+		`{"conversation_id":"missing","pinned":true}`: 404,
+		`{"conversation_id":"full","pinned":true}`:    409,
+		`{"conversation_id":"c1","pinned":true}`:      200,
+	} {
+		if rr := authedReq(t, h, c, http.MethodPost, path, "application/json", strings.NewReader(body)); rr.Code != want {
+			t.Fatalf("%s: got %d want %d (%s)", body, rr.Code, want, rr.Body.String())
+		}
+	}
+	if !car.convPins["c1"] {
+		t.Fatal("c1 not pinned")
+	}
+	if rr := authedReq(t, h, c, http.MethodPost, path, "application/json", strings.NewReader(`{"conversation_id":"c1","pinned":false}`)); rr.Code != 200 || car.convPins["c1"] {
+		t.Fatalf("unpin: %d", rr.Code)
+	}
+	req := httptest.NewRequest(http.MethodPost, "http://car.example"+path, strings.NewReader(`{"conversation_id":"c1","pinned":true}`))
+	req.Header.Set("Origin", "https://evil.example")
+	req.AddCookie(c)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || car.convPins["c1"] {
+		t.Fatalf("cross-origin pin: %d", rr.Code)
+	}
 }
 
 func TestCarEndpointsRequireLogin(t *testing.T) {

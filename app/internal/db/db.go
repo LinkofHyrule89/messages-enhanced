@@ -28,6 +28,14 @@ type Conversation struct {
 	IsFavorite         bool   `json:"is_favorite,omitempty"`
 	NotificationMode   string `json:"notification_mode,omitempty"` // all, mentions, muted
 	Tab                string `json:"tab,omitempty"`               // "" = Recent (inbox), "archive", or a custom tab id
+	// GooglePinned mirrors the phone's pinned-conversation flag (read-only).
+	GooglePinned bool `json:"google_pinned,omitempty"`
+	// LocalPinnedAtMS is when the conversation was pinned from the car page
+	// (stored on this server only); 0 = not pinned locally.
+	LocalPinnedAtMS int64 `json:"local_pinned_at_ms,omitempty"`
+	// GooglePinnedSnapshot carries the pinned flag from a Google conversation
+	// snapshot into an upsert; nil leaves the stored flag unchanged.
+	GooglePinnedSnapshot *bool `json:"-"`
 }
 
 type Message struct {
@@ -383,6 +391,11 @@ func (s *Store) migrate() error {
 		"ALTER TABLE conversations ADD COLUMN notification_mode TEXT NOT NULL DEFAULT 'all'",
 		"ALTER TABLE conversations ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
 		"ALTER TABLE conversations ADD COLUMN tab TEXT NOT NULL DEFAULT ''",
+		// Pinned conversations: google_pinned mirrors Google Messages' read-only
+		// Conversation.pinned flag; local_pinned_at (ms, 0 = not pinned) is a
+		// pin set from the car page and stored only here (conversation_pins.go).
+		"ALTER TABLE conversations ADD COLUMN google_pinned INTEGER NOT NULL DEFAULT 0",
+		"ALTER TABLE conversations ADD COLUMN local_pinned_at INTEGER NOT NULL DEFAULT 0",
 		// sha256 of the source URL for URL-sourced avatars (group icons), so an
 		// unchanged URL isn't downloaded again.
 		"ALTER TABLE contact_avatars ADD COLUMN source_url_hash TEXT NOT NULL DEFAULT ''",
@@ -484,6 +497,11 @@ func (s *Store) migrate() error {
 		summary_at INTEGER NOT NULL DEFAULT 0,
 		updated_at INTEGER NOT NULL DEFAULT 0
 	)`)
+
+	// Locally stored pinned messages (see message_pins.go).
+	if err := s.ensureMessagePins(); err != nil {
+		return err
+	}
 
 	if err := s.enableFTS(); err != nil {
 		return err

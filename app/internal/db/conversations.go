@@ -8,7 +8,7 @@ import (
 )
 
 // conversationColumns is the canonical column list for SELECT queries on conversations.
-const conversationColumns = `conversation_id, name, is_group, participants, last_message_ts, unread_count, source_platform, display_protocol, is_favorite, notification_mode, tab`
+const conversationColumns = `conversation_id, name, is_group, participants, last_message_ts, unread_count, source_platform, display_protocol, is_favorite, notification_mode, tab, google_pinned, local_pinned_at`
 
 const (
 	NotificationModeAll      = "all"
@@ -59,8 +59,8 @@ func (s *Store) UpsertConversation(c *Conversation) error {
 	c.DisplayProtocol = normalizeDisplayProtocol(c.DisplayProtocol)
 	notificationMode, hasNotificationMode := explicitNotificationMode(c.NotificationMode)
 	_, err := s.db.Exec(`
-			INSERT INTO conversations (conversation_id, name, is_group, participants, last_message_ts, unread_count, source_platform, display_protocol, is_favorite, notification_mode)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'all'))
+			INSERT INTO conversations (conversation_id, name, is_group, participants, last_message_ts, unread_count, source_platform, display_protocol, is_favorite, notification_mode, google_pinned)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'all'), COALESCE(?, 0))
 			ON CONFLICT(conversation_id) DO UPDATE SET
 				name=excluded.name,
 				is_group=excluded.is_group,
@@ -70,8 +70,9 @@ func (s *Store) UpsertConversation(c *Conversation) error {
 				source_platform=excluded.source_platform,
 				display_protocol=CASE WHEN excluded.display_protocol != '' THEN excluded.display_protocol ELSE conversations.display_protocol END,
 				is_favorite=CASE WHEN excluded.is_favorite THEN 1 ELSE conversations.is_favorite END,
-				notification_mode=CASE WHEN ? != '' THEN ? ELSE conversations.notification_mode END
-		`, c.ConversationID, c.Name, c.IsGroup, c.Participants, c.LastMessageTS, c.UnreadCount, c.SourcePlatform, c.DisplayProtocol, c.IsFavorite, notificationMode, maybeNotificationModeArg(hasNotificationMode, notificationMode), maybeNotificationModeArg(hasNotificationMode, notificationMode))
+				notification_mode=CASE WHEN ? != '' THEN ? ELSE conversations.notification_mode END,
+				google_pinned=CASE WHEN ? IS NULL THEN conversations.google_pinned ELSE excluded.google_pinned END
+		`, c.ConversationID, c.Name, c.IsGroup, c.Participants, c.LastMessageTS, c.UnreadCount, c.SourcePlatform, c.DisplayProtocol, c.IsFavorite, notificationMode, googlePinnedArg(c), maybeNotificationModeArg(hasNotificationMode, notificationMode), maybeNotificationModeArg(hasNotificationMode, notificationMode), googlePinnedArg(c))
 	return err
 }
 
@@ -80,7 +81,7 @@ func (s *Store) GetConversation(id string) (*Conversation, error) {
 	err := s.db.QueryRow(`
 		SELECT `+conversationColumns+`
 		FROM conversations WHERE conversation_id = ?
-		`, id).Scan(&c.ConversationID, &c.Name, &c.IsGroup, &c.Participants, &c.LastMessageTS, &c.UnreadCount, &c.SourcePlatform, &c.DisplayProtocol, &c.IsFavorite, &c.NotificationMode, &c.Tab)
+		`, id).Scan(&c.ConversationID, &c.Name, &c.IsGroup, &c.Participants, &c.LastMessageTS, &c.UnreadCount, &c.SourcePlatform, &c.DisplayProtocol, &c.IsFavorite, &c.NotificationMode, &c.Tab, &c.GooglePinned, &c.LocalPinnedAtMS)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +140,11 @@ func (s *Store) MergeConversationIDs(sourceID, targetID string) error {
 	merged := mergeConversationRecords(source, target, targetID)
 	if err := upsertConversationTx(tx, merged); err != nil {
 		return err
+	}
+	if merged.LocalPinnedAtMS > 0 {
+		if _, err := tx.Exec(`UPDATE conversations SET local_pinned_at = ? WHERE conversation_id = ?`, merged.LocalPinnedAtMS, targetID); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM conversations WHERE conversation_id = ?`, sourceID); err != nil {
 		return err
@@ -301,6 +307,8 @@ func (s *Store) ListConversations(limit int) ([]*Conversation, error) {
 		FROM conversations
 		WHERE conversation_id IN (SELECT conversation_id FROM recent)
 			OR is_favorite = 1
+			OR google_pinned = 1
+			OR local_pinned_at > 0
 		ORDER BY last_message_ts DESC
 	`, limit)
 	if err != nil {
@@ -373,7 +381,7 @@ func scanConversations(rows interface {
 	var convs []*Conversation
 	for rows.Next() {
 		c := &Conversation{}
-		if err := rows.Scan(&c.ConversationID, &c.Name, &c.IsGroup, &c.Participants, &c.LastMessageTS, &c.UnreadCount, &c.SourcePlatform, &c.DisplayProtocol, &c.IsFavorite, &c.NotificationMode, &c.Tab); err != nil {
+		if err := rows.Scan(&c.ConversationID, &c.Name, &c.IsGroup, &c.Participants, &c.LastMessageTS, &c.UnreadCount, &c.SourcePlatform, &c.DisplayProtocol, &c.IsFavorite, &c.NotificationMode, &c.Tab, &c.GooglePinned, &c.LocalPinnedAtMS); err != nil {
 			return nil, err
 		}
 		c.DisplayProtocol = normalizeDisplayProtocol(c.DisplayProtocol)
@@ -388,7 +396,7 @@ func getConversationTx(tx *sql.Tx, id string) (*Conversation, error) {
 	err := tx.QueryRow(`
 		SELECT `+conversationColumns+`
 		FROM conversations WHERE conversation_id = ?
-	`, id).Scan(&c.ConversationID, &c.Name, &c.IsGroup, &c.Participants, &c.LastMessageTS, &c.UnreadCount, &c.SourcePlatform, &c.DisplayProtocol, &c.IsFavorite, &c.NotificationMode, &c.Tab)
+	`, id).Scan(&c.ConversationID, &c.Name, &c.IsGroup, &c.Participants, &c.LastMessageTS, &c.UnreadCount, &c.SourcePlatform, &c.DisplayProtocol, &c.IsFavorite, &c.NotificationMode, &c.Tab, &c.GooglePinned, &c.LocalPinnedAtMS)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -407,8 +415,8 @@ func upsertConversationTx(tx *sql.Tx, c *Conversation) error {
 	c.DisplayProtocol = normalizeDisplayProtocol(c.DisplayProtocol)
 	notificationMode, hasNotificationMode := explicitNotificationMode(c.NotificationMode)
 	_, err := tx.Exec(`
-			INSERT INTO conversations (conversation_id, name, is_group, participants, last_message_ts, unread_count, source_platform, display_protocol, is_favorite, notification_mode)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'all'))
+			INSERT INTO conversations (conversation_id, name, is_group, participants, last_message_ts, unread_count, source_platform, display_protocol, is_favorite, notification_mode, google_pinned)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'all'), COALESCE(?, 0))
 			ON CONFLICT(conversation_id) DO UPDATE SET
 				name=excluded.name,
 				is_group=excluded.is_group,
@@ -418,8 +426,9 @@ func upsertConversationTx(tx *sql.Tx, c *Conversation) error {
 				source_platform=excluded.source_platform,
 				display_protocol=CASE WHEN excluded.display_protocol != '' THEN excluded.display_protocol ELSE conversations.display_protocol END,
 				is_favorite=CASE WHEN excluded.is_favorite THEN 1 ELSE conversations.is_favorite END,
-				notification_mode=CASE WHEN ? != '' THEN ? ELSE conversations.notification_mode END
-		`, c.ConversationID, c.Name, c.IsGroup, c.Participants, c.LastMessageTS, c.UnreadCount, c.SourcePlatform, c.DisplayProtocol, c.IsFavorite, notificationMode, maybeNotificationModeArg(hasNotificationMode, notificationMode), maybeNotificationModeArg(hasNotificationMode, notificationMode))
+				notification_mode=CASE WHEN ? != '' THEN ? ELSE conversations.notification_mode END,
+				google_pinned=CASE WHEN ? IS NULL THEN conversations.google_pinned ELSE excluded.google_pinned END
+		`, c.ConversationID, c.Name, c.IsGroup, c.Participants, c.LastMessageTS, c.UnreadCount, c.SourcePlatform, c.DisplayProtocol, c.IsFavorite, notificationMode, googlePinnedArg(c), maybeNotificationModeArg(hasNotificationMode, notificationMode), maybeNotificationModeArg(hasNotificationMode, notificationMode), googlePinnedArg(c))
 	return err
 }
 
@@ -427,6 +436,8 @@ func mergeConversationRecords(source, target *Conversation, targetID string) *Co
 	if target == nil {
 		merged := *source
 		merged.ConversationID = targetID
+		pinned := source.GooglePinned
+		merged.GooglePinnedSnapshot = &pinned
 		merged.DisplayProtocol = normalizeDisplayProtocol(merged.DisplayProtocol)
 		merged.NotificationMode = normalizeStoredNotificationMode(merged.NotificationMode)
 		return &merged
@@ -447,6 +458,11 @@ func mergeConversationRecords(source, target *Conversation, targetID string) *Co
 		merged.UnreadCount = source.UnreadCount
 	}
 	merged.IsFavorite = merged.IsFavorite || source.IsFavorite
+	pinned := merged.GooglePinned || source.GooglePinned
+	merged.GooglePinnedSnapshot = &pinned
+	if source.LocalPinnedAtMS > merged.LocalPinnedAtMS {
+		merged.LocalPinnedAtMS = source.LocalPinnedAtMS
+	}
 	if merged.SourcePlatform == "" {
 		merged.SourcePlatform = source.SourcePlatform
 	}
@@ -461,6 +477,15 @@ func mergeConversationRecords(source, target *Conversation, targetID string) *Co
 		merged.NotificationMode = normalizeStoredNotificationMode(merged.NotificationMode)
 	}
 	return &merged
+}
+
+// googlePinnedArg is the SQL argument for Conversation.GooglePinnedSnapshot
+// (NULL keeps the stored flag).
+func googlePinnedArg(c *Conversation) any {
+	if c.GooglePinnedSnapshot == nil {
+		return nil
+	}
+	return *c.GooglePinnedSnapshot
 }
 
 func maybeNotificationModeArg(hasMode bool, mode string) string {

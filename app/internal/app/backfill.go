@@ -694,6 +694,7 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 	if conv.GetUnread() {
 		unread = 1
 	}
+	pinned := conv.GetPinned()
 
 	if err := a.Store.ApplyConversationSnapshot(&db.Conversation{
 		ConversationID: conv.GetConversationID(),
@@ -702,6 +703,8 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 		Participants:   participantsJSON,
 		LastMessageTS:  conv.GetLastMessageTimestamp() / 1000,
 		UnreadCount:    unread,
+		// Pinned on the phone (read-only flag).
+		GooglePinnedSnapshot: &pinned,
 	}); err != nil {
 		return err
 	}

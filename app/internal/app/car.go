@@ -446,6 +446,7 @@ func carConversationSnapshot(conv *gmproto.Conversation) *db.Conversation {
 		UnreadCount:        unread,
 		SourcePlatform:     "sms",
 		LastMessagePreview: strings.TrimSpace(conv.GetLatestMessage().GetDisplayContent()),
+		GooglePinned:       conv.GetPinned(),
 	}
 }
 
@@ -482,6 +483,7 @@ func (a *App) CarFolderConversations(folder string) ([]CarFolderConversation, er
 			fc := CarFolderConversation{Conversation: snap, Folder: folder, Status: conv.GetStatus().String()}
 			if local, err := a.Store.GetConversation(id); err == nil && local != nil {
 				fc.Local = true
+				snap.LocalPinnedAtMS = local.LocalPinnedAtMS
 				if snap.Name == "" {
 					snap.Name = local.Name
 				}

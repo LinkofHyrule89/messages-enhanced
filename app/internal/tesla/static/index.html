@@ -6,6 +6,7 @@
 <meta name="color-scheme" content="dark">
 <title>Tesla Messages</title>
 <link rel="stylesheet" href="/tesla/app.css">
+<script src="/tesla/zoom.js"></script>
 </head>
 <body>
 <div id="app" class="app">
@@ -16,7 +17,6 @@
     <button id="pairBtn" class="btn btn-ghost" type="button" hidden>Pair phone</button>
     <button id="settingsBtn" class="btn btn-ghost btn-gear" type="button" aria-label="Settings" title="Settings">⚙</button>
     <a id="cookiesBtn" class="btn btn-ghost" href="/admin/cookies" hidden>Cookies</a>
-    <form method="post" action="/logout" class="inline-form"><button class="btn btn-ghost" type="submit">Sign out</button></form>
   </header>
 
   <main class="panes">
@@ -44,11 +44,22 @@
       <div id="threadView" class="thread-view" hidden>
         <div id="threadHeader" class="thread-header">
           <button id="backBtn" class="btn btn-icon back-btn" type="button" aria-label="Back">‹</button>
-          <button id="themeBtn" class="thread-title-btn" type="button" aria-label="Chat colors">
+          <button id="themeBtn" class="thread-title-btn" type="button" aria-label="Chat theme">
             <span id="threadTitle" class="thread-title"></span>
             <span class="theme-hint" aria-hidden="true">🎨</span>
           </button>
           <div id="sttEngine" class="stt-engine" hidden></div>
+          <button id="convMenuBtn" class="msg-menu-btn conv-menu-btn" type="button" aria-label="Conversation options" aria-haspopup="menu" aria-expanded="false">⋮</button>
+        </div>
+        <div id="pinBanner" class="pin-banner" hidden>
+          <button id="pinBannerMain" class="pin-banner-main" type="button" aria-label="Go to pinned message">
+            <svg viewBox="0 0 24 24" class="pin-banner-icon" aria-hidden="true"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>
+            <span class="pin-banner-copy">
+              <span id="pinBannerLabel" class="pin-banner-label">Pinned message</span>
+              <span id="pinBannerText" class="pin-banner-text"></span>
+            </span>
+          </button>
+          <button id="pinAll" class="btn btn-ghost pin-all" type="button" hidden>All <span id="pinAllCount" class="pin-all-count">2</span></button>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
         <div id="readonlyNote" class="readonly-note" hidden></div>
@@ -104,18 +115,55 @@
     </div>
   </section>
 
-  <section id="themeView" class="sheet-backdrop" hidden>
-    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="themeTitle">
-      <div class="sheet-head">
-        <h2 id="themeTitle" class="sheet-title">Chat colors</h2>
-        <button id="themeClose" class="btn btn-ghost btn-lg" type="button">Close</button>
+  <section id="themeView" class="ct-view" hidden aria-labelledby="ctTitle">
+    <header class="ct-head">
+      <button id="ctBack" class="btn btn-icon ct-back" type="button" aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+      </button>
+      <div class="ct-titles">
+        <h2 id="ctTitle" class="ct-title">Chat theme</h2>
+        <div id="ctSub" class="ct-sub"></div>
       </div>
-      <div class="sheet-label">Presets</div>
-      <div id="themePresets" class="theme-presets"></div>
-      <div class="sheet-label">Bubble color</div>
-      <div id="themeSwatches" class="theme-swatches"></div>
-      <div class="sheet-actions">
-        <button id="themeReset" class="btn btn-ghost btn-lg" type="button">Reset to default</button>
+      <button id="ctApply" class="btn btn-lg ct-apply" type="button" disabled>Apply</button>
+    </header>
+    <div class="ct-body">
+      <div class="ct-preview-col">
+        <div id="ctPreview" class="ct-preview" aria-label="Theme preview">
+          <div class="ct-prev-msgs">
+            <div class="ct-prev-row them"><div class="ct-prev-bubble"><div id="ctPrevName" class="ct-prev-name" hidden></div>Want to grab dinner after work?</div></div>
+            <div class="ct-prev-row me"><div class="ct-prev-bubble">Yes, that sounds great!</div></div>
+            <div class="ct-prev-time">4:35 PM</div>
+          </div>
+          <div class="ct-prev-compose">
+            <div class="ct-prev-input">Message</div>
+            <div class="ct-prev-mic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg></div>
+          </div>
+        </div>
+        <button id="ctReset" class="ct-reset" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"/></svg>
+          <span>Reset to default</span>
+        </button>
+      </div>
+      <div class="ct-options">
+        <div id="ctMain" class="ct-scroll">
+          <div class="ct-label">Colors</div>
+          <div id="ctColors" class="ct-colors" role="group" aria-label="Colors"></div>
+          <div class="ct-label">Wallpapers</div>
+          <div class="ct-photo-actions">
+            <button id="ctChoose" class="ct-choose" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4v12H8V4h12m0-2H8a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-8.5 9.67 1.69 2.26 2.48-3.1L19 15H9zM2 6v14a2 2 0 0 0 2 2h14v-2H4V6z"/></svg>
+              <span>Choose a photo</span>
+            </button>
+            <button id="ctRemovePhoto" class="ct-remove" type="button" hidden>Remove photo</button>
+          </div>
+          <input id="ctFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+          <div id="ctCats" class="ct-cats"></div>
+          <a class="ct-credits" href="/tesla-wallpapers/CREDITS.md" target="_blank" rel="noopener">Wallpaper photo credits &amp; licenses</a>
+        </div>
+        <div id="ctCategory" class="ct-scroll" hidden>
+          <div id="ctPhotos" class="ct-photos"></div>
+          <div id="ctCredit" class="ct-credit"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -127,6 +175,13 @@
         <button id="settingsClose" class="btn btn-ghost btn-lg" type="button">Close</button>
       </div>
       <div class="sheet-label">This device</div>
+      <label class="setting-row car-mode-row" for="setCarMode">
+        <span class="setting-text">
+          <span class="setting-name">Car Mode</span>
+          <span id="carModeDesc" class="setting-desc">Big touch controls for the car screen</span>
+        </span>
+        <input id="setCarMode" class="setting-check" type="checkbox" checked>
+      </label>
       <button id="setAttach" class="setting-row" type="button" role="switch" aria-checked="false">
         <span class="setting-text">
           <span class="setting-name">Show attach button</span>
@@ -134,6 +189,16 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
+      <div class="setting-row zoom-row" role="group" aria-labelledby="zoomName">
+        <span class="setting-text">
+          <span id="zoomName" class="setting-name">UI zoom</span>
+          <span class="setting-desc">Size of text and buttons on this device</span>
+        </span>
+        <button id="zoomOut" class="zoom-btn" type="button" aria-label="Smaller">−</button>
+        <output id="zoomValue" class="zoom-value" aria-live="polite">100%</output>
+        <button id="zoomIn" class="zoom-btn" type="button" aria-label="Larger">+</button>
+      </div>
+      <div id="zoomSteps" class="zoom-steps" role="group" aria-label="UI zoom presets"></div>
       <div class="sheet-label">Folders</div>
       <div class="folder-rows">
         <button class="setting-row folder-row" type="button" data-folder="archived">
@@ -152,6 +217,22 @@
           <span class="folder-chev" aria-hidden="true">›</span>
         </button>
       </div>
+      <div class="sheet-label">Account</div>
+      <button id="signOutBtn" class="setting-row signout-row" type="button">
+        <span class="folder-icon" aria-hidden="true">⎋</span>
+        <span class="setting-text"><span class="setting-name">Sign out</span><span class="setting-desc">Sign this device out of Tesla Messages</span></span>
+      </button>
+    </div>
+  </section>
+
+  <section id="signOutView" class="sheet-backdrop confirm-backdrop" hidden>
+    <div class="sheet confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="signOutTitle" aria-describedby="signOutDesc">
+      <h2 id="signOutTitle" class="confirm-title">Sign out?</h2>
+      <p id="signOutDesc" class="confirm-desc">You'll need the passphrase to sign in again on this device.</p>
+      <form method="post" action="/logout" class="confirm-actions">
+        <button id="signOutCancel" class="btn btn-ghost btn-xl" type="button">Cancel</button>
+        <button id="signOutOk" class="btn btn-danger btn-xl" type="submit">Sign out</button>
+      </form>
     </div>
   </section>
 
@@ -175,11 +256,37 @@
   </section>
 
   <div id="msgMenu" class="msg-menu" role="menu" hidden>
+    <button id="msgMenuPin" class="msg-menu-item" type="button" role="menuitem">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>
+      <span id="msgMenuPinLabel">Pin</span>
+    </button>
     <button id="msgMenuDelete" class="msg-menu-item msg-menu-danger" type="button" role="menuitem">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       <span>Delete</span>
     </button>
   </div>
+
+  <div id="convMenu" class="msg-menu conv-menu" role="menu" hidden>
+    <div id="convMenuTitle" class="conv-menu-title"></div>
+    <button id="convMenuPin" class="msg-menu-item conv-menu-item" type="button" role="menuitem">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg>
+      <span class="conv-menu-copy">
+        <span id="convMenuPinLabel">Pin conversation</span>
+        <span id="convMenuPinNote" class="conv-menu-note"></span>
+      </span>
+    </button>
+  </div>
+
+  <section id="pinListView" class="sheet-backdrop sheet-top" hidden>
+    <div class="sheet sheet-narrow" role="dialog" aria-modal="true" aria-labelledby="pinListTitle">
+      <div class="sheet-head">
+        <h2 id="pinListTitle" class="sheet-title">Pinned messages</h2>
+        <button id="pinListClose" class="btn btn-ghost btn-lg" type="button">Close</button>
+      </div>
+      <p class="pin-list-note">Pins are saved on your Tesla Messages server, so they match on your car, tablet and phone browser (not in the Google Messages app).</p>
+      <div id="pinListItems" class="pin-list"></div>
+    </div>
+  </section>
 
   <section id="confirmView" class="sheet-backdrop confirm-backdrop" hidden>
     <div class="sheet confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmDesc">

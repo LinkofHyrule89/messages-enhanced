@@ -47,6 +47,7 @@ type Server struct {
 	pairer *Pairer
 	admin  *template.Template
 	static http.Handler
+	themes *ThemeStore // nil if the data dir couldn't be prepared
 }
 
 // NewHandler builds the public-facing handler: login + auth gate in front of
@@ -80,6 +81,12 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 		static: http.StripPrefix("/tesla/", http.FileServer(http.FS(sub))),
 	}
 
+	if ts, err := OpenThemeStore(d.DataDir); err != nil {
+		d.Logger.Warn().Err(err).Msg("Chat theme storage unavailable")
+	} else {
+		s.themes = ts
+	}
+
 	protected := http.NewServeMux()
 	protected.HandleFunc("/tesla/", s.serveStatic)
 	protected.HandleFunc("/api/transcribe", s.handleTranscribe)
@@ -90,6 +97,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	protected.HandleFunc("/admin/cookies", s.handleAdminCookies)
 	protected.HandleFunc("/admin/cookies/clear", s.handleAdminCookiesClear)
 	s.registerCarRoutes(protected)
+	s.registerThemeRoutes(protected)
 	protected.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/tesla/", http.StatusFound)
