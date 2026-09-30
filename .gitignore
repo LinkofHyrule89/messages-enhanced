@@ -1,0 +1,46 @@
+# Binaries and build output
+/app/tesla-messages
+/app/openmessage
+/build/
+/dist/
+*.exe
+*.test
+*.out
+*.bin
+*.new
+
+# Runtime data
+/data/
+/app/data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+session.json
+*.log
+server.pid
+*.pid
+
+# Secrets and credentials
+.env
+.env.*
+*cookie*.json
+*cookies*.json
+*.jks
+*.keystore
+play-store-key.json
+local.properties
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+
+# Tooling
+node_modules/
+.DS_Store
+.idea/
+.vscode/
+*.swp

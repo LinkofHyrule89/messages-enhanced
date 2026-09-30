@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tesla Messages · Send cookies</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="card">
+    <h1><span class="logo" aria-hidden="true">💬</span> Tesla Messages</h1>
+    <p class="sub">Send your Google&nbsp;Messages sign-in cookies to your own app.</p>
+
+    <label class="field-label" for="app">App address</label>
+    <input id="app" type="url" inputmode="url" spellcheck="false"
+           autocomplete="off" placeholder="http://localhost:7117">
+    <p id="app-hint" class="hint"></p>
+
+    <button id="send" class="btn btn-primary" type="button">
+      Send cookies to Tesla Messages
+    </button>
+
+    <div id="found" class="found" hidden>
+      <p class="found-title">Required cookies (names only):</p>
+      <ul id="found-list" class="req-list"></ul>
+      <p id="optional" class="hint"></p>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+
+    <div id="actions" class="actions"></div>
+
+    <details class="privacy">
+      <summary>Privacy</summary>
+      <p>Cookie <b>names</b> are shown here to confirm what was found. Cookie
+      <b>values</b> are never shown, logged, or sent anywhere except to the app
+      address above, over your own network. No analytics. No third parties.</p>
+    </details>
+  </main>
+  <script src="lib.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

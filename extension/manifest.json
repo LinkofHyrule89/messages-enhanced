@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Tesla Messages Cookie Sender",
+  "short_name": "TM Cookies",
+  "version": "1.0.1",
+  "description": "Send your Google Messages sign-in cookies to your own Tesla Messages server in one click.",
+  "minimum_chrome_version": "116",
+  "action": {
+    "default_title": "Send Google Messages cookies to Tesla Messages",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "cookies",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://messages.google.com/*",
+    "https://*.google.com/*",
+    "http://*.google.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "incognito": "spanning",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  }
+}

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Tesla Messages</title>
+<link rel="stylesheet" href="/tesla/app.css">
+</head>
+<body>
+<div id="app" class="app">
+  <header class="topbar">
+    <div class="brand">💬 <span>Messages</span></div>
+    <div id="conn" class="pill pill-muted" role="status">Loading…</div>
+    <div class="topbar-spacer"></div>
+    <button id="pairBtn" class="btn btn-ghost" type="button" hidden>Pair phone</button>
+    <button id="settingsBtn" class="btn btn-ghost btn-gear" type="button" aria-label="Settings" title="Settings">⚙</button>
+    <a id="cookiesBtn" class="btn btn-ghost" href="/admin/cookies" hidden>Cookies</a>
+    <form method="post" action="/logout" class="inline-form"><button class="btn btn-ghost" type="submit">Sign out</button></form>
+  </header>
+
+  <main class="panes">
+    <nav class="convlist" aria-label="Conversations">
+      <div class="convlist-head">
+        <div id="convHeadTitle" class="convlist-title">Conversations</div>
+        <div id="folderBanner" class="folder-banner" hidden>
+          <span id="folderName" class="folder-name"></span>
+          <span class="folder-dot" aria-hidden="true">·</span>
+          <button id="folderBack" class="folder-back" type="button">← Back to Inbox</button>
+        </div>
+        <button id="newChatBtn" class="btn btn-ghost new-chat-btn" type="button" aria-label="Start chat" title="Start chat">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          <span>Start chat</span>
+        </button>
+      </div>
+      <div id="convItems" class="conv-items"></div>
+    </nav>
+
+    <section class="thread" aria-label="Conversation">
+      <div id="threadEmpty" class="thread-empty">
+        <div class="thread-empty-icon">💬</div>
+        <p>Pick a conversation</p>
+      </div>
+      <div id="threadView" class="thread-view" hidden>
+        <div id="threadHeader" class="thread-header">
+          <button id="backBtn" class="btn btn-icon back-btn" type="button" aria-label="Back">‹</button>
+          <button id="themeBtn" class="thread-title-btn" type="button" aria-label="Chat colors">
+            <span id="threadTitle" class="thread-title"></span>
+            <span class="theme-hint" aria-hidden="true">🎨</span>
+          </button>
+          <div id="sttEngine" class="stt-engine" hidden></div>
+        </div>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div id="readonlyNote" class="readonly-note" hidden></div>
+        <div id="recBar" class="rec-bar" hidden>
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span id="recLabel">Listening…</span>
+          <span id="recTime" class="rec-time">0:00</span>
+          <span id="recEngine" class="rec-engine"></span>
+          <div class="topbar-spacer"></div>
+          <button id="recCancel" class="btn btn-danger btn-lg" type="button">Cancel</button>
+          <button id="recDone" class="btn btn-primary btn-lg" type="button">Done</button>
+        </div>
+        <div id="replyBar" class="reply-bar" hidden>
+          <svg viewBox="0 0 24 24" class="reply-bar-icon" aria-hidden="true"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>
+          <div class="reply-bar-text">
+            <div class="reply-bar-label">Replying to <span id="replyName" class="reply-name"></span></div>
+            <div id="replySnippet" class="reply-snippet"></div>
+          </div>
+          <button id="replyCancel" class="btn btn-icon reply-cancel" type="button" aria-label="Cancel reply">✕</button>
+        </div>
+        <form id="compose" class="compose" autocomplete="off">
+          <textarea id="input" class="compose-input" rows="1" placeholder="Message" enterkeyhint="send" aria-label="Message"></textarea>
+          <button id="attachBtn" class="btn-attach" type="button" aria-label="Attach photo or video" title="Attach">
+            <svg viewBox="0 0 24 24" class="attach-icon" aria-hidden="true"><path d="M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v10.5a1.5 1.5 0 0 1-3 0V6.5H9v9a3 3 0 0 0 6 0V5a4.5 4.5 0 0 0-9 0v11.5a6 6 0 0 0 12 0v-10h-1.5z"/></svg>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+          <input id="fileInput" type="file" accept="image/*,video/*,audio/*" hidden>
+          <button id="micBtn" class="btn-mic" type="button" aria-label="Dictate message" title="Dictate">
+            <svg viewBox="0 0 24 24" class="mic-icon" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+            <svg viewBox="0 0 24 24" class="stop-icon" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            <span class="spinner" aria-hidden="true"></span>
+          </button>
+          <button id="sendBtn" class="btn-send" type="submit" disabled>Send</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <section id="pairView" class="pair-view" hidden aria-label="Pair your phone">
+    <div class="pair-card">
+      <h1 id="pairTitle">Pair with your phone</h1>
+      <div id="pairEmojiWrap" class="pair-emoji-wrap" hidden>
+        <img id="pairEmojiImg" class="pair-emoji-img" alt="">
+        <div id="pairEmojiText" class="pair-emoji-text"></div>
+      </div>
+      <p id="pairMsg" class="pair-msg"></p>
+      <div class="pair-actions">
+        <button id="pairStart" class="btn btn-primary btn-xl" type="button">Start pairing</button>
+        <button id="pairCancel" class="btn btn-ghost btn-xl" type="button" hidden>Cancel</button>
+        <a id="pairCookies" class="btn btn-ghost btn-xl" href="/admin/cookies" hidden>Cookies page</a>
+        <button id="pairClose" class="btn btn-ghost btn-xl" type="button">Close</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="themeView" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="themeTitle">
+      <div class="sheet-head">
+        <h2 id="themeTitle" class="sheet-title">Chat colors</h2>
+        <button id="themeClose" class="btn btn-ghost btn-lg" type="button">Close</button>
+      </div>
+      <div class="sheet-label">Presets</div>
+      <div id="themePresets" class="theme-presets"></div>
+      <div class="sheet-label">Bubble color</div>
+      <div id="themeSwatches" class="theme-swatches"></div>
+      <div class="sheet-actions">
+        <button id="themeReset" class="btn btn-ghost btn-lg" type="button">Reset to default</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="settingsView" class="sheet-backdrop sheet-top" hidden>
+    <div class="sheet sheet-narrow" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="sheet-head">
+        <h2 id="settingsTitle" class="sheet-title">Settings</h2>
+        <button id="settingsClose" class="btn btn-ghost btn-lg" type="button">Close</button>
+      </div>
+      <div class="sheet-label">This device</div>
+      <button id="setAttach" class="setting-row" type="button" role="switch" aria-checked="false">
+        <span class="setting-text">
+          <span class="setting-name">Show attach button</span>
+          <span class="setting-desc">Send photos, videos and audio from this device</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
+      <div class="sheet-label">Folders</div>
+      <div class="folder-rows">
+        <button class="setting-row folder-row" type="button" data-folder="archived">
+          <span class="folder-icon" aria-hidden="true">🗄</span>
+          <span class="setting-text"><span class="setting-name">Archived</span><span class="setting-desc">View only</span></span>
+          <span class="folder-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="setting-row folder-row" type="button" data-folder="spam">
+          <span class="folder-icon" aria-hidden="true">⚠️</span>
+          <span class="setting-text"><span class="setting-name">Spam</span><span class="setting-desc">View only</span></span>
+          <span class="folder-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="setting-row folder-row" type="button" data-folder="blocked">
+          <span class="folder-icon" aria-hidden="true">🚫</span>
+          <span class="setting-text"><span class="setting-name">Blocked</span><span class="setting-desc">View only · conversations from blocked numbers</span></span>
+          <span class="folder-chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="newChatView" class="newchat-view" hidden aria-label="Start chat">
+    <div class="newchat-card">
+      <div class="newchat-head">
+        <button id="newChatBack" class="btn btn-ghost btn-lg newchat-back" type="button">← Back</button>
+        <h2 id="newChatTitle" class="sheet-title">New conversation</h2>
+      </div>
+      <div class="newchat-to">
+        <label for="newChatTo" class="newchat-to-label">To:</label>
+        <div id="newChatChips" class="newchat-chips"></div>
+        <input id="newChatTo" class="newchat-input" type="text" placeholder="Type a name, phone number, or email" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">
+      </div>
+      <div class="newchat-actions">
+        <button id="newChatGroup" class="btn btn-ghost btn-lg newchat-group" type="button">👥 Start group conversation</button>
+        <button id="newChatNext" class="btn btn-primary btn-lg newchat-next" type="button" hidden disabled>Next</button>
+      </div>
+      <div id="newChatList" class="newchat-list"></div>
+    </div>
+  </section>
+
+  <div id="msgMenu" class="msg-menu" role="menu" hidden>
+    <button id="msgMenuDelete" class="msg-menu-item msg-menu-danger" type="button" role="menuitem">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+      <span>Delete</span>
+    </button>
+  </div>
+
+  <section id="confirmView" class="sheet-backdrop confirm-backdrop" hidden>
+    <div class="sheet confirm-sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmDesc">
+      <h2 id="confirmTitle" class="confirm-title">Delete this message?</h2>
+      <p id="confirmDesc" class="confirm-desc">It's removed from your phone and Messages on the web. The other person still has it.</p>
+      <div class="confirm-actions">
+        <button id="confirmCancel" class="btn btn-ghost btn-xl" type="button">Cancel</button>
+        <button id="confirmOk" class="btn btn-danger btn-xl" type="button">Delete</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="imageViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Photo" hidden>
+    <img id="imageViewerImg" class="image-viewer-img" alt="Photo">
+    <p id="imageViewerCaption" class="image-viewer-caption" hidden></p>
+    <button id="imageViewerClose" class="image-viewer-close" type="button" aria-label="Close photo">✕</button>
+  </div>
+
+  <div id="toast" class="toast" role="alert" hidden></div>
+</div>
+<script src="/tesla/app.js"></script>
+</body>
+</html>
