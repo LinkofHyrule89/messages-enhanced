@@ -4180,3 +4180,31 @@ func TestScheduleMediaRejectsOversizedUpload(t *testing.T) {
 		t.Fatalf("status %d, want 413: %s", resp.StatusCode, b)
 	}
 }
+
+func TestCachedContactAvatarRouteIgnoresCollidingParticipantRow(t *testing.T) {
+	ts := newTestServer(t)
+	now := time.Now().UnixMilli()
+	// Bob's photo cached under participant "29" (conversation namespace).
+	if err := ts.store.UpsertContactAvatar(db.ContactAvatarCandidate{
+		SourcePlatform: "sms", ParticipantID: "29", ContactID: "contact-bob", PhoneNumber: "+15550000029",
+	}, []byte("bob"), "image/png", "hash-bob", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := ts.store.UpsertContactAvatar(db.ContactAvatarCandidate{
+		SourcePlatform: "sms", ParticipantID: "916", ContactID: "contact-alice", PhoneNumber: "+15551110000", Source: "contacts",
+	}, []byte("alice"), "image/png", "hash-alice", now); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(ts.server.URL + "/api/avatar?source=sms&participant_id=29&contact_id=contact-alice&phone=%2B15551110000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "alice" {
+		t.Fatalf("got %d %q, want 200 alice", resp.StatusCode, body)
+	}
+	if cc := resp.Header.Get("Cache-Control"); strings.Contains(cc, "max-age") && !strings.Contains(cc, "max-age=0") {
+		t.Fatalf("Cache-Control = %q; avatar responses must revalidate", cc)
+	}
+}

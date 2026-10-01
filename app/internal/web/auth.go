@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rs/zerolog"
 )
@@ -20,6 +21,7 @@ const (
 	ControlTokenFile     = "control.token"
 	ControlCookieName    = "om_control"
 	AuthModeAcceptAndLog = "accept-and-log"
+	AuthModeEnforce      = "enforce"
 	maxWarnedRemotes     = 1024
 )
 
@@ -31,6 +33,20 @@ type ControlAuth struct {
 	mu                sync.Mutex
 	warned            map[string]struct{}
 	warnedMapOverflow bool
+	// enforce rejects unauthenticated requests to protected local paths
+	// instead of accept-and-log. Turned on when an outer gate (the Tesla
+	// login) fronts this handler and injects the token via Authorize.
+	enforce atomic.Bool
+}
+
+// SetEnforce switches between accept-and-log (false) and enforce (true).
+func (a *ControlAuth) SetEnforce(on bool) { a.enforce.Store(on) }
+
+// Authorize stamps r with the control token as a bearer credential,
+// replacing anything the client sent. Only call it from an in-process
+// gateway that has already authenticated the request.
+func (a *ControlAuth) Authorize(r *http.Request) {
+	r.Header.Set("Authorization", "Bearer "+a.token)
 }
 
 func NewControlAuth(dataDir string, logger zerolog.Logger) (*ControlAuth, error) {
@@ -140,7 +156,12 @@ func (a *ControlAuth) Handler(next http.Handler) http.Handler {
 		if isProtectedLocalPath(r.URL.Path) {
 			classification := a.classify(r)
 			fetchSite := strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))
-			if classification == "missing" || classification == "invalid" || (fetchSite != "" && fetchSite != "same-origin" && fetchSite != "same-site" && fetchSite != "none") {
+			unauthenticated := classification == "missing" || classification == "invalid"
+			if unauthenticated && a.enforce.Load() {
+				httpError(w, "control authentication required", http.StatusUnauthorized)
+				return
+			}
+			if unauthenticated || (fetchSite != "" && fetchSite != "same-origin" && fetchSite != "same-site" && fetchSite != "none") {
 				a.warnOnce(r, classification, fetchSite)
 			}
 		}
@@ -224,5 +245,9 @@ func (a *ControlAuth) Status() map[string]any {
 	if a == nil {
 		return map[string]any{"token_present": false, "mode": AuthModeAcceptAndLog}
 	}
-	return map[string]any{"token_present": a.token != "", "mode": AuthModeAcceptAndLog, "data_dir": a.dataDir}
+	mode := AuthModeAcceptAndLog
+	if a.enforce.Load() {
+		mode = AuthModeEnforce
+	}
+	return map[string]any{"token_present": a.token != "", "mode": mode, "data_dir": a.dataDir}
 }

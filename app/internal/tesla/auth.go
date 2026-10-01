@@ -220,37 +220,55 @@ func safeNext(n string) string {
 	return n
 }
 
+// clientIP identifies the login client for rate limiting. Proxy headers are
+// only trusted when the TCP peer is loopback (cloudflared / a local reverse
+// proxy); a LAN client talking to the port directly can't spoof them to
+// dodge the per-IP limit.
 func clientIP(r *http.Request) string {
-	if ip := r.Header.Get("CF-Connecting-IP"); ip != "" {
-		return ip
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if v := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); v != "" {
+			return v
+		}
+		if v := r.Header.Get("X-Forwarded-For"); v != "" {
+			return strings.TrimSpace(strings.Split(v, ",")[0])
+		}
 	}
 	return host
 }
 
-// loginLimiter allows 5 failures per IP per 5 minutes.
+// loginLimiter allows 5 failures per client IP per 5 minutes, plus a global
+// cap across all clients so a botnet rotating IPs through the public tunnel
+// still can't make meaningful brute-force progress.
 type loginLimiter struct {
-	mu   sync.Mutex
-	hits map[string][]time.Time
+	mu     sync.Mutex
+	hits   map[string][]time.Time
+	global []time.Time
 }
 
 func newLoginLimiter() *loginLimiter { return &loginLimiter{hits: map[string][]time.Time{}} }
 
 const (
-	loginWindow   = 5 * time.Minute
-	loginMaxFails = 5
+	loginWindow         = 5 * time.Minute
+	loginMaxFails       = 5
+	loginGlobalMaxFails = 30
 )
 
-func (l *loginLimiter) prune(ip string, now time.Time) []time.Time {
-	kept := l.hits[ip][:0]
-	for _, t := range l.hits[ip] {
+func pruneTimes(ts []time.Time, now time.Time) []time.Time {
+	kept := ts[:0]
+	for _, t := range ts {
 		if now.Sub(t) < loginWindow {
 			kept = append(kept, t)
 		}
 	}
+	return kept
+}
+
+func (l *loginLimiter) prune(ip string, now time.Time) []time.Time {
+	kept := pruneTimes(l.hits[ip], now)
 	if len(kept) == 0 {
 		delete(l.hits, ip)
 		return nil
@@ -262,11 +280,17 @@ func (l *loginLimiter) prune(ip string, now time.Time) []time.Time {
 func (l *loginLimiter) blockedFor(ip string, now time.Time) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	h := l.prune(ip, now)
-	if len(h) < loginMaxFails {
-		return 0
+	var wait time.Duration
+	l.global = pruneTimes(l.global, now)
+	if len(l.global) >= loginGlobalMaxFails {
+		wait = loginWindow - now.Sub(l.global[len(l.global)-loginGlobalMaxFails])
 	}
-	return loginWindow - now.Sub(h[0])
+	if h := l.prune(ip, now); len(h) >= loginMaxFails {
+		if w := loginWindow - now.Sub(h[len(h)-loginMaxFails]); w > wait {
+			wait = w
+		}
+	}
+	return wait
 }
 
 func (l *loginLimiter) fail(ip string, now time.Time) {
@@ -276,6 +300,7 @@ func (l *loginLimiter) fail(ip string, now time.Time) {
 		l.hits = map[string][]time.Time{}
 	}
 	l.hits[ip] = append(l.prune(ip, now), now)
+	l.global = append(pruneTimes(l.global, now), now)
 }
 
 func (l *loginLimiter) reset(ip string) {
@@ -286,19 +311,30 @@ func (l *loginLimiter) reset(ip string) {
 
 const loginHTML = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0d0f12">
 <title>Tesla Messages · Sign in</title>
+<link rel="manifest" href="/tesla/manifest.webmanifest">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/tesla/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/tesla/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Messages">
 <link rel="stylesheet" href="/tesla/app.css">
+<script src="/tesla/login.js" defer></script>
+<script src="/tesla/pwa.js" defer></script>
 </head><body class="login-body">
 <main class="login-card">
-  <div class="login-logo">💬</div>
-  <h1>Tesla Messages</h1>
+  <div class="login-head"><span class="login-logo" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg></span><h1>Tesla Messages</h1></div>
   <form method="post" action="/login" autocomplete="off">
     <input type="hidden" name="next" value="{{.Next}}">
     <label for="secret">Access secret</label>
-    <input id="secret" name="secret" type="password" autofocus required autocomplete="current-password">
+    <div class="login-row">
+      <input id="secret" name="secret" type="password" autofocus required autocomplete="current-password" enterkeyhint="go">
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </div>
     {{if .Error}}<p class="login-error" role="alert">{{.Error}}</p>{{end}}
-    <button type="submit" class="btn btn-primary btn-block">Sign in</button>
   </form>
 </main>
 </body></html>`

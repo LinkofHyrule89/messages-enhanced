@@ -17,10 +17,9 @@ func (b teslaCarBackend) FolderMessages(id string) (any, error) { return b.a.Car
 func (b teslaCarBackend) PinConversation(id string, pinned bool) (any, error) {
 	return b.a.CarPinConversation(id, pinned)
 }
-
-func (b teslaCarBackend) PinMessage(id string, pinned bool) (any, error) {
-	return b.a.CarPinMessage(id, pinned)
+func (b teslaCarBackend) ArchiveConversation(id string, archived bool) (any, error) {
+	return b.a.CarArchiveConversation(id, archived)
 }
-func (b teslaCarBackend) Pins(conversationID string) (any, error) {
-	return b.a.CarPins(conversationID)
+func (b teslaCarBackend) TrashConversation(id string) (any, error) {
+	return b.a.CarTrashConversation(id)
 }

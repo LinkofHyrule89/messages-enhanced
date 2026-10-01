@@ -19,22 +19,25 @@ Many thanks to that project, and to the mautrix-gmessages authors.
   - inline photos with a full-screen viewer, inline videos, link previews
   - replies, delete, read status, typing indicator, start a new chat
   - a pairing screen and a place to paste Google sign-in cookies
-  - chat themes per conversation: color palettes, 90 bundled wallpapers in
-    9 categories (public-domain / CC0 / CC BY photos from Wikimedia Commons,
-    credited in [`app/internal/tesla/wallpapers/CREDITS.md`](app/internal/tesla/wallpapers/CREDITS.md)),
-    or your own photo; shared by every device signed in to your server
-  - pinned messages: pin any message (yours too) to a banner at the top of the
-    chat, with a list when there are several (stored on your server; Google
-    Messages has no message pins, so they don't show on the phone)
-  - pinned conversations: conversations pinned on your phone show in a
-    "Pinned" section at the top, and you can pin more from the car
-    (long-press a conversation or use the ⋮ menu; up to 20, stored on your
-    server)
-  - UI zoom (75–175%) per device
-  - Car Mode (Settings, on by default): big touch controls for the car
-    screen; turn it off on a tablet or computer for a compact two-pane layout
-    with hover states, keyboard shortcuts and photo upload for chat themes
-  - sign out from Settings
+  - chat themes: color palettes, 90 freely licensed Wikimedia Commons
+    wallpapers in 9 categories (credits in
+    [`app/internal/tesla/wallpapers/CREDITS.md`](app/internal/tesla/wallpapers/CREDITS.md)),
+    or your own photo; saved on the server so every device sees them
+  - pinned conversations: pins from your phone sync read-only from Google,
+    and you can add local pins from the car
+  - UI zoom (75–175%)
+  - Sign out option in Settings
+  - Car Mode (a checkbox in Settings, on by default): turn it off for a
+    two-pane tablet/desktop layout
+  - live typing, emoji picker with bundled Noto Color Emoji, and a
+    conversation list that updates live
+  - installable app (PWA) with its own icon, on phones, tablets and computers
+  - push notifications for new messages, even with the page closed (Web Push;
+    not available in the Tesla browser), with an option to hide message text
+  - in Car Mode, the message box moves up under the conversation title while
+    you type, so the on-screen keyboard can't cover it
+  - conversation ⋮ menu: chat theme, group/contact details, pin, archive and
+    move to trash (archive and trash sync with Google Messages)
   See [`app/TESLA.md`](app/TESLA.md) for details.
 - **`extension/`**: "Tesla Messages Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Tesla Messages

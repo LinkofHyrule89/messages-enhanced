@@ -21,6 +21,11 @@ type GMClient interface {
 	// DeleteMessage deletes one message on the paired phone (delete for me;
 	// the protocol request carries only the message ID).
 	DeleteMessage(messageID string) (*gmproto.DeleteMessageResponse, error)
+	// UpdateConversation changes a conversation on the phone (archive /
+	// unarchive via UpdateData status, delete via DeleteData).
+	UpdateConversation(req *gmproto.UpdateConversationRequest) (*gmproto.UpdateConversationResponse, error)
+	// GetConversation reads one conversation from the phone.
+	GetConversation(conversationID string) (*gmproto.Conversation, error)
 }
 
 // realGMClient wraps *libgm.Client to implement GMClient.
@@ -62,4 +67,12 @@ func (r *realGMClient) DownloadAvatar(ctx context.Context, url string) ([]byte, 
 
 func (r *realGMClient) DeleteMessage(messageID string) (*gmproto.DeleteMessageResponse, error) {
 	return r.gm.DeleteMessage(messageID)
+}
+
+func (r *realGMClient) UpdateConversation(req *gmproto.UpdateConversationRequest) (*gmproto.UpdateConversationResponse, error) {
+	return r.gm.UpdateConversation(req)
+}
+
+func (r *realGMClient) GetConversation(conversationID string) (*gmproto.Conversation, error) {
+	return r.gm.GetConversation(conversationID)
 }

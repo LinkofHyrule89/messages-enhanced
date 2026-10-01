@@ -187,7 +187,13 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		events.PublishStatus(isConnected())
 	}
 	a.OnConversationsChange = events.PublishConversations
-	a.OnMessagesChange = events.PublishMessages
+	// Web Push for the Tesla UI: the hub is created now so it sees every
+	// message change; it stays idle until the Tesla UI opens it below.
+	teslaPush := tesla.NewPushHub()
+	a.OnMessagesChange = func(conversationID string) {
+		events.PublishMessages(conversationID)
+		teslaPush.MessagesChanged(conversationID)
+	}
 	a.OnStatusChange = func(bool) { publishOverallStatus() }
 	// Typing events go to the SSE stream and to the car page's in-memory
 	// tracker (GET /api/tesla/typing, 15s expiry).
@@ -736,20 +742,29 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 			if err != nil {
 				return err
 			}
+			if err := teslaPush.Open(a.DataDir, teslaPushSource(a), logger); err != nil {
+				logger.Warn().Err(err).Msg("Web Push unavailable")
+			}
 			teslaHandler, _, err := tesla.NewHandler(teslaCfg, tesla.Deps{
-				DataDir:      a.DataDir,
-				SessionPath:  a.SessionPath,
-				Inner:        httpHandler,
-				InnerHost:    net.JoinHostPort("127.0.0.1", port),
-				Reconnect:    reconnectGoogle,
-				GoogleStatus: googleStatus,
-				Logger:       logger,
-				Car:          teslaCarBackend{a: a},
-				Typing:       teslaTyping,
+				DataDir:     a.DataDir,
+				SessionPath: a.SessionPath,
+				Inner:       httpHandler,
+				InnerHost:   net.JoinHostPort("127.0.0.1", port),
+				// The Tesla login gates everything; the inner control API
+				// then only accepts requests the gate stamped with the
+				// control token (no accept-and-log hole behind the gate).
+				InnerAuthorize: controlAuth.Authorize,
+				Reconnect:      reconnectGoogle,
+				GoogleStatus:   googleStatus,
+				Logger:         logger,
+				Car:            teslaCarBackend{a: a},
+				Typing:         teslaTyping,
+				Push:           teslaPush,
 			})
 			if err != nil {
 				return fmt.Errorf("initialize Tesla UI: %w", err)
 			}
+			controlAuth.SetEnforce(true)
 			httpHandler = teslaHandler
 			logger.Info().Str("stt", teslaCfg.STTProvider).Str("stt_mode", teslaCfg.STTMode).Bool("fake_pairing", teslaCfg.FakePairing != "").Msg("Tesla Messages UI enabled at " + baseURL + "/tesla/ (login required)")
 		}

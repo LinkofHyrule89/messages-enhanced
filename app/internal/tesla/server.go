@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -21,44 +22,60 @@ var staticFS embed.FS
 
 // Deps are the pieces of the running OpenMessage server the Tesla layer needs.
 type Deps struct {
-	DataDir      string
-	SessionPath  string
-	Inner        http.Handler // OpenMessage's own web/API handler
-	InnerHost    string       // loopback host:port the inner handler expects, e.g. 127.0.0.1:7007
-	Reconnect    func() error // reconnect Google Messages after a new session is saved
-	GoogleStatus func() any
-	Logger       zerolog.Logger
+	DataDir     string
+	SessionPath string
+	Inner       http.Handler // OpenMessage's own web/API handler
+	InnerHost   string       // loopback host:port the inner handler expects, e.g. 127.0.0.1:7007
+	// InnerAuthorize stamps proxied (already logged-in) requests with the
+	// inner control credential. Client-sent Authorization is always dropped.
+	InnerAuthorize func(*http.Request)
+	Reconnect      func() error // reconnect Google Messages after a new session is saved
+	GoogleStatus   func() any
+	Logger         zerolog.Logger
 	// PairingRunner overrides the real Google pairing (tests).
 	PairingRunner PairingRunner
 	// Transcriber overrides the configured STT provider (tests).
 	Transcriber Transcriber
+	// Partial overrides the live-typing engine (tests). When Transcriber is
+	// set and Partial isn't, Transcriber is used if it implements it.
+	Partial PartialTranscriber
 	// Car backs the message menu, Start chat and folder endpoints (nil = 503).
 	Car CarBackend
 	// Typing holds live typing state for GET /api/tesla/typing (nil = none).
 	Typing *TypingTracker
+	// Push sends Web Push notifications for incoming messages (nil = off).
+	Push *PushHub
 }
 
 type Server struct {
-	cfg    Config
-	deps   Deps
-	auth   *Auth
-	stt    Transcriber
-	vault  *CookieVault
-	pairer *Pairer
-	admin  *template.Template
-	static http.Handler
-	themes *ThemeStore // nil if the data dir couldn't be prepared
+	cfg  Config
+	deps Deps
+	auth *Auth
+	stt  Transcriber
+	// partial is the live-typing engine (nil: use stt if it implements
+	// PartialTranscriber); liveGate guards /api/transcribe/partial.
+	partial  PartialTranscriber
+	liveGate *partialGate
+	vault    *CookieVault
+	pairer   *Pairer
+	admin    *template.Template
+	static   http.Handler
+	themes   *ThemeStore // nil if the data dir couldn't be prepared
 }
 
 // NewHandler builds the public-facing handler: login + auth gate in front of
 // the Tesla UI, the Tesla APIs, and (proxied in-process) OpenMessage's API.
 func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	stt := d.Transcriber
+	partial := d.Partial
 	if stt == nil {
 		var err error
 		stt, err = NewTranscriber(cfg)
 		if err != nil {
 			return nil, nil, err
+		}
+		if partial == nil {
+			partial = NewPartialTranscriber(cfg)
 		}
 	}
 	vault := NewCookieVault(d.DataDir, cfg.Secret)
@@ -71,14 +88,16 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 		return nil, nil, err
 	}
 	s := &Server{
-		cfg:    cfg,
-		deps:   d,
-		auth:   NewAuth(cfg.Secret, cfg.SessionTTL, cfg.CookieSecure),
-		stt:    stt,
-		vault:  vault,
-		pairer: NewPairer(vault, runner, cfg.FakePairing, d.Reconnect, cfg.NtfyURL, d.Logger),
-		admin:  template.Must(template.New("admin").Parse(adminCookiesHTML)),
-		static: http.StripPrefix("/tesla/", http.FileServer(http.FS(sub))),
+		cfg:      cfg,
+		deps:     d,
+		auth:     NewAuth(cfg.Secret, cfg.SessionTTL, cfg.CookieSecure),
+		stt:      stt,
+		partial:  partial,
+		liveGate: newPartialGate(),
+		vault:    vault,
+		pairer:   NewPairer(vault, runner, cfg.FakePairing, d.Reconnect, cfg.NtfyURL, d.Logger),
+		admin:    template.Must(template.New("admin").Parse(adminCookiesHTML)),
+		static:   http.StripPrefix("/tesla/", http.FileServer(http.FS(sub))),
 	}
 
 	if ts, err := OpenThemeStore(d.DataDir); err != nil {
@@ -90,6 +109,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	protected := http.NewServeMux()
 	protected.HandleFunc("/tesla/", s.serveStatic)
 	protected.HandleFunc("/api/transcribe", s.handleTranscribe)
+	protected.HandleFunc("/api/transcribe/partial", s.handleTranscribePartial)
 	protected.HandleFunc("/api/tesla/config", s.handleConfig)
 	protected.HandleFunc("/api/tesla/pairing", s.handlePairingStatus)
 	protected.HandleFunc("/api/tesla/pairing/start", s.handlePairingStart)
@@ -98,6 +118,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	protected.HandleFunc("/admin/cookies/clear", s.handleAdminCookiesClear)
 	s.registerCarRoutes(protected)
 	s.registerThemeRoutes(protected)
+	s.registerPushRoutes(protected)
 	protected.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			http.Redirect(w, r, "/tesla/", http.StatusFound)
@@ -110,7 +131,10 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	root.HandleFunc("/login", s.auth.HandleLogin)
 	root.HandleFunc("/logout", s.auth.HandleLogout)
 	root.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
-	root.HandleFunc("/tesla/app.css", s.serveStatic) // login page styling; no secrets
+	root.HandleFunc("/tesla/app.css", s.serveStatic)  // login page styling; no secrets
+	root.HandleFunc("/tesla/login.js", s.serveStatic) // login page keyboard lift; no secrets
+	root.HandleFunc("/tesla/fonts/", s.serveFont)     // bundled Noto Color Emoji (public font files)
+	s.registerPWARoutes(root)                         // manifest, service worker, icons, offline page (no private data)
 	root.Handle("/", s.auth.Require(protected))
 	return root, s, nil
 }
@@ -130,6 +154,10 @@ func (s *Server) proxyInner(w http.ResponseWriter, r *http.Request) {
 	r2.Header.Del("Origin")
 	r2.Header.Del("Referer")
 	r2.Header.Del("Sec-Fetch-Site")
+	r2.Header.Del("Authorization")
+	if s.deps.InnerAuthorize != nil {
+		s.deps.InnerAuthorize(r2)
+	}
 	s.deps.Inner.ServeHTTP(w, r2)
 }
 
@@ -146,6 +174,29 @@ func setPageSecurityHeaders(w http.ResponseWriter) {
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	setPageSecurityHeaders(w)
 	w.Header().Set("Cache-Control", "no-cache")
+	s.static.ServeHTTP(w, r)
+}
+
+// serveFont serves the bundled emoji font files (public, like any web
+// font). The .woff2 chunks never change under the same name, so they get a
+// one-year immutable cache; the CSS and license revalidate.
+func (s *Server) serveFont(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/tesla/fonts/")
+	if name == "" || strings.Contains(name, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	switch path.Ext(name) {
+	case ".woff2":
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Content-Type", "font/woff2")
+	case ".css", ".txt":
+		w.Header().Set("Cache-Control", "no-cache")
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	s.static.ServeHTTP(w, r)
 }
 
@@ -171,16 +222,27 @@ func (s *Server) serverSTTEnabled() bool {
 	return s.stt.Name() != "none" && s.sttMode() != STTModeBuiltin
 }
 
+// sttModel is the configured model name (label only for whisper.cpp).
+func (s *Server) sttModel() string {
+	if t, ok := s.stt.(*OpenAICompatTranscriber); ok {
+		return t.Model
+	}
+	return ""
+}
+
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
-		"stt_mode":        s.sttMode(),
-		"stt_provider":    s.stt.Name(),
-		"stt_label":       ProviderLabel(s.stt.Name()),
-		"stt_enabled":     s.serverSTTEnabled(), // server-side STT usable (kept for older clients)
-		"stt_language":    s.cfg.STTLanguage,
-		"max_record_secs": s.cfg.MaxRecordSecs,
-		"max_audio_bytes": s.cfg.MaxAudioBytes,
-		"fake_pairing":    s.cfg.FakePairing != "",
+		"stt_mode":          s.sttMode(),
+		"stt_provider":      s.stt.Name(),
+		"stt_label":         ProviderLabel(s.stt.Name()),
+		"stt_model":         s.sttModel(),
+		"stt_enabled":       s.serverSTTEnabled(), // server-side STT usable (kept for older clients)
+		"stt_language":      s.cfg.STTLanguage,
+		"stt_live":          s.liveSTTEnabled(), // /api/transcribe/partial (live typing) usable
+		"stt_live_max_secs": MaxPartialSecs,
+		"max_record_secs":   s.cfg.MaxRecordSecs,
+		"max_audio_bytes":   s.cfg.MaxAudioBytes,
+		"fake_pairing":      s.cfg.FakePairing != "",
 	})
 }
 

@@ -498,10 +498,8 @@ func (s *Store) migrate() error {
 		updated_at INTEGER NOT NULL DEFAULT 0
 	)`)
 
-	// Locally stored pinned messages (see message_pins.go).
-	if err := s.ensureMessagePins(); err != nil {
-		return err
-	}
+	// (A message_pins table from the removed per-message pins feature may
+	// still exist in older databases; it is no longer read or written.)
 
 	if err := s.enableFTS(); err != nil {
 		return err

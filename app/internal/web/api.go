@@ -1601,7 +1601,10 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			mimeType = http.DetectContentType(avatar.ImageData)
 		}
 		w.Header().Set("Content-Type", mimeType)
-		w.Header().Set("Cache-Control", "private, max-age=86400")
+		// Revalidate (cheap 304 via the ETag) rather than max-age: the same
+		// lookup URL can legitimately start returning a different photo
+		// (contact changed it, or a mis-keyed cache entry was corrected).
+		w.Header().Set("Cache-Control", "private, no-cache")
 		w.Header().Set("ETag", etag)
 		w.Write(avatar.ImageData)
 	})

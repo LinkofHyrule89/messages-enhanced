@@ -18,7 +18,6 @@
     typing: {},           // conv id -> { sender key -> { name, expires } }
     menuFor: null,        // { msg, btn } while the message ⋮ menu is open
     confirmFor: null,     // message awaiting "Delete this message?"
-    pins: [],             // pinned messages of the open conversation, newest pin first
     convMenuFor: null,    // { conv, btn } while the conversation menu is open
   };
 
@@ -46,6 +45,85 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  // ---------- icons ----------
+  // Every icon is inline SVG (Material Design paths, 24x24): the Tesla
+  // browser has a color-emoji font but its text font lacks many symbol
+  // glyphs (U+22EE "⋮", check marks, arrows...), which render as empty boxes.
+  // Markup uses <span class="ico" data-icon="name"></span>; hydrateIcons()
+  // fills them in, icon(name) builds one in JS.
+  var ICONS = {
+    more: "M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z",
+    check: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+    close: "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+    back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
+    chevLeft: "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z",
+    chevRight: "M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
+    minus: "M19 13H5v-2h14v2z",
+    plus: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
+    palette: "M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3-4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm3 4a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z",
+    chat: "M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z",
+    attach: "M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v10.5a1.5 1.5 0 0 1-3 0V6.5H9v9a3 3 0 0 0 6 0V5a4.5 4.5 0 0 0-9 0v11.5a6 6 0 0 0 12 0v-10h-1.5z",
+    photo: "M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z",
+    video: "M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z",
+    mic: "M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z",
+    mail: "M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z",
+    group: "M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
+    trash: "M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+    info: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z",
+    unarchive: "M20.55 5.22l-1.39-1.68A1.45 1.45 0 0 0 18 3H6c-.47 0-.88.21-1.17.55L3.46 5.22C3.17 5.57 3 6.01 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.49-.17-.93-.45-1.28zM12 9.5l5.5 5.5H14v2h-4v-2H6.5L12 9.5zM5.12 5l.82-1h12l.93 1H5.12z",
+    archive: "M20.54 5.23l-1.39-1.68A1.45 1.45 0 0 0 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5 6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z",
+    warning: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+    block: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM4 12a8 8 0 0 1 12.9-6.31L5.69 16.9A7.9 7.9 0 0 1 4 12zm8 8a7.9 7.9 0 0 1-4.9-1.69L18.31 7.1A8 8 0 0 1 12 20z",
+    logout: "M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8v-2H4V5z",
+    cookie: "M21.95 10.99c-1.79-.03-3.7-1.95-2.68-4.22-2.97 1-5.78-1.59-5.19-4.56C7.11.74 2 6.41 2 12a10 10 0 0 0 10 10c5.89 0 10.54-5.08 9.95-11.01zM8.5 15a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm2-5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4.5 6a1 1 0 1 1 0-2 1 1 0 0 1 0 2z",
+    emoji: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm3.5-9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm-7 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z",
+    clock: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
+    bell: "M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z",
+    send: "M2.01 21 23 12 2.01 3 2 10l15 2-15 2z",
+    install: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+    gear: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.47.47 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z",
+  };
+  function icon(name, cls) {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    svg.setAttribute("class", "ico-svg" + (cls ? " " + cls : ""));
+    var p = document.createElementNS(ns, "path");
+    p.setAttribute("d", ICONS[name] || "");
+    svg.appendChild(p);
+    return svg;
+  }
+  // An element with an icon followed by text (no symbol characters).
+  function iconEl(tag, cls, name, text) {
+    var e = el(tag, cls);
+    e.appendChild(icon(name));
+    if (text) e.appendChild(el("span", null, text));
+    return e;
+  }
+  function hydrateIcons(root) {
+    Array.prototype.forEach.call((root || document).querySelectorAll("[data-icon]"), function (n) {
+      if (n.firstChild && n.firstChild.nodeName.toLowerCase() === "svg") return;
+      n.textContent = "";
+      n.appendChild(icon(n.getAttribute("data-icon")));
+    });
+  }
+  // Spaces the car's text font may not have: Chrome's time format puts a
+  // NARROW NO-BREAK SPACE (U+202F) before AM/PM, which showed as a box under
+  // messages. Also used on link-preview text from other sites.
+  function fontSafe(str) {
+    return String(str == null ? "" : str)
+      .replace(/[\u2000-\u200A\u202F\u205F\u3000]/g, " ")
+      .replace(/[\u200B-\u200D\u2060\uFEFF]/g, "")
+      .replace(/[\u2010\u2011\u2012\u2212]/g, "-");
+  }
+  function clockTime(ms, withSeconds) {
+    var o = { hour: "numeric", minute: "2-digit" };
+    if (withSeconds) o.second = "2-digit";
+    return fontSafe(new Date(ms).toLocaleTimeString([], o));
+  }
+
   var toastTimer = null;
   function toast(msg, kind) {
     var t = $("toast");
@@ -53,7 +131,7 @@
     t.className = "toast" + (kind ? " toast-" + kind : "");
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.hidden = true; }, kind === "error" ? 6000 : 3500);
+    toastTimer = setTimeout(function () { t.hidden = true; }, kind === "error" ? (msg.length > 110 ? 11000 : 6000) : 3500);
   }
   function initials(name) {
     var parts = String(name || "?").replace(/[^\p{L}\p{N} ]/gu, "").trim().split(/\s+/);
@@ -68,18 +146,18 @@
   function fmtTime(ms) {
     if (!ms) return "";
     var d = new Date(ms), now = new Date();
-    if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (d.toDateString() === now.toDateString()) return clockTime(ms);
     var y = new Date(now); y.setDate(now.getDate() - 1);
     if (d.toDateString() === y.toDateString()) return "Yesterday";
-    if (now - d < 6 * 864e5) return d.toLocaleDateString([], { weekday: "short" });
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+    if (now - d < 6 * 864e5) return fontSafe(d.toLocaleDateString([], { weekday: "short" }));
+    return fontSafe(d.toLocaleDateString([], { month: "short", day: "numeric" }));
   }
   function dayLabel(ms) {
     var d = new Date(ms), now = new Date(), y = new Date(now);
     y.setDate(now.getDate() - 1);
     if (d.toDateString() === now.toDateString()) return "Today";
     if (d.toDateString() === y.toDateString()) return "Yesterday";
-    return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+    return fontSafe(d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }));
   }
   function convName(c) { return c.unified_name || c.Name || c.ConversationID; }
   var PLATFORM = { whatsapp: "WhatsApp", signal: "Signal", gchat: "Chat", imessage: "iMessage", telegram: "Telegram" };
@@ -191,7 +269,9 @@
     while (avatarInflight < AVATAR_MAX_INFLIGHT && avatarQueue.length) {
       (function (r) {
         avatarInflight++;
-        var q = "source=" + encodeURIComponent(r.source);
+        // v=2: busts browser-cached responses from before the participant-ID
+        // collision fix (they were served with max-age=86400).
+        var q = "v=2&source=" + encodeURIComponent(r.source);
         if (r.participantIDs[0]) q += "&participant_id=" + encodeURIComponent(r.participantIDs[0]);
         if (r.contactIDs[0]) q += "&contact_id=" + encodeURIComponent(r.contactIDs[0]);
         if (r.numbers[0]) q += "&phone=" + encodeURIComponent(r.numbers[0]);
@@ -251,7 +331,11 @@
     av.textContent = "";
     av.classList.remove("has-photo", "avatar-duo");
     av.style.background = bg;
-    if (!photos.length) { av.textContent = fallbackText; return; }
+    if (!photos.length) {
+      if (fallbackText && fallbackText.icon) av.appendChild(icon(fallbackText.icon, "avatar-ico"));
+      else av.textContent = fallbackText;
+      return;
+    }
     var repaint = function () { if (av.isConnected) { av.dataset.photos = "?"; paintAvatar(av, lookups, fallbackText, bg); } };
     av.classList.add("has-photo");
     if (photos.length === 1) {
@@ -264,7 +348,7 @@
     }
   }
   function buildAvatar(c, cls) {
-    var fallback = c.IsGroup ? "👥" : initials(convName(c));
+    var fallback = c.IsGroup ? { icon: "group" } : initials(convName(c));
     var bg = "hsl(" + hue(c.ConversationID) + " 45% 38%)";
     var av = el("div", cls);
     var lookups = avatarLookups(c);
@@ -282,6 +366,7 @@
     return api("/api/conversations?limit=100").then(function (list) {
       if (state.folder) return;
       state.convs = (list || []).filter(function (c) { return c.tab !== "archive"; });
+      applyConvPatches();
       renderConversations();
     }).catch(function (e) { if (e.message !== "login required") toast("Couldn't load conversations: " + e.message, "error"); });
   }
@@ -291,6 +376,45 @@
   function convPins(c) { return { phone: !!(c && c.google_pinned), local: !!(c && c.local_pinned_at_ms > 0) }; }
   function isConvPinned(c) { var p = convPins(c); return p.phone || p.local; }
   function byRecency(a, b) { return (b.LastMessageTS || 0) - (a.LastMessageTS || 0); }
+  // Live list rows: the list is re-fetched on every message/conversation
+  // event, on SSE (re)connect, when the page becomes visible, and every 8 s
+  // while the event stream is silent (the quick tunnel buffers it). On top
+  // of that, rows are patched from what this page already knows (a send
+  // just made, the newest message of the open thread) so the snippet, time
+  // and order change at once even if the server's list row lags; a patch is
+  // dropped once the server's row is as new.
+  state.convPatch = {}; // conv id -> { ts, preview }
+  function msgPreview(m, conv) {
+    var t = String(m.Body || "").replace(/\s+/g, " ").trim();
+    if (m.MediaID && (!t || GENERIC_MEDIA_BODY[t] || BARE_FILENAME.test(t))) {
+      var mt = String(m.MimeType || "");
+      t = /^image\//.test(mt) ? "Photo" : /^video\//.test(mt) ? "Video" : /^audio\//.test(mt) ? "Audio" : "Attachment";
+    }
+    if (m.IsFromMe) return "You: " + t;
+    if (conv && conv.IsGroup && m.SenderName) return String(m.SenderName).split(" ")[0] + ": " + t;
+    return t;
+  }
+  function patchConv(convID, m) {
+    if (!m || !convID || /^TOMBSTONE/i.test(m.Status || "")) return false;
+    var c = state.convs.find(function (x) { return x.ConversationID === convID; });
+    var ts = m.TimestampMS || Date.now();
+    if (!c || ts <= (c.LastMessageTS || 0) && c.last_message_preview) return false;
+    var p = state.convPatch[convID];
+    if (p && p.ts > ts) return false;
+    state.convPatch[convID] = { ts: ts, preview: msgPreview(m, c) };
+    applyConvPatches();
+    if (!state.folder) renderConversations();
+    return true;
+  }
+  function applyConvPatches() {
+    Object.keys(state.convPatch).forEach(function (id) {
+      var p = state.convPatch[id], c = state.convs.find(function (x) { return x.ConversationID === id; });
+      if (!c) return;
+      if ((c.LastMessageTS || 0) >= p.ts) { delete state.convPatch[id]; return; } // server caught up
+      c.LastMessageTS = p.ts;
+      c.last_message_preview = p.preview;
+    });
+  }
   function renderConversations() {
     var box = $("convItems");
     box.textContent = "";
@@ -313,6 +437,7 @@
       pinned.forEach(function (c) { box.appendChild(buildConvRow(c)); });
       if (rest.length) box.appendChild(el("div", "conv-section", state.folder ? "Other " + state.folder.label.toLowerCase() : "Other conversations"));
     }
+    if (!state.folder) rest.sort(byRecency);
     rest.forEach(function (c) { box.appendChild(buildConvRow(c)); });
     // A live re-render replaces the rows; keep an open long-press menu tied
     // to the new row (and fresh data), or close it if the row is gone.
@@ -344,8 +469,11 @@
       t.textContent = pins.phone ? "Pinned on your phone" : "Pinned";
       icon.appendChild(t);
       time.appendChild(icon);
+      time.classList.add("has-pin");
     }
-    time.appendChild(document.createTextNode(fmtTime(c.LastMessageTS)));
+    // Pinned rows: fixed-width pin column + fixed-width, right-aligned time,
+    // so the pins line up whatever the time text ("6:21 PM", "Mon").
+    time.appendChild(el("span", "conv-time-text", fmtTime(c.LastMessageTS)));
     right.appendChild(time);
     if (c.UnreadCount > 0) right.appendChild(el("div", "badge", String(c.UnreadCount)));
     b.appendChild(av); b.appendChild(mid); b.appendChild(right);
@@ -394,13 +522,16 @@
     if (btn.id === "convMenuBtn") btn.setAttribute("aria-expanded", "true");
     var pins = convPins(c), item = $("convMenuPin");
     var canPin = !state.folder || !!c.local;
+    var google = sourcePlatformOf(c) === "sms";
+    var fname = state.folder && state.folder.name;
     $("convMenuTitle").textContent = convName(c);
-    item.classList.toggle("is-pinned", pins.phone || pins.local);
-    if (pins.phone) {
-      item.disabled = true;
-      $("convMenuPinLabel").textContent = "Pinned on your phone";
-      $("convMenuPinNote").textContent = "Unpin it in Google Messages on your phone";
-    } else if (!canPin) {
+    // Order: Chat theme, Group/Contact details, Pin/Unpin, Archive, Move to trash.
+    $("convMenuTheme").hidden = !(btn.id === "convMenuBtn" && state.current === c.ConversationID && !state.folder);
+    $("convMenuDetailsLabel").textContent = c.IsGroup ? "Group details" : "Contact details";
+    // Pinned on the phone: nothing to do here, so no Pin item at all.
+    item.hidden = pins.phone;
+    item.classList.toggle("is-pinned", pins.local);
+    if (!canPin) {
       item.disabled = true;
       $("convMenuPinLabel").textContent = "Pin conversation";
       $("convMenuPinNote").textContent = "Not available: this conversation isn't stored here";
@@ -409,6 +540,15 @@
       $("convMenuPinLabel").textContent = pins.local ? "Unpin conversation" : "Pin conversation";
       $("convMenuPinNote").textContent = pins.local ? "" : "Pinned in Tesla Messages only, not on your phone";
     }
+    var archived = fname === "archived" || c.tab === "archive";
+    var arch = $("convMenuArchive");
+    arch.hidden = !google || (!!fname && fname !== "archived");
+    arch.querySelector(".conv-menu-ico").dataset.icon = archived ? "unarchive" : "archive";
+    arch.querySelector(".conv-menu-ico").textContent = "";
+    hydrateIcons(arch);
+    $("convMenuArchiveLabel").textContent = archived ? "Unarchive" : "Archive";
+    arch.dataset.archived = archived ? "1" : "";
+    $("convMenuTrash").hidden = !google;
     var menu = $("convMenu");
     menu.hidden = false;
     placePopover(menu, anchor);
@@ -419,6 +559,87 @@
     $("convMenu").hidden = true;
     if (f && f.btn) { f.btn.classList.remove("open"); if (f.btn.id === "convMenuBtn") f.btn.setAttribute("aria-expanded", "false"); }
   }
+  // ----- Group / Contact details -----
+  function openDetails(c) {
+    var people = conversationParticipants(c);
+    var others = people.filter(function (p) { return p && !isMe(p); });
+    $("detailsTitle").textContent = c.IsGroup ? "Group details" : "Contact details";
+    var slot = $("detailsAvatar");
+    slot.textContent = "";
+    slot.appendChild(buildAvatar(c, "avatar details-avatar"));
+    $("detailsName").textContent = convName(c);
+    var sub;
+    if (c.IsGroup) sub = people.length ? people.length + " people, including you" : "Group conversation";
+    else sub = (others[0] && others[0].number && others[0].number !== convName(c)) ? others[0].number : (others[0] && others[0].number ? "" : "No number available");
+    $("detailsSub").textContent = sub;
+    var list = $("detailsMembers");
+    list.textContent = "";
+    $("detailsMembersLabel").hidden = !c.IsGroup;
+    list.hidden = !c.IsGroup;
+    if (c.IsGroup) {
+      var rows = others.slice().sort(function (a, b) { return String(a.name || a.number).localeCompare(String(b.name || b.number)); });
+      var me = people.filter(isMe)[0];
+      if (me) rows.push(me);
+      rows.forEach(function (p) {
+        var row = el("div", "details-member");
+        var name = isMe(p) ? "You" : (p.name || p.number || "Unknown");
+        row.appendChild(contactAvatar({ name: isMe(p) ? (p.name || "You") : name, number: p.number, participant_id: isMe(p) ? "" : p.id, contact_id: isMe(p) ? "" : p.contact_id }, "avatar details-member-avatar"));
+        var txt = el("div", "details-member-text");
+        txt.appendChild(el("div", "details-member-name", name));
+        if (p.number && p.number !== name) txt.appendChild(el("div", "details-member-num", p.number));
+        row.appendChild(txt);
+        list.appendChild(row);
+      });
+      if (!rows.length) list.appendChild(el("div", "details-empty", "Member list isn't available for this conversation."));
+    }
+    $("detailsView").hidden = false;
+  }
+  function closeDetails() { $("detailsView").hidden = true; }
+
+  // ----- Archive / Move to trash (Google Messages, on the phone) -----
+  function dropConversation(id) {
+    if (state.current === id) closeThread();
+    state.convs = state.convs.filter(function (x) { return x.ConversationID !== id; });
+    renderConversations();
+  }
+  function setConvArchived(c, archived) {
+    var id = c.ConversationID;
+    toast(archived ? "Archiving…" : "Moving back to the inbox…");
+    return postJSON("/api/tesla/conversations/archive", { conversation_id: id, archived: archived }).then(function () {
+      // Archiving takes it out of the list; unarchiving takes it out of the
+      // Archived folder.
+      dropConversation(id);
+      toast(archived ? "Archived. Find it in Settings → Folders → Archived." : "Moved back to the inbox");
+      if (!state.folder) loadConversations();
+    }).catch(function (e) { toast((archived ? "Couldn't archive: " : "Couldn't unarchive: ") + e.message, "error"); });
+  }
+  var trashFor = null;
+  function askTrash(c) {
+    trashFor = c;
+    $("trashTitle").textContent = "Move “" + convName(c) + "” to trash?";
+    $("trashOk").disabled = false;
+    $("trashOk").textContent = "Move to trash";
+    $("trashView").hidden = false;
+    $("trashCancel").focus();
+  }
+  function hideTrash() { $("trashView").hidden = true; trashFor = null; }
+  function confirmTrash() {
+    var c = trashFor;
+    if (!c) return hideTrash();
+    $("trashOk").disabled = true;
+    $("trashOk").textContent = "Moving…";
+    postJSON("/api/tesla/conversations/trash", { conversation_id: c.ConversationID }).then(function () {
+      hideTrash();
+      dropConversation(c.ConversationID); // back to the list
+      toast("Moved to trash");
+      if (!state.folder) loadConversations();
+    }).catch(function (e) {
+      $("trashOk").disabled = false;
+      $("trashOk").textContent = "Move to trash";
+      toast("Couldn't move it to trash: " + e.message, "error");
+    });
+  }
+
   function setConvPinned(c, pinned) {
     return postJSON("/api/tesla/conversations/pin", { conversation_id: c.ConversationID, pinned: pinned }).then(function (res) {
       state.convs.forEach(function (x) {
@@ -798,6 +1019,7 @@
   // ---------- thread ----------
   function openConversation(id, nameHint) {
     if (state.rec) cancelRecording();
+    showEmoji(false);
     closeMsgMenu();
     closeConvMenu();
     closeImageViewer();
@@ -816,8 +1038,6 @@
     refreshTheme(id);
     state.nodes = {};
     clearReply();
-    state.pins = [];
-    renderPinBanner();
     $("messages").textContent = "";
     renderConversations();
     loadMessages(true);
@@ -827,16 +1047,19 @@
   }
   function closeThread() {
     if (state.rec) cancelRecording();
+    showEmoji(false);
     closeImageViewer();
     if (ct) closeChatTheme();
     closeMsgMenu();
     clearReply();
-    closePinList();
-    state.pins = []; renderPinBanner();
+    setComposerFloat(false);
     state.current = null; document.body.classList.remove("has-thread", "readonly-thread");
     $("threadView").hidden = true; $("threadEmpty").hidden = false;
   }
-  function loadMessages(scroll) {
+  // quiet: a background refresh (live event, poll, send follow-up) that
+  // skips re-rendering when nothing changed, so polling doesn't redraw.
+  var lastRender = { id: null, sig: "" };
+  function loadMessages(scroll, quiet) {
     var id = state.current;
     if (!id) return Promise.resolve();
     var path = "/api/conversations/" + encodeURIComponent(id) + "/messages?limit=80";
@@ -847,13 +1070,18 @@
         path = "/api/tesla/folder/messages?conversation_id=" + encodeURIComponent(id);
       }
     }
-    var pinsP = state.folder ? Promise.resolve(null) : loadPins(id);
     return api(path).then(function (msgs) {
-      return pinsP.then(function () {
+      return Promise.resolve().then(function () {
         if (id !== state.current) return;
-        renderMessages((msgs || []).slice().reverse(), scroll);
+        state.serverMsgs = { id: id, msgs: (msgs || []).slice().reverse() };
+        if (!state.folder && msgs && msgs.length) patchConv(id, msgs.filter(function (m) { return !/^TOMBSTONE/i.test(m.Status || ""); })[0]);
+        var merged = mergeLocal(id, state.serverMsgs.msgs);
+        var sig = JSON.stringify(msgs || []) + "|" + localSig(id);
+        if (quiet && !scroll && lastRender.id === id && lastRender.sig === sig) return;
+        lastRender.id = id; lastRender.sig = sig;
+        renderMessages(merged, scroll);
       });
-    }).catch(function (e) { if (e.message !== "login required") toast("Couldn't load messages: " + e.message, "error"); });
+    }).catch(function (e) { if (!quiet && e.message !== "login required") toast("Couldn't load messages: " + e.message, "error"); });
   }
   // ---------- attachments ----------
   // Media bytes come from OpenMessage's GET /api/media/<message id> (same
@@ -864,7 +1092,7 @@
   var IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif)(\?|#|$)/i;
   var BARE_FILENAME = /^[^\s\/\\]+\.[a-z0-9]{2,5}$/i;
   var GENERIC_MEDIA_BODY = { "[Photo]": 1, "[Video]": 1, "[Audio]": 1, "[Voice note]": 1, "[Sticker]": 1, "[Attachment]": 1, "[Image]": 1 };
-  function mediaURL(m) { return "/api/media/" + encodeURIComponent(m.MessageID); }
+  function mediaURL(m) { return m.previewURL || "/api/media/" + encodeURIComponent(m.MessageID); }
   function isVideoMessage(m) {
     if (!m || !m.MediaID) return false;
     var mime = String(m.MimeType || "").toLowerCase();
@@ -887,7 +1115,7 @@
     return caption;
   }
   function attachmentLink(m, fallbackType) {
-    var a = el("a", "body media-link", "📎 " + (m.MimeType || fallbackType || "attachment"));
+    var a = iconEl("a", "body media-link", "attach", m.MimeType || fallbackType || "attachment");
     a.href = mediaURL(m);
     a.target = "_blank";
     a.rel = "noopener";
@@ -1083,9 +1311,9 @@
     }
     var copy = el("div", "link-card-copy");
     var site = p.site_name || p.domain || "";
-    if (site) copy.appendChild(el("div", "link-card-site", site));
-    if (p.title) copy.appendChild(el("div", "link-card-title", p.title));
-    if (p.description) copy.appendChild(el("div", "link-card-desc", p.description));
+    if (site) copy.appendChild(el("div", "link-card-site", fontSafe(site)));
+    if (p.title) copy.appendChild(el("div", "link-card-title", fontSafe(p.title)));
+    if (p.description) copy.appendChild(el("div", "link-card-desc", fontSafe(p.description)));
     a.appendChild(copy);
     slot.appendChild(a);
   }
@@ -1231,6 +1459,7 @@
     msgs.forEach(function (m) { if (m && m.MessageID) byID[String(m.MessageID)] = m; });
     var lastMine = -1;
     msgs.forEach(function (m, i) { if (m.IsFromMe && !/^TOMBSTONE/i.test(m.Status || "")) lastMine = i; });
+    state.mineSending = false;
     var menuOpenFor = state.menuFor && state.menuFor.msg.MessageID, menuStillThere = false;
     msgs.forEach(function (m, idx) {
       var day = new Date(m.TimestampMS).toDateString();
@@ -1252,16 +1481,12 @@
       } else if (m.Body) {
         appendBodyWithPreview(bubble, m, m.Body);
       } else {
-        bubble.appendChild(el("div", "body", m.MediaID ? "📎 " + (m.MimeType || "attachment") : ""));
+        bubble.appendChild(m.MediaID ? iconEl("div", "body media-label", "attach", m.MimeType || "attachment") : el("div", "body", ""));
       }
-      var meta = el("div", "meta", new Date(m.TimestampMS).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
-      if (isPinned(m.MessageID)) {
-        row.classList.add("pinned");
-        var pm = svgIcon(PIN_ICON); pm.setAttribute("class", "pin-mark");
-        meta.insertBefore(pm, meta.firstChild);
-      }
+      var meta = el("div", "meta", clockTime(m.TimestampMS) + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
       bubble.appendChild(meta);
-      var mb = el("button", "msg-menu-btn", "⋮");
+      var mb = el("button", "msg-menu-btn");
+      mb.appendChild(icon("more"));
       mb.type = "button";
       mb.setAttribute("aria-label", "More options");
       mb.setAttribute("aria-haspopup", "menu");
@@ -1275,7 +1500,7 @@
         state.menuFor.btn = mb;
       }
       // Sent messages get the ⋮ menu too (left of the bubble).
-      if (m.IsFromMe && !isSendPlaceholder(m)) row.appendChild(mb);
+      if (m.IsFromMe && !isSendPlaceholder(m) && !m.local) row.appendChild(mb);
       row.appendChild(bubble);
       if (!m.IsFromMe) {
         var rb = el("button", "reply-btn");
@@ -1288,8 +1513,17 @@
         row.appendChild(mb);
       }
       box.appendChild(row);
-      if (idx === lastMine) {
+      var ls = localStatus(m);
+      if (m.local && !/FAIL/.test(m.Status)) state.mineSending = true;
+      if (ls) {
+        var lsn = el(ls.retry ? "button" : "div", "msg-status" + (ls.cls ? " " + ls.cls : ""), ls.text);
+        if (ls.retry) { lsn.type = "button"; lsn.title = m.error || "Tap to send again"; lsn.addEventListener("click", function () { retrySend(m); }); }
+        box.appendChild(lsn);
+      } else if (idx === lastMine) {
+        if (isSendPlaceholder(m) || /SENDING|YET_TO_SEND|VALIDATING|PROCESSING|AWAITING_RETRY/.test(String(m.Status || "").toUpperCase())) state.mineSending = true;
         var st = sentStatus(m.Status);
+        // Google accepted our POST but hasn't echoed its copy yet: "Sent".
+        if (st && st.text === "Sending…" && state.posted[m.MessageID]) st = { text: "Sent" };
         if (st) box.appendChild(el("div", "msg-status" + (st.cls ? " " + st.cls : ""), st.text));
       }
     });
@@ -1318,26 +1552,131 @@
     // No sending while dictating: finish (Done) and review first.
     $("sendBtn").disabled = !t.value.trim() || state.transcribing || !!state.rec;
   }
+  // ---------- optimistic sends ----------
+  // Tapping Send clears the box and shows the bubble ("Sending…") right
+  // away, before any network call. The bubble is a local message whose id
+  // is the send's idempotency key, which is also the id the server stores
+  // its placeholder under, so once the server has it (same id) or Google's
+  // real copy arrives (same rule as dropEchoedPlaceholders) the local one
+  // is dropped: no duplicates. Status then comes from the server rows via
+  // the normal refresh path (live events / polling / followSend), and a
+  // successful POST (Google accepted it) shows "Sent" meanwhile. Errors
+  // leave a "Failed – tap to retry" bubble. Photos/videos show a local
+  // preview (object URL) until the server has the real one.
+  state.local = {};    // convID -> [local message]
+  state.posted = {};   // idempotency key -> true once POST /api/send(-media) succeeded
+  state.dismissed = {}; // failed rows replaced by a retry (this session)
+  function localSig(convID) {
+    return JSON.stringify((state.local[convID] || []).map(function (l) { return [l.MessageID, l.Status, !!state.posted[l.MessageID]]; })) +
+      JSON.stringify(Object.keys(state.posted)) + JSON.stringify(Object.keys(state.dismissed));
+  }
+  function dropLocal(l) {
+    var arr = state.local[l.ConversationID] || [];
+    var i = arr.indexOf(l);
+    if (i >= 0) arr.splice(i, 1);
+    if (l.previewURL) setTimeout(function () { try { URL.revokeObjectURL(l.previewURL); } catch (e) {} }, 60000);
+  }
+  // Server messages (oldest first) + this conversation's local sends that
+  // the server doesn't have yet.
+  function mergeLocal(convID, msgs) {
+    msgs = msgs.filter(function (m) { return !state.dismissed[m.MessageID]; });
+    var loc = (state.local[convID] || []).slice();
+    if (!loc.length) return msgs;
+    var byID = {}, used = [], hide = {};
+    msgs.forEach(function (m) { byID[m.MessageID] = m; });
+    loc.forEach(function (l) {
+      var srv = byID[l.MessageID];
+      if (srv) {
+        // Server placeholder for a photo: keep the local preview until
+        // Google's real copy (with the real media) replaces it.
+        if (l.previewURL && isSendPlaceholder(srv)) { hide[srv.MessageID] = 1; return; }
+        dropLocal(l); return;
+      }
+      var echo = msgs.filter(function (r) { return used.indexOf(r) < 0 && placeholderMatches(l, r); })[0];
+      if (echo) { used.push(echo); dropLocal(l); }
+    });
+    loc = state.local[convID] || [];
+    return msgs.filter(function (m) { return !hide[m.MessageID]; }).concat(loc);
+  }
+  function renderCurrent(scroll) {
+    var id = state.current;
+    if (!id) return;
+    var base = state.serverMsgs && state.serverMsgs.id === id ? state.serverMsgs.msgs : [];
+    lastRender.id = id; lastRender.sig = ""; // the next refresh always renders
+    renderMessages(mergeLocal(id, base), scroll);
+  }
+  function localStatus(m) {
+    if (m.local) {
+      if (/FAIL/.test(m.Status)) return { text: "Failed – tap to retry", cls: "failed", retry: true };
+      return state.posted[m.MessageID] ? { text: "Sent" } : { text: "Sending…" };
+    }
+    // A server row for a text send that failed (stored under our key): retry too.
+    if (m.IsFromMe && /^tm-/.test(String(m.MessageID || "")) && /FAIL/i.test(m.Status || "") && String(m.Body || "").trim() && !m.MediaID)
+      return { text: "Failed – tap to retry", cls: "failed", retry: true };
+    return null;
+  }
+  function postLocal(l) {
+    var convID = l.ConversationID;
+    var p = l.file
+      ? api("/api/send-media", { method: "POST", body: l.form() })
+      : postJSON("/api/send", l.req);
+    p.then(function () {
+      state.posted[l.MessageID] = true;
+      if (state.current === convID) { renderCurrent(false); loadMessages(false, true); }
+      loadConversations();
+      followSend(convID);
+    }).catch(function (e) {
+      if (e.message === "login required") return;
+      l.Status = "OUTGOING_FAILED";
+      l.error = e.message;
+      if (state.current === convID) renderCurrent(false);
+      toast("Not sent: " + e.message, "error");
+    });
+  }
+  function retrySend(m) {
+    var convID = m.ConversationID || state.current;
+    if (m.local) dropLocal(m); else state.dismissed[m.MessageID] = true;
+    var nm = newLocal(convID, m.Body || "", m.ReplyToID || "", m.file || null, m.caption || "");
+    if (state.current === convID) renderCurrent(true);
+    postLocal(nm);
+  }
+  function newLocal(convID, text, replyID, file, caption) {
+    var key = sendKey();
+    var l = { MessageID: key, ConversationID: convID, IsFromMe: true, Body: file ? caption : text, TimestampMS: Date.now(),
+      Status: "OUTGOING_SENDING", ReplyToID: replyID || "", local: true };
+    if (file) {
+      var type = String(file.type || "");
+      l.file = file; l.caption = caption;
+      l.MediaID = "local"; l.MimeType = type || "application/octet-stream";
+      if (/^(image|video)\//.test(type)) { try { l.previewURL = URL.createObjectURL(file); } catch (e) {} }
+      l.form = function () {
+        var form = new FormData();
+        form.append("conversation_id", convID);
+        form.append("idempotency_key", key);
+        form.append("file", file, file.name || "attachment");
+        if (replyID) form.append("reply_to_id", replyID);
+        if (caption) form.append("caption", caption);
+        return form;
+      };
+    } else {
+      l.req = { conversation_id: convID, message: text, idempotency_key: key };
+      if (replyID) l.req.reply_to_id = replyID;
+    }
+    (state.local[convID] || (state.local[convID] = [])).push(l);
+    patchConv(convID, l);
+    return l;
+  }
   function sendMessage(ev) {
     if (ev) ev.preventDefault();
     var t = $("input"), text = t.value.trim();
     if (!text || !state.current || state.rec || state.transcribing) return;
-    var btn = $("sendBtn");
-    btn.disabled = true;
     var reply = state.replyTo;
-    var req = {
-      conversation_id: state.current,
-      message: text,
-      idempotency_key: "tm-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10),
-    };
-    if (reply) req.reply_to_id = reply.MessageID;
-    postJSON("/api/send", req).then(function () {
-      t.value = ""; autosize();
-      if (reply && state.replyTo === reply) clearReply();
-      loadMessages(true); loadConversations();
-    }).catch(function (e) {
-      toast("Not sent: " + e.message, "error");
-    }).finally(function () { autosize(); });
+    var l = newLocal(state.current, text, reply ? reply.MessageID : "", null, "");
+    t.value = ""; lastSel = null; autosize();
+    if (reply) clearReply();
+    showEmoji(false);
+    renderCurrent(true);   // the bubble shows before any network call
+    postLocal(l);
   }
   // ---------- attachments (send) ----------
   // Mirrors the desktop page's POST /api/send-media FormData: conversation_id,
@@ -1348,7 +1687,7 @@
   var MAX_MEDIA_BYTES = 128 << 20; // server's messaging.DefaultMaxMediaBytes
   function sendKey() { return "tm-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10); }
   function onAttachTap() {
-    if (state.sendingMedia || !state.current) return;
+    if (!state.current) return;
     var f = $("fileInput");
     f.value = "";
     f.click();
@@ -1366,7 +1705,7 @@
     b.setAttribute("aria-label", busy ? "Sending attachment" : "Attach photo or video");
   }
   function sendMedia(file) {
-    if (state.sendingMedia || !state.current) return;
+    if (!state.current) return;
     if (file.size > MAX_MEDIA_BYTES) { toast("That file is too large to send (limit 128 MB).", "error"); return; }
     var convID = state.current;
     var c = state.convs.find(function (x) { return x.ConversationID === convID; });
@@ -1375,24 +1714,11 @@
     var captioned = (platform === "whatsapp" && type.indexOf("audio/") !== 0) || platform === "signal";
     var t = $("input"), caption = captioned ? t.value.trim() : "";
     var reply = state.replyTo && (platform === "whatsapp" || platform === "signal") ? state.replyTo : null;
-    var form = new FormData();
-    form.append("conversation_id", convID);
-    form.append("idempotency_key", sendKey());
-    form.append("file", file, file.name || "attachment");
-    if (reply) form.append("reply_to_id", reply.MessageID);
-    if (caption) form.append("caption", caption);
-    var kind = type.indexOf("image/") === 0 ? "photo" : type.indexOf("video/") === 0 ? "video" : type.indexOf("audio/") === 0 ? "audio" : "attachment";
-    setAttachBusy(true);
-    toast("Sending " + kind + "…");
-    api("/api/send-media", { method: "POST", body: form }).then(function () {
-      if (caption && t.value.trim() === caption) { t.value = ""; autosize(); }
-      if (reply && state.replyTo === reply) clearReply();
-      toast("Sent");
-      if (state.current === convID) loadMessages(true);
-      loadConversations();
-    }).catch(function (e) {
-      if (e.message !== "login required") toast("Not sent: " + e.message, "error");
-    }).then(function () { setAttachBusy(false); });
+    var l = newLocal(convID, "", reply ? reply.MessageID : "", file, caption);
+    if (caption && t.value.trim() === caption) { t.value = ""; lastSel = null; autosize(); }
+    if (reply && state.replyTo === reply) clearReply();
+    renderCurrent(true);   // local preview with "Sending…" right away
+    postLocal(l);
   }
 
   // ---------- device settings ----------
@@ -1412,43 +1738,64 @@
   // vh/vw-based sizes divide by --z so full-height layouts and overlays fit.
   var PREFS = window.TMPrefs; // zoom.js (runs in <head>, before first paint)
   var ZOOM_STEPS = PREFS.ZOOM_STEPS;
-  function zoomOf(s) { return PREFS.zoomOf(s); }
-  function applyZoom(z) {
+  // Default (zoom unset): 50% in Car Mode on the car-sized screen, 100% on
+  // phones and in desk mode. "auto" (picked in Settings) fits the layout to
+  // the window; see zoom.js. A number is a manual zoom and is kept as chosen.
+  function renderZoom() {
     var s = loadSettings();
-    s.zoom = z;
-    PREFS.apply(s);
-    $("zoomValue").textContent = z + "%";
-    $("zoomOut").disabled = z === ZOOM_STEPS[0];
-    $("zoomIn").disabled = z === ZOOM_STEPS[ZOOM_STEPS.length - 1];
+    var car = PREFS.carMode(s), auto = PREFS.isAuto(s), z = PREFS.effectiveZoom(s), dflt = PREFS.isDefault(s);
+    $("zoomValue").textContent = (auto ? "Auto " : "") + z + "%";
+    $("zoomDesc").textContent = car
+      ? (auto ? "Auto: fits the car layout to this window (" + z + "%)"
+        : dflt ? "Default for this screen (" + z + "%) · Auto fits it to the window"
+        : "Size of text and buttons on this device · Auto fits it to the window")
+      : "Size of text and buttons on this device";
+    $("zoomOut").disabled = z <= ZOOM_STEPS[0];
+    $("zoomIn").disabled = z >= ZOOM_STEPS[ZOOM_STEPS.length - 1];
     var box = $("zoomSteps");
     if (!box.firstChild) {
-      ZOOM_STEPS.forEach(function (v) {
-        var b = el("button", "zoom-step", v + "%");
+      ["auto"].concat(ZOOM_STEPS).forEach(function (v) {
+        var b = el("button", "zoom-step" + (v === "auto" ? " zoom-auto" : ""), v === "auto" ? "Auto" : v + "%");
         b.type = "button"; b.dataset.z = v;
         b.addEventListener("click", function () { setZoom(v); });
         box.appendChild(b);
       });
     }
     Array.prototype.forEach.call(box.children, function (b) {
-      var on = +b.dataset.z === z;
+      var isAutoBtn = b.dataset.z === "auto";
+      if (isAutoBtn) b.hidden = !car;
+      var on = isAutoBtn ? auto : (!auto && +b.dataset.z === z);
       b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false");
     });
+  }
+  function applyZoom() {
+    PREFS.apply(loadSettings());
+    renderZoom();
   }
   function setZoom(z) {
     var s = loadSettings();
     s.zoom = z;
     saveSettings(s);
     closeMsgMenu();
-    applyZoom(z);
+    applyZoom();
   }
   function stepZoom(dir) {
-    var i = ZOOM_STEPS.indexOf(zoomOf(loadSettings())) + dir;
-    if (i >= 0 && i < ZOOM_STEPS.length) setZoom(ZOOM_STEPS[i]);
+    var z = PREFS.effectiveZoom(loadSettings());
+    var next = dir > 0 ? ZOOM_STEPS.filter(function (v) { return v > z; })[0] : ZOOM_STEPS.filter(function (v) { return v < z; }).pop();
+    if (next) setZoom(next);
   }
+  // zoom.js re-applies Auto on resize; refresh the controls and drop popovers
+  // placed for the old size.
+  PREFS.onchange = function () { renderZoom(); closeMsgMenu(); closeConvMenu(); };
   function applySettings() {
     var s = loadSettings();
-    applyZoom(zoomOf(s));
+    applyZoom();
     $("attachBtn").hidden = !s.showAttach;
+    var showEm = s.showEmoji !== false, es2 = $("setEmoji");
+    $("emojiBtn").hidden = !showEm;
+    if (!showEm) showEmoji(false);
+    es2.setAttribute("aria-checked", showEm ? "true" : "false");
+    es2.classList.toggle("on", showEm);
     var sw = $("setAttach");
     sw.setAttribute("aria-checked", s.showAttach ? "true" : "false");
     sw.classList.toggle("on", s.showAttach);
@@ -1457,9 +1804,73 @@
     $("carModeDesc").textContent = car
       ? "Big touch controls for the car screen"
       : "Off: compact layout for a tablet or computer";
+    var mr = s.micRecheck !== false, ms = $("setMicRecheck");
+    ms.setAttribute("aria-checked", mr ? "true" : "false");
+    ms.classList.toggle("on", mr);
+    $("micRecheckDesc").textContent = mr
+      ? "Checks the mic again when you come back to this page, and retries if the server can't be reached"
+      : "Off: checked once when the page loads";
+    var lt = s.liveTyping !== false, ls = $("setLiveTyping");
+    ls.setAttribute("aria-checked", lt ? "true" : "false");
+    ls.classList.toggle("on", lt);
+    $("liveTypingDesc").textContent = lt
+      ? "Words appear in the box as you speak (server transcription), then get a final clean-up when you tap Done"
+      : "Off: the text appears after you tap Done";
   }
   // Car Mode (per device, default on): off switches to the denser
   // tablet/desktop layout (html.desk, see zoom.js and app.css).
+  // ---------- composer float (Car Mode) ----------
+  // The car's on-screen keyboard covers the bottom of the screen, so when
+  // the message box is tapped to type, the composer moves up to sit right
+  // under the conversation header; it goes back when the box loses focus.
+  // Only a tap on the box floats it: programmatic focus (dictation results,
+  // reply, opening a chat) doesn't, and it never floats while the mic is
+  // listening or transcribing. The emoji picker floats along with it.
+  var cf = { on: false, tapAt: 0, offTimer: 0 };
+  function micActive() {
+    var b = $("micBtn");
+    return !!state.rec || !!state.transcribing || b.classList.contains("recording") || b.classList.contains("busy");
+  }
+  function floatAllowed() {
+    return !document.documentElement.classList.contains("desk") && !micActive() &&
+      !$("threadView").hidden && !document.body.classList.contains("readonly-thread");
+  }
+  function setComposerFloat(on) {
+    on = !!on && floatAllowed();
+    if (cf.offTimer) { clearTimeout(cf.offTimer); cf.offTimer = 0; }
+    if (on === cf.on) return;
+    cf.on = on;
+    var box = $("messages"), nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 200;
+    $("threadView").classList.toggle("compose-float", on);
+    document.body.classList.toggle("compose-floating", on);
+    if (nearBottom) box.scrollTop = box.scrollHeight;
+  }
+  function scheduleUnfloat() {
+    if (!cf.on) return;
+    if (cf.offTimer) clearTimeout(cf.offTimer);
+    cf.offTimer = setTimeout(function () {
+      cf.offTimer = 0;
+      var a = document.activeElement;
+      if (!micActive() && (a === $("input") || a === $("emojiSearch") || emojiOpen())) return;
+      setComposerFloat(false);
+    }, 250);
+  }
+  function initComposerFloat() {
+    var inp = $("input");
+    var markTap = function () { cf.tapAt = Date.now(); };
+    inp.addEventListener("pointerdown", markTap);
+    inp.addEventListener("touchstart", markTap, { passive: true });
+    inp.addEventListener("mousedown", markTap);
+    var tapped = function () { return Date.now() - cf.tapAt < 1500; };
+    inp.addEventListener("focus", function () {
+      if (cf.on || tapped()) setComposerFloat(true); // cf.on: keep it up (cancels a pending restore)
+    });
+    // A tap on a box that already had focus (no new focus event).
+    inp.addEventListener("click", function () { if (!cf.on && tapped()) setComposerFloat(true); });
+    inp.addEventListener("blur", scheduleUnfloat);
+    $("emojiSearch").addEventListener("blur", scheduleUnfloat);
+  }
+
   function setCarMode(on) {
     var s = loadSettings();
     s.carMode = !!on;
@@ -1467,18 +1878,31 @@
     closeMsgMenu();
     closeConvMenu();
     applySettings();
+    if (on) scheduleUnfloat(); else setComposerFloat(false);
   }
   function showSettings(open) {
     $("settingsView").hidden = !open;
-    if (open) applySettings();
+    if (open) { applySettings(); renderMicCheck(); renderSttInfo(); if (window.TMPWA) window.TMPWA.refresh(); }
   }
 
+  // Where dictated text goes: the box's selection if it has focus, else
+  // where the cursor was when it lost focus (tapping the mic blurs it) as
+  // long as the text hasn't changed since, else the end.
+  var lastSel = null;
+  function rememberSelection() {
+    var t = $("input");
+    if (t.selectionStart != null) lastSel = { start: t.selectionStart, end: t.selectionEnd, value: t.value };
+  }
+  function composeSelection() {
+    var t = $("input"), n = t.value.length;
+    if (document.activeElement === t && t.selectionStart != null) return { start: t.selectionStart, end: t.selectionEnd };
+    if (lastSel && lastSel.value === t.value) return { start: Math.min(lastSel.start, n), end: Math.min(lastSel.end, n) };
+    return { start: n, end: n };
+  }
   function insertText(text) {
     var t = $("input");
     var cur = t.value;
-    var start = t.selectionStart != null ? t.selectionStart : cur.length;
-    var end = t.selectionEnd != null ? t.selectionEnd : cur.length;
-    if (document.activeElement !== t) { start = end = cur.length; }
+    var sel = composeSelection(), start = sel.start, end = sel.end;
     var before = cur.slice(0, start), after = cur.slice(end);
     var sep = before && !/\s$/.test(before) ? " " : "";
     t.value = before + sep + text + (after && !/^\s/.test(after) ? " " : "") + after;
@@ -1486,6 +1910,141 @@
     autosize();
     t.focus();
     try { t.setSelectionRange(pos, pos); } catch (e) {}
+  }
+
+  // ---------- emoji picker ----------
+  // Like Google Messages for Web: Recent + category tabs + search. Tapping
+  // an emoji inserts it at the cursor (without focusing the box, so the car's
+  // on-screen keyboard stays down) and never sends. Data: emoji-data.js;
+  // glyphs come from the bundled Noto Color Emoji font. Per-device switch
+  // "Show emoji button" (default on).
+  var EMOJI_RECENT_KEY = "tm.emojiRecent", EMOJI_RECENT_MAX = 24;
+  var emojiCats = null, emojiAll = null;
+  function emojiData() {
+    if (emojiCats) return emojiCats;
+    emojiCats = []; emojiAll = [];
+    (window.TM_EMOJI || []).forEach(function (c) {
+      var items = String(c.e || "").split("\u001e").filter(Boolean).map(function (x) {
+        var p = x.split("\u001f"); return { e: p[0], n: p[1] || "" };
+      });
+      emojiCats.push({ id: c.id, label: c.label, items: items });
+      emojiAll = emojiAll.concat(items);
+    });
+    return emojiCats;
+  }
+  function emojiRecent() {
+    try { var r = JSON.parse(localStorage.getItem(EMOJI_RECENT_KEY) || "[]"); return Array.isArray(r) ? r.slice(0, EMOJI_RECENT_MAX) : []; } catch (e) { return []; }
+  }
+  function pushEmojiRecent(e) {
+    var r = emojiRecent().filter(function (x) { return x !== e; });
+    r.unshift(e);
+    try { localStorage.setItem(EMOJI_RECENT_KEY, JSON.stringify(r.slice(0, EMOJI_RECENT_MAX))); } catch (er) {}
+  }
+  // Insert at the cursor: the box's selection if focused, else where the
+  // cursor was (lastSel), else the end. Keeps lastSel so taps keep adding
+  // in order. Doesn't focus the box.
+  function insertAtCursor(str) {
+    var t = $("input"), sel = composeSelection();
+    t.value = t.value.slice(0, sel.start) + str + t.value.slice(sel.end);
+    var pos = sel.start + str.length;
+    if (document.activeElement === t) { try { t.setSelectionRange(pos, pos); } catch (e) {} }
+    lastSel = { start: pos, end: pos, value: t.value };
+    autosize();
+  }
+  function emojiButton(it) {
+    var b = el("button", "emoji-cell", it.e);
+    b.type = "button";
+    b.title = it.n;
+    b.setAttribute("aria-label", it.n || it.e);
+    b.dataset.e = it.e;
+    return b;
+  }
+  function renderEmojiTabs() {
+    var tabs = $("emojiTabs");
+    if (tabs.firstChild) return;
+    var mk = function (id, label, glyph, isIcon) {
+      var b = el("button", "emoji-tab");
+      b.type = "button"; b.dataset.sec = id; b.title = label;
+      b.setAttribute("role", "tab"); b.setAttribute("aria-label", label);
+      if (isIcon) b.appendChild(icon(glyph)); else b.appendChild(el("span", "emoji-tab-glyph", glyph));
+      b.appendChild(el("span", "emoji-tab-label", label));
+      tabs.appendChild(b);
+    };
+    mk("recent", "Recent", "clock", true);
+    emojiData().forEach(function (c) { mk(c.id, c.label, c.items[0] ? c.items[0].e : "", false); });
+  }
+  function renderEmojiGrid() {
+    var grid = $("emojiGrid"), q = $("emojiSearch").value.trim().toLowerCase();
+    grid.textContent = "";
+    var section = function (id, label, items) {
+      var h = el("div", "emoji-sec", label); h.id = "emojiSec-" + id; grid.appendChild(h);
+      var wrap = el("div", "emoji-cells");
+      items.forEach(function (it) { wrap.appendChild(emojiButton(it)); });
+      grid.appendChild(wrap);
+    };
+    emojiData();
+    if (q) {
+      var hits = emojiAll.filter(function (it) { return it.n.indexOf(q) >= 0; }).slice(0, 240);
+      if (hits.length) section("search", "Results", hits);
+      else grid.appendChild(el("div", "emoji-empty", "No emoji match \"" + q + "\""));
+      $("emojiTabs").hidden = true;
+      return;
+    }
+    $("emojiTabs").hidden = false;
+    var rec = emojiRecent();
+    var names = {};
+    emojiAll.forEach(function (it) { names[it.e] = it.n; });
+    section("recent", "Recent", rec.length ? rec.map(function (e) { return { e: e, n: names[e] || "" }; }) : []);
+    if (!rec.length) grid.lastChild.appendChild(el("div", "emoji-empty", "Emoji you use show up here"));
+    emojiCats.forEach(function (c) { section(c.id, c.label, c.items); });
+    markEmojiTab();
+  }
+  function markEmojiTab() {
+    var grid = $("emojiGrid"), secs = grid.querySelectorAll(".emoji-sec"), cur = "recent";
+    var top = grid.getBoundingClientRect().top + 4;
+    for (var i = 0; i < secs.length; i++) if (secs[i].getBoundingClientRect().top <= top) cur = secs[i].id.replace("emojiSec-", "");
+    Array.prototype.forEach.call($("emojiTabs").children, function (b) {
+      var on = b.dataset.sec === cur;
+      b.classList.toggle("on", on); b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+  }
+  function emojiOpen() { return !$("emojiPanel").hidden; }
+  function showEmoji(open) {
+    var p = $("emojiPanel");
+    if (open === emojiOpen()) return;
+    if (open) {
+      rememberSelection();
+      renderEmojiTabs();
+      $("emojiSearch").value = "";
+      p.hidden = false;
+      renderEmojiGrid();
+      $("emojiGrid").scrollTop = 0;
+      markEmojiTab();
+    } else { p.hidden = true; scheduleUnfloat(); }
+    $("emojiBtn").classList.toggle("on", open);
+    $("emojiBtn").setAttribute("aria-expanded", open ? "true" : "false");
+    document.body.classList.toggle("emoji-open", open);
+  }
+  function initEmoji() {
+    $("emojiBtn").addEventListener("mousedown", function (e) { e.preventDefault(); }); // keep the box's cursor
+    $("emojiBtn").addEventListener("click", function () { showEmoji(!emojiOpen()); });
+    $("emojiClose").addEventListener("click", function () { showEmoji(false); });
+    $("emojiGrid").addEventListener("mousedown", function (e) { if (e.target.closest(".emoji-cell")) e.preventDefault(); });
+    $("emojiGrid").addEventListener("click", function (e) {
+      var b = e.target.closest(".emoji-cell");
+      if (!b) return;
+      insertAtCursor(b.dataset.e);
+      pushEmojiRecent(b.dataset.e);
+    });
+    $("emojiGrid").addEventListener("scroll", function () { if (!$("emojiTabs").hidden) markEmojiTab(); }, { passive: true });
+    $("emojiTabs").addEventListener("click", function (e) {
+      var b = e.target.closest(".emoji-tab");
+      if (!b) return;
+      var sec = $("emojiSec-" + b.dataset.sec), grid = $("emojiGrid");
+      if (sec) grid.scrollTop += sec.getBoundingClientRect().top - grid.getBoundingClientRect().top;
+      markEmojiTab();
+    });
+    $("emojiSearch").addEventListener("input", renderEmojiGrid);
   }
 
   // ---------- mic / speech-to-text ----------
@@ -1521,20 +2080,200 @@
   }
   function serverLabel() { var l = state.config.stt_label; return l && l !== "none" ? l : "Server STT"; }
   function speechLang() { return navigator.language || "en-US"; }
-  function sttUsable() {
+  function sttUsable() { return micStatus().ok; }
+
+  // --- mic availability check ---
+  // Decides whether the mic button is dimmed (body.no-stt) and what to say
+  // when the mic can't work. With "Re-check microphone access" on (the
+  // default, per device) it re-runs when the page comes back (visible /
+  // focus / pageshow), when the mic permission changes, before a mic tap if
+  // the last check said unavailable, and retries a failed config load
+  // (2s, 5s, 15s, then on the next resume). Off: one check at startup.
+  var CONFIG_RETRY_MS = [2000, 5000, 15000];
+  var mic = { configOK: false, configErr: "", loading: null, retryTimer: null, retryIdx: 0,
+    perm: "", permStatus: null, lastCheck: 0, status: null, checking: null };
+  var MIC_MSG_INSECURE = "The mic needs the secure https:// link. This page was opened over plain http, where browsers block the microphone. Open Tesla Messages from its https address and try again.";
+  var MIC_MSG_BLOCKED = "Microphone is blocked for this site. To allow it: tap the lock / tune icon next to the web address, then Site settings (or Permissions) > Microphone > Allow. Then reload, or open Settings (gear icon) > Check again.";
+  function micRecheckOn() { return loadSettings().micRecheck !== false; }
+  function liveTypingOn() { return loadSettings().liveTyping !== false; }
+  function insecurePage() { return window.isSecureContext === false; } // localhost counts as secure
+  function livePerm() { if (mic.permStatus) mic.perm = mic.permStatus.state; return mic.perm; }
+  // {ok, reason, text, detail}: reason is "insecure" | "denied" | "config" | "nobuiltin" | "noserver" | "norecord"
+  function micStatus() {
+    if (insecurePage()) return { ok: false, reason: "insecure", text: "Mic unavailable – needs the https link", detail: MIC_MSG_INSECURE };
+    if (livePerm() === "denied") return { ok: false, reason: "denied", text: "Mic unavailable – blocked for this site", detail: MIC_MSG_BLOCKED };
     var mode = sttMode();
     var builtin = mode !== "server" && !!speechCtor();
     var server = mode !== "builtin" && serverSTTEnabled() && micSupported();
-    return builtin || server;
+    if (builtin && server && skipBuiltin()) return { ok: true, text: "Mic available – server transcription (" + serverLabel() + "); " + builtinLabel() + " skipped after it failed (" + builtinBroken().reason + ")" };
+    if (builtin) return { ok: true, text: "Mic available – " + builtinLabel() + (server ? " (server transcription as backup)" : "") };
+    if (server) return { ok: true, text: "Mic available – server transcription (" + serverLabel() + ")" };
+    if (mode !== "builtin" && !mic.configOK) return { ok: false, reason: "config", text: "Mic unavailable – couldn't load the server's voice settings",
+      detail: "Couldn't reach Tesla Messages to check voice settings" + (mic.configErr ? " (" + mic.configErr + ")" : "") + ". Check the connection and try again." };
+    if (mode === "builtin") return { ok: false, reason: "nobuiltin", text: "Mic unavailable – this browser has no built-in speech recognition",
+      detail: "Speech isn't available on this browser (no built-in speech recognition). Use the keyboard's mic instead." };
+    if (!serverSTTEnabled()) return { ok: false, reason: "noserver", text: "Mic unavailable – no built-in speech here and server transcription isn't set up",
+      detail: "Speech isn't available on this browser, and server transcription isn't set up. Use the keyboard's mic instead." };
+    return { ok: false, reason: "norecord", text: "Mic unavailable – this browser can't record audio", detail: "This browser can't record audio. Use the keyboard's mic instead." };
   }
-  // Tiny "which engine" indicator: in the recording bar while listening, and
-  // in the thread header afterwards (so it can be checked during testing).
+  function applyMicState() {
+    var st = micStatus();
+    mic.status = st;
+    document.body.classList.toggle("no-stt", !st.ok);
+    return st;
+  }
+  function loadSTTConfig() {
+    if (mic.loading) return mic.loading;
+    mic.loading = api("/api/tesla/config").then(function (c) {
+      state.config = c;
+      mic.configOK = true; mic.configErr = ""; mic.retryIdx = 0;
+      renderSttInfo();
+      clearTimeout(mic.retryTimer); mic.retryTimer = null;
+    }, function (e) {
+      mic.configErr = (e && e.message) || "network error";
+      scheduleConfigRetry();
+    }).then(function () { mic.loading = null; });
+    return mic.loading;
+  }
+  function scheduleConfigRetry() {
+    if (!micRecheckOn() || mic.retryTimer || mic.retryIdx >= CONFIG_RETRY_MS.length) return; // else wait for the next resume
+    mic.retryTimer = setTimeout(function () { mic.retryTimer = null; checkMic(); }, CONFIG_RETRY_MS[mic.retryIdx++]);
+  }
+  function onPermChange() { mic.perm = this.state; applyMicState(); renderMicCheck(); if (mic.perm !== "denied") checkMic(); }
+  function watchPerm(on) { if (mic.permStatus) mic.permStatus.onchange = on ? onPermChange : null; }
+  function queryMicPermission() {
+    if (mic.permStatus) { livePerm(); return Promise.resolve(); }
+    if (!navigator.permissions || !navigator.permissions.query) { mic.perm = "unsupported"; return Promise.resolve(); }
+    return Promise.resolve().then(function () { return navigator.permissions.query({ name: "microphone" }); }).then(function (ps) {
+      mic.permStatus = ps; mic.perm = ps.state;
+      watchPerm(micRecheckOn());
+    }).catch(function () { mic.perm = "unsupported"; });
+  }
+  // Config (skipped once loaded unless forced) + permission + builtin speech.
+  function checkMic(forceConfig) {
+    mic.lastCheck = Date.now();
+    var cfg = (!mic.configOK || forceConfig) ? loadSTTConfig() : Promise.resolve();
+    mic.checking = Promise.all([cfg, queryMicPermission()]).then(function () {
+      mic.checking = null;
+      var st = applyMicState();
+      renderMicCheck();
+      return st;
+    });
+    return mic.checking;
+  }
+  function onPageResume() {
+    if (!micRecheckOn() || state.rec) return;
+    if (Date.now() - mic.lastCheck < 1500) return; // visibilitychange + focus + pageshow arrive together
+    clearTimeout(mic.retryTimer); mic.retryTimer = null; mic.retryIdx = 0;
+    checkMic(true);
+  }
+  function renderMicCheck(checking) {
+    var out = $("micCheckResult");
+    if (!out) return;
+    var st = mic.status;
+    out.classList.toggle("ok", !checking && !!st && st.ok);
+    out.classList.toggle("bad", !checking && !!st && !st.ok);
+    if (checking) { out.textContent = "Checking…"; return; }
+    if (!st) { out.textContent = ""; return; }
+    var perm = mic.perm && mic.perm !== "unsupported" ? mic.perm : "not reported by this browser";
+    out.textContent = st.text + (st.ok ? "" : "\n" + st.detail) + "\nMic permission: " + perm +
+      (mic.lastCheck ? " · checked " + clockTime(mic.lastCheck, true) : "");
+  }
+  function micCheckNow() {
+    var b = $("micCheckBtn");
+    b.disabled = true;
+    forgetBuiltinFailure(); sttDbg.builtinErr = null;
+    renderMicCheck(true);
+    clearTimeout(mic.retryTimer); mic.retryTimer = null; mic.retryIdx = 0;
+    var started = Date.now();
+    checkMic(true).then(function () {
+      // keep "Checking…" visible briefly so the tap registers
+      setTimeout(function () { b.disabled = false; renderMicCheck(); }, Math.max(0, 350 - (Date.now() - started)));
+    });
+  }
+  function setMicRecheck(on) {
+    var s = loadSettings();
+    s.micRecheck = !!on;
+    saveSettings(s);
+    watchPerm(!!on);
+    if (on) checkMic(true);
+    else { clearTimeout(mic.retryTimer); mic.retryTimer = null; }
+    applySettings();
+  }
+  // Which engine ran: shown in the recording bar while listening, and in
+  // Settings > Microphone & speech-to-text afterwards (not in the header).
+  var sttDbg = { last: null, latency: null, builtinErr: null };
   function showEngine(label, note) {
     $("recEngine").textContent = label;
-    var e = $("sttEngine");
-    e.textContent = "🎤 " + label + (note ? " · " + note : "");
-    e.title = e.textContent;
-    e.hidden = false;
+    sttDbg.last = { label: label, note: note || "", at: Date.now() };
+    renderSttInfo();
+  }
+  // Built-in speech that failed in a way that won't fix itself (no network
+  // to Google's speech service in the car, unsupported language, never
+  // started) is skipped in auto mode for BUILTIN_SKIP_MS on this device, so
+  // the mic goes straight to server transcription (and live typing).
+  // Settings > Check again clears it.
+  var BUILTIN_MEMO_KEY = "tm.builtinFailed", BUILTIN_SKIP_MS = 24 * 3600 * 1000;
+  var BUILTIN_STICKY = { "network": 1, "language-not-supported": 1, "did not start": 1, "start failed": 1 };
+  function builtinBroken() {
+    var m = null;
+    try { m = JSON.parse(localStorage.getItem(BUILTIN_MEMO_KEY) || sessionStorage.getItem(BUILTIN_MEMO_KEY) || "null"); } catch (e) {}
+    if (!m || !m.reason || !(Date.now() - (m.at || 0) < BUILTIN_SKIP_MS)) return null;
+    return m;
+  }
+  function rememberBuiltinFailure(reason) {
+    sttDbg.builtinErr = { reason: reason, at: Date.now() };
+    if (!BUILTIN_STICKY[reason]) return;
+    var v = JSON.stringify({ reason: reason, at: Date.now() });
+    try { sessionStorage.setItem(BUILTIN_MEMO_KEY, v); } catch (e) {}
+    try { localStorage.setItem(BUILTIN_MEMO_KEY, v); } catch (e) {}
+  }
+  function forgetBuiltinFailure() {
+    try { sessionStorage.removeItem(BUILTIN_MEMO_KEY); } catch (e) {}
+    try { localStorage.removeItem(BUILTIN_MEMO_KEY); } catch (e) {}
+  }
+  // Skip built-in speech? (auto mode only, after a sticky failure)
+  function skipBuiltin() { return sttMode() === "auto" && !!builtinBroken() && serverSTTEnabled() && micSupported(); }
+  function sttModeText() {
+    var m = sttMode();
+    if (m === "server") return "server (always the server's transcription)";
+    if (m === "builtin") return "builtin (browser speech only)";
+    return "auto (browser speech first, server as backup)";
+  }
+  function agoText(at) {
+    var s = Math.max(0, Math.round((Date.now() - at) / 1000));
+    return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : clockTime(at);
+  }
+  function renderSttInfo() {
+    if (!$("sttInfo")) return;
+    var c = state.config || {};
+    var set = function (id, text) { $(id).textContent = text; };
+    if (!mic.configOK) {
+      set("sttInfoProvider", mic.configErr ? "couldn't load (" + mic.configErr + ")" : "loading…");
+    } else {
+      set("sttInfoProvider", serverSTTEnabled() ? serverLabel() + (c.stt_provider ? " (" + String(c.stt_provider).split(":")[0] + ")" : "") : "none (server transcription off)");
+    }
+    set("sttInfoModel", c.stt_model || "-");
+    set("sttInfoMode", mic.configOK ? sttModeText() : "-");
+    set("sttInfoLive", !c.stt_live ? "not available on the server"
+      : !liveTypingOn() ? "off on this device"
+      : "on (" + serverLabel() + ", while dictating)");
+    var b;
+    var broken = builtinBroken();
+    if (!speechCtor()) b = "not available in this browser";
+    else if (sttMode() === "server") b = builtinLabel() + ": not used (server mode)";
+    else if (broken) b = builtinLabel() + ": failed (" + broken.reason + ") " + agoText(broken.at) + ", skipped on this device";
+    else if (sttDbg.builtinErr) b = builtinLabel() + ": last error " + sttDbg.builtinErr.reason + " " + agoText(sttDbg.builtinErr.at);
+    else b = builtinLabel() + ": available";
+    set("sttInfoBuiltin", b);
+    var l = sttDbg.last;
+    set("sttInfoLast", l ? l.label + (l.note ? " · " + l.note : "") + " · " + agoText(l.at) : "none yet");
+    var lt = sttDbg.latency;
+    set("sttInfoLatency", !lt ? "none yet"
+      : (lt.finalMs != null ? "final " + (lt.finalMs / 1000).toFixed(2) + " s" : "")
+        + (lt.audioSecs ? " for " + lt.audioSecs.toFixed(1) + " s of audio" : "")
+        + (lt.liveMedianMs != null ? " · live median " + (lt.liveMedianMs / 1000).toFixed(2) + " s (" + lt.liveCount + " passes)" : "")
+        + (lt.note ? (lt.finalMs != null ? " · " : "") + lt.note : ""));
   }
   function fmtClock(s) { return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
   function startTimer(r) {
@@ -1557,13 +2296,33 @@
     $("recDone").hidden = s === "busy";
     $("recTime").hidden = s === "busy";
     document.body.classList.toggle("is-recording", s === "recording");
+    if (s) setComposerFloat(false); // never floated while dictating
     autosize();
   }
   function onMicTap() {
     if (state.transcribing) return;
     if (state.rec) { stopRecording(); return; }
+    if (mic.checking && mic.tapWaiting) return;
+    var st = mic.status || applyMicState();
+    if (!st.ok && micRecheckOn()) {
+      // Last check said unavailable: check again first (capped so a slow
+      // network never leaves the tap dead).
+      mic.tapWaiting = true;
+      var done = false;
+      var go = function () { if (done) return; done = true; mic.tapWaiting = false; micTapGo(); };
+      checkMic(true).then(go);
+      setTimeout(go, 3000);
+      return;
+    }
+    micTapGo();
+  }
+  function micTapGo() {
+    if (state.rec || state.transcribing) return;
+    var st = applyMicState();
+    if (!st.ok && (st.reason === "insecure" || st.reason === "denied")) { toast(st.detail, "error"); return; }
     var mode = sttMode();
     if (mode === "server") { startServer(null); return; }
+    if (skipBuiltin()) { startServer(null, "built-in skipped: " + builtinBroken().reason); return; }
     if (!speechCtor()) {
       if (mode === "builtin") { toast("Speech isn't available on this browser (no built-in speech recognition). Use the keyboard's mic instead.", "error"); return; }
       startServer("not available");
@@ -1655,6 +2414,7 @@
     if (state.rec === r) state.rec = null;
   }
   function builtinFailed(r, reason) {
+    rememberBuiltinFailure(reason);
     teardownBuiltin(r);
     try { r.sr && r.sr.abort(); } catch (e) {}
     $("input").value = r.original; autosize();
@@ -1682,19 +2442,42 @@
 
   // --- server (MediaRecorder -> /api/transcribe) ---
   // fallbackReason is set when we got here because built-in speech failed.
-  function startServer(fallbackReason) {
+  // skipNote: built-in speech was skipped (remembered failure), for the info.
+  function startServer(fallbackReason, skipNote) {
     var why = fallbackReason ? " (built-in speech: " + fallbackReason + ")" : "";
+    if (fallbackReason === "not-allowed" || fallbackReason === "service-not-allowed") {
+      if (insecurePage()) { toast(MIC_MSG_INSECURE, "error"); showEngine(builtinLabel(), "failed: " + fallbackReason); return; }
+      if (livePerm() === "denied") { toast(MIC_MSG_BLOCKED, "error"); showEngine(builtinLabel(), "failed: " + fallbackReason); applyMicState(); return; }
+    }
+    if (!serverSTTEnabled() && !mic.configOK && sttMode() !== "builtin") {
+      toast("Couldn't reach Tesla Messages to check voice settings. Check the connection and try again.", "error");
+      if (fallbackReason) showEngine(builtinLabel(), "failed: " + fallbackReason);
+      return;
+    }
     if (!serverSTTEnabled()) {
       toast(fallbackReason ? "Speech isn't available on this browser" + why + ", and server transcription isn't set up. Use the keyboard's mic instead."
         : "Voice input isn't set up on the server. Use the keyboard's mic instead.", "error");
       if (fallbackReason) showEngine(builtinLabel(), "failed: " + fallbackReason);
       return;
     }
-    if (!micSupported()) { toast("This browser can't record audio" + why + ". Use the keyboard's mic instead.", "error"); return; }
-    startRecording(fallbackReason);
+    if (!micSupported()) { toast(insecurePage() ? MIC_MSG_INSECURE : "This browser can't record audio" + why + ". Use the keyboard's mic instead.", "error"); return; }
+    startRecording(fallbackReason, skipNote);
   }
-  function startRecording(fallbackReason) {
+  function engineNote(r) {
+    var parts = [];
+    if (r.live) parts.push(r.live.failed ? "live off: " + r.live.failed : "live");
+    if (r.fallback) parts.push("built-in: " + r.fallback);
+    if (r.skipNote) parts.push(r.skipNote);
+    return parts.join(" · ");
+  }
+  function median(a) {
+    if (!a || !a.length) return null;
+    var b = a.slice().sort(function (x, y) { return x - y; });
+    return b[Math.floor(b.length / 2)];
+  }
+  function startRecording(fallbackReason, skipNote) {
     var mime = pickMime();
+    var live = prepareLive();
     navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } }).then(function (stream) {
       var rec;
       try {
@@ -1702,27 +2485,32 @@
       } catch (e) {
         rec = new MediaRecorder(stream);
       }
-      var r = { kind: "server", stream: stream, recorder: rec, chunks: [], cancelled: false, started: Date.now(), timer: null, fallback: fallbackReason };
+      var r = { kind: "server", stream: stream, recorder: rec, chunks: [], cancelled: false, started: Date.now(), timer: null, fallback: fallbackReason, skipNote: skipNote || "", live: null };
       state.rec = r;
       rec.ondataavailable = function (e) { if (e.data && e.data.size) r.chunks.push(e.data); };
       rec.onstop = function () { finishRecording(r); };
       rec.onerror = function (e) { toast("Recording error: " + ((e.error && e.error.name) || "unknown"), "error"); cancelRecording(); };
       rec.start(250);
       setMicState("recording");
-      showEngine(serverLabel(), fallbackReason ? "built-in: " + fallbackReason : "");
+      if (live) startLive(r, live);
+      showEngine(serverLabel(), engineNote(r));
       startTimer(r);
     }).catch(function (e) {
+      if (live) closeLiveAudio(live);
       var name = e && e.name;
-      var msg = name === "NotAllowedError" ? "Microphone permission was denied. Allow it in the browser prompt and try again." :
+      var msg = insecurePage() ? MIC_MSG_INSECURE :
+        name === "NotAllowedError" ? (livePerm() === "denied" ? MIC_MSG_BLOCKED : "Microphone permission was denied. Tap the mic again and choose Allow. If there's no prompt, it's blocked: tap the lock / tune icon next to the web address, then Microphone > Allow.") :
         name === "NotFoundError" ? "No microphone found." :
-        name === "SecurityError" || !window.isSecureContext ? "The mic needs HTTPS." :
+        name === "SecurityError" ? MIC_MSG_INSECURE :
         "Can't start the mic: " + (e && (e.message || name));
       toast(msg, "error");
       setMicState(null);
+      if (name === "NotAllowedError") { queryMicPermission().then(applyMicState); }
     });
   }
   function releaseMic(r) {
     clearInterval(r.timer);
+    if (r.live) stopLive(r.live);
     try { r.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
   }
   function stopRecording() {
@@ -1754,6 +2542,7 @@
     }
     releaseMic(r);
     try { if (r.recorder.state !== "inactive") r.recorder.stop(); } catch (e) {}
+    if (r.live && r.live.shown) { $("input").value = r.live.original; autosize(); }
     setMicState(null);
   }
   function finishRecording(r) {
@@ -1762,17 +2551,44 @@
     if (r.cancelled) return;
     var type = (r.recorder.mimeType || (r.chunks[0] && r.chunks[0].type) || "audio/webm");
     var blob = new Blob(r.chunks, { type: type });
-    if (Date.now() - r.started < 400 || blob.size < 200) { setMicState(null); toast("That was too short. Hold on a moment longer."); return; }
+    var L = r.live && r.live.shown ? r.live : null; // live text is in the box
+    if (Date.now() - r.started < 400 || blob.size < 200) {
+      if (L) { $("input").value = L.original; autosize(); }
+      setMicState(null); toast("That was too short. Hold on a moment longer."); return;
+    }
     state.transcribing = true;
     setMicState("busy");
     autosize();
+    // Final pass over the whole utterance (better than the live windows);
+    // with live typing it replaces the live text in place.
+    var t0 = Date.now(), audioSecs = (t0 - r.started) / 1000;
+    var liveLat = r.live && r.live.lat ? r.live.lat : [];
+    var noteLatency = function (finalMs, note) {
+      sttDbg.latency = { finalMs: finalMs, audioSecs: audioSecs, liveMedianMs: median(liveLat), liveCount: liveLat.length, note: note || "" };
+      renderSttInfo();
+    };
     api("/api/transcribe", { method: "POST", headers: { "Content-Type": type }, body: blob }).then(function (res) {
-      if (res && res.label) showEngine(res.label, r.fallback ? "built-in: " + r.fallback : "");
+      noteLatency(Date.now() - t0);
+      var note = engineNote(r);
+      if (res && res.label) showEngine(res.label, note);
       var text = (res && res.text || "").trim();
+      if (L) {
+        if (text) { placeLiveText(L, text); toast("Check the text, then tap Send"); }
+        else if (L.agree.text()) { placeLiveText(L, L.agree.text()); toast("Check the text, then tap Send"); }
+        else { placeLiveText(L, ""); toast("Didn't catch that. Try again."); }
+        return;
+      }
       if (!text) { toast("Didn't catch that. Try again."); return; }
       insertText(text);
       toast("Check the text, then tap Send");
     }).catch(function (e) {
+      noteLatency(null, "final failed after " + ((Date.now() - t0) / 1000).toFixed(2) + " s: " + e.message);
+      if (L && L.agree.text()) {
+        placeLiveText(L, L.agree.text());
+        toast("Final transcription failed (" + e.message + "). Check the live text, then tap Send.", "error");
+        return;
+      }
+      if (L) placeLiveText(L, "");
       toast("Transcription failed: " + e.message, "error");
     }).finally(function () {
       state.transcribing = false;
@@ -1781,16 +2597,191 @@
     });
   }
 
+  // --- live typing (server STT while you speak) ---
+  // Alongside MediaRecorder (which still feeds the final pass), the mic is
+  // tapped with an AudioWorklet (ScriptProcessor fallback), downsampled to
+  // 16 kHz mono PCM, and the current window (utterance so far, trimmed at
+  // committed words; see live-stt.js) is POSTed to /api/transcribe/partial
+  // every ~0.7 s, one request at a time. Stable words (LocalAgreement-2) and
+  // the tentative tail are shown in the box between the text that was there
+  // before. Any failure just stops live updates; the final pass still runs.
+  var LIVE = window.TMLive;
+  var LIVE_TICK_MS = 250, LIVE_STEP_SAMPLES = 0.7 * 16000, LIVE_MIN_SAMPLES = 0.6 * 16000;
+  function liveAvailable() {
+    return !!(LIVE && state.config.stt_live && liveTypingOn() && (window.AudioContext || window.webkitAudioContext) && window.fetch);
+  }
+  // Runs before getUserMedia so the AudioContext is created during the tap.
+  function prepareLive() {
+    if (!liveAvailable()) return null;
+    var AC = window.AudioContext || window.webkitAudioContext, ctx = null;
+    try { ctx = new AC({ sampleRate: 16000 }); } catch (e) { try { ctx = new AC(); } catch (e2) { return null; } }
+    try { var p = ctx.resume && ctx.resume(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+    return { ctx: ctx };
+  }
+  function closeLiveAudio(L) {
+    try { L.node && L.node.disconnect(); } catch (e) {}
+    try { L.src && L.src.disconnect(); } catch (e) {}
+    try { L.ctx && L.ctx.state !== "closed" && L.ctx.close(); } catch (e) {}
+    L.node = L.src = null;
+  }
+  function liveId() {
+    var a = new Uint8Array(12);
+    (window.crypto || {}).getRandomValues ? crypto.getRandomValues(a) : a.forEach(function (_, i) { a[i] = Math.random() * 256; });
+    return Array.prototype.map.call(a, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
+  }
+  function startLive(r, L) {
+    var t = $("input"), cur = t.value, sel = composeSelection(), start = sel.start, end = sel.end;
+    var before = cur.slice(0, start);
+    L.original = cur;
+    L.before = before + (before && !/\s$/.test(before) ? " " : "");
+    L.after = cur.slice(end);
+    L.id = liveId(); L.seq = 0; L.applied = 0;
+    L.chunks = []; L.total = 0; L.base = 0;   // 16 kHz Int16 chunks; L.base = samples dropped from the front
+    L.winStart = 0; L.sentAt = 0; L.inflight = false; L.fails = 0;
+    L.agree = new LIVE.Agreement(); L.shown = false; L.dead = false; L.failed = "";
+    L.maxSamples = Math.min(state.config.stt_live_max_secs || 14, 14) * 16000 - 8000;
+    var ctx = L.ctx;
+    function onAudio(f32) {
+      if (L.dead) return;
+      var pcm = L.resampler.push(f32);
+      if (pcm.length) { L.chunks.push(pcm); L.total += pcm.length; }
+    }
+    try {
+      L.src = ctx.createMediaStreamSource(r.stream);
+    } catch (e) {
+      // Some engines can't feed a 16 kHz context from a 48 kHz mic.
+      try { ctx.close(); } catch (x) {}
+      try { ctx = L.ctx = new (window.AudioContext || window.webkitAudioContext)(); L.src = ctx.createMediaStreamSource(r.stream); }
+      catch (e2) { liveFailed(L, "no audio access"); return; }
+    }
+    L.resampler = new LIVE.Resampler(ctx.sampleRate);
+    var sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+    function useScriptProcessor() {
+      if (L.dead) return;
+      try {
+        var sp = ctx.createScriptProcessor(4096, 1, 1);
+        sp.onaudioprocess = function (e) { onAudio(new Float32Array(e.inputBuffer.getChannelData(0))); };
+        L.src.connect(sp); sp.connect(sink); L.node = sp;
+      } catch (e) { liveFailed(L, "audio capture unavailable"); }
+    }
+    if (ctx.audioWorklet && window.AudioWorkletNode) {
+      ctx.audioWorklet.addModule("/tesla/pcm-worklet.js").then(function () {
+        if (L.dead) return;
+        var node = new AudioWorkletNode(ctx, "tm-pcm-capture", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
+        node.port.onmessage = function (e) { onAudio(e.data); };
+        L.src.connect(node); node.connect(sink); L.node = node;
+      }).catch(useScriptProcessor);
+    } else useScriptProcessor();
+    try { if (ctx.state === "suspended") ctx.resume(); } catch (e) {}
+    L.tick = setInterval(function () { liveTick(r, L); }, LIVE_TICK_MS);
+    r.live = L;
+  }
+  function stopLive(L) {
+    if (L.stopped) return;
+    L.stopped = true; L.dead = true;
+    clearInterval(L.tick);
+    closeLiveAudio(L);
+  }
+  // Streaming broke: stop live updates (the final pass still runs on Done).
+  function liveFailed(L, why) {
+    if (L.dead && L.failed) return;
+    L.failed = why || "error";
+    stopLive(L);
+    if (state.rec && state.rec.live === L) showEngine(serverLabel(), engineNote(state.rec));
+  }
+  function liveWindow(L, from, to) {
+    var out = new Int16Array(to - from), pos = L.base, n = 0;
+    for (var i = 0; i < L.chunks.length && pos < to; i++) {
+      var c = L.chunks[i], cEnd = pos + c.length;
+      if (cEnd > from) {
+        var a = Math.max(0, from - pos), b = Math.min(c.length, to - pos);
+        out.set(c.subarray(a, b), n); n += b - a;
+      }
+      pos = cEnd;
+    }
+    return out.subarray(0, n);
+  }
+  function liveDropBefore(L, sample) { // free audio that can't be sent again
+    while (L.chunks.length && L.base + L.chunks[0].length <= sample) { L.base += L.chunks[0].length; L.chunks.shift(); }
+  }
+  function liveTick(r, L) {
+    if (L.dead || L.inflight || state.rec !== r) return;
+    if (L.total - L.sentAt < LIVE_STEP_SAMPLES) return;
+    if (L.total - L.winStart > L.maxSamples) {
+      // Passes are falling behind and no cut point came back: keep what's
+      // shown and restart the window near the newest audio.
+      L.agree.lockAll();
+      L.winStart = Math.max(L.winStart, L.total - 4 * 16000);
+      liveDropBefore(L, L.winStart);
+    }
+    if (L.total - L.winStart < LIVE_MIN_SAMPLES) return;
+    var pcm = liveWindow(L, L.winStart, L.total);
+    var seq = ++L.seq, winStart = L.winStart, end = L.total;
+    L.inflight = true; L.sentAt = end;
+    var t0 = Date.now();
+    fetch("/api/transcribe/partial", {
+      method: "POST", credentials: "same-origin", body: pcm,
+      headers: { "Content-Type": "audio/L16;rate=16000;channels=1", "X-STT-Stream": L.id, "X-STT-Seq": String(seq) },
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) { return { status: res.status, ok: res.ok, body: body }; });
+    }).then(function (x) {
+      L.inflight = false;
+      if (L.dead || seq <= L.applied || winStart !== L.winStart) return; // stale
+      if (!x.ok) {
+        if (x.status === 409 || x.status === 429) return; // stale / busy: try again next tick
+        if (x.status === 401 || x.status === 404 || x.status === 503 || x.status === 400 || x.status === 413 || x.status === 415 || ++L.fails >= 3) {
+          liveFailed(L, (x.body && x.body.error) || "HTTP " + x.status);
+        }
+        return;
+      }
+      L.fails = 0; L.applied = seq;
+      (L.lat || (L.lat = [])).push(Date.now() - t0);
+      L.agree.update(x.body.words || [], (end - winStart) / 16000);
+      var cut = L.agree.trim((end - winStart) / 16000);
+      if (cut > 0) { L.winStart = Math.min(end, winStart + Math.round(cut * 16000)); liveDropBefore(L, L.winStart); }
+      L.lastMs = x.body.ms;
+      renderLive(L);
+    }).catch(function (e) {
+      L.inflight = false;
+      if (!L.dead && ++L.fails >= 3) liveFailed(L, (e && e.message) || "network error");
+    });
+  }
+  function renderLive(L) {
+    var tx = L.agree.text();
+    if (!tx && !L.shown) return;
+    var t = $("input");
+    t.value = L.before + tx + (tx && L.after && !/^\s/.test(L.after) ? " " : "") + L.after;
+    L.shown = true;
+    var pos = (L.before + tx).length;
+    if (document.activeElement === t) { try { t.setSelectionRange(pos, pos); } catch (e) {} }
+    autosize();
+    t.scrollTop = t.scrollHeight;
+    var tent = L.agree.tentativeText();
+    $("input").dataset.liveTentative = tent; // for tests/debugging
+  }
+  // Puts the final text where the live text was (keeping what was already
+  // in the box before/after it) and leaves the cursor after it.
+  function placeLiveText(L, text) {
+    var t = $("input");
+    if (!text) { t.value = L.original; autosize(); return; }
+    t.value = L.before + text + (L.after && !/^\s/.test(L.after) ? " " : "") + L.after;
+    delete t.dataset.liveTentative;
+    autosize();
+    t.focus();
+    var pos = (L.before + text).length;
+    try { t.setSelectionRange(pos, pos); } catch (e) {}
+  }
+
   // ---------- pairing ----------
   function showPair(open) {
     $("pairView").hidden = !open;
     if (open) { refreshPairing(); clearInterval(state.pairPoll); state.pairPoll = setInterval(refreshPairing, 1000); }
     else { clearInterval(state.pairPoll); state.pairPoll = null; }
   }
-  // Cookies entry points (header button, pairing-screen button) only show
-  // when cookies are actually needed: none saved yet (and not dev fake
-  // pairing), or Google rejected the saved ones (google.auth_expired).
-  // /admin/cookies itself stays reachable by URL.
+  // Cookies: always a row in Settings > Account (highlighted when needed);
+  // the pairing-screen button only shows when cookies are actually needed:
+  // none saved yet (and not dev fake pairing), or Google rejected the saved
+  // ones (google.auth_expired). /admin/cookies stays reachable by URL.
   function cookiesNeeded(p) {
     if (!p) return false;
     var st = p.pairing || {}, g = p.google || {};
@@ -1798,7 +2789,12 @@
     return !p.cookies_saved && !st.fake;
   }
   function updateCookiesEntry(p) {
-    if (p && p.cookies_saved !== undefined) $("cookiesBtn").hidden = !cookiesNeeded(p);
+    if (!p || p.cookies_saved === undefined) return;
+    var need = cookiesNeeded(p);
+    $("cookiesBtn").classList.toggle("needed", need);
+    $("cookiesDesc").textContent = need
+      ? "Needed: paste your Google cookies to pair (easier from a computer)"
+      : "Saved. Update them here if Google signs you out (easier from a computer)";
   }
   function renderPairing(p) {
     var st = (p && p.pairing) || { state: "idle" };
@@ -1822,7 +2818,7 @@
       $("pairMsg").textContent = "Open Google Messages on your phone and tap the matching emoji.";
     } else {
       wrap.hidden = true;
-      $("pairTitle").textContent = st.state === "success" ? "Paired ✓" : "Pair with your phone";
+      $("pairTitle").textContent = st.state === "success" ? "Paired" : "Pair with your phone";
       var msg = st.message || "";
       if (st.state === "idle") msg = p && p.cookies_saved ? "Google cookies are saved. Tap Start, then look for the emoji." : "First paste your Google cookies on the Cookies page (from a desktop).";
       if (st.state === "starting") msg = "Contacting Google… keep your phone nearby and unlocked.";
@@ -1834,41 +2830,109 @@
   }
 
   // ---------- status ----------
+  // Header status: a small colored dot (green connected, amber connecting /
+  // not paired / phone offline, red disconnected); tap it for the text.
+  var CONN_DETAIL = {
+    "Connected": "Connected to Google Messages",
+    "Phone offline": "Connected, but your phone isn't responding (check it's online)",
+    "Not paired": "Not paired with your phone yet. Tap Pair phone.",
+    "Connecting": "Connecting to Google Messages…",
+    "Disconnected": "Disconnected from Google Messages. Retrying…",
+  };
+  function setConn(text, kind) {
+    var b = $("conn");
+    b.className = "conn-dot conn-" + kind;
+    $("connText").textContent = text;
+    b.title = CONN_DETAIL[text] || text;
+    b.setAttribute("aria-label", "Connection: " + text);
+    b.dataset.state = text;
+  }
+  function connStatusText() { var b = $("conn"); return b.title || $("connText").textContent; }
   function updateStatusFromPairing(p) {
     updateCookiesEntry(p);
     var g = p && p.google || {};
-    var pill = $("conn");
     var needsPair = g.needs_pairing || g.NeedsPairing || g.needs_repair || g.NeedsRepair;
     var connected = g.connected || g.Connected;
+    var connecting = g.connecting || g.Connecting || (p && p.pairing && (p.pairing.state === "starting" || p.pairing.state === "emoji"));
     $("pairBtn").hidden = !needsPair && !(p && p.pairing && p.pairing.state === "emoji");
-    if (needsPair) { pill.textContent = "Not paired"; pill.className = "pill pill-warn"; }
+    if (needsPair) setConn("Not paired", "warn");
     else if (connected) {
       var phone = g.phone_responding !== undefined ? g.phone_responding : g.PhoneResponding;
-      pill.textContent = phone === false ? "Phone offline" : "Connected";
-      pill.className = "pill " + (phone === false ? "pill-warn" : "pill-ok");
-    } else { pill.textContent = "Disconnected"; pill.className = "pill pill-bad"; }
+      setConn(phone === false ? "Phone offline" : "Connected", phone === false ? "warn" : "ok");
+    } else if (connecting) setConn("Connecting", "warn");
+    else setConn("Disconnected", "bad");
     if (p && p.pairing && p.pairing.state === "emoji" && $("pairView").hidden && !state.pairAutoShown) { state.pairAutoShown = true; location.hash = "#pair"; }
   }
 
   // ---------- live updates ----------
+  // The server's /api/events stream sends *named* events ("event:
+  // messages", "conversations", "typing", "status"), which EventSource only
+  // delivers to addEventListener(name), never to onmessage. Proxies can also
+  // hold the stream back entirely: Cloudflare quick tunnels buffer
+  // text/event-stream, so over the car's https link nothing arrives. The
+  // server always sends a "status" event right after connecting, so if none
+  // has arrived a few seconds after open the stream is treated as not live
+  // and the page polls instead (open conversation every 4 s, list every
+  // 12 s). Separately, every send is followed up until it leaves "Sending".
   var es = null, refreshTimer = null;
+  var sse = { openedAt: 0, lastEvent: 0 };
+  var SSE_GRACE_MS = 4000, POLL_MS = 4000;
   function scheduleRefresh(convId) {
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(function () {
       loadConversations();
-      if (state.current && (!convId || convId === state.current)) loadMessages(false);
+      if (state.current && (!convId || convId === state.current)) loadMessages(false, true);
     }, 150);
+  }
+  function onStreamEvent(e) {
+    sse.lastEvent = Date.now();
+    var ev; try { ev = JSON.parse(e.data); } catch (x) { return; }
+    var type = ev.type || e.type;
+    if (type === "conversations" || type === "messages") scheduleRefresh(ev.conversation_id);
+    else if (type === "typing") setTyping(ev.conversation_id, ev.sender_number || ev.sender_name, ev.sender_name, !!ev.typing);
   }
   function connectEvents() {
     if (!window.EventSource) return;
     try { es = new EventSource("/api/events"); } catch (e) { return; }
-    es.onmessage = function (e) {
-      var ev; try { ev = JSON.parse(e.data); } catch (x) { return; }
-      if (ev.type === "conversations" || ev.type === "messages") scheduleRefresh(ev.conversation_id);
-      else if (ev.type === "typing") setTyping(ev.conversation_id, ev.sender_number || ev.sender_name, ev.sender_name, !!ev.typing);
+    ["messages", "conversations", "typing", "status", "heartbeat"].forEach(function (t) { es.addEventListener(t, onStreamEvent); });
+    es.onmessage = onStreamEvent; // unnamed events, if a server ever sends them
+    es.onopen = function () {
+      var reconnect = sse.openedAt > 0;
+      sse.openedAt = Date.now(); fetchTyping();
+      // Events sent while the stream was down are lost: catch up.
+      if (reconnect) { loadConversations(); if (state.current) loadMessages(false, true); }
     };
-    es.onopen = function () { fetchTyping(); };
     es.onerror = function () { /* browser retries automatically */ };
+  }
+  // Live = connected, and an event arrived since this connection opened and recently.
+  function streamLive() {
+    // (the server sends a heartbeat every 25 s, so 60 s of silence = stalled)
+    return !!es && es.readyState === 1 && sse.lastEvent >= sse.openedAt && Date.now() - sse.lastEvent < 60000;
+  }
+  var pollTick = 0;
+  function pollIfStreamDead() {
+    if (document.hidden) return;
+    if (streamLive()) return;
+    if (es && es.readyState === 1 && Date.now() - sse.openedAt < SSE_GRACE_MS) return; // just opened
+    if (state.current) loadMessages(false, true);
+    if (pollTick++ % 2 === 0) loadConversations();
+  }
+  // After a send: re-check the open conversation until the bubble leaves
+  // "Sending…" (Google's copy replaced the placeholder), even if live
+  // events never come.
+  var followTimer = null;
+  var FOLLOW_MS = [1200, 2500, 4500, 8000, 13000, 20000, 30000];
+  function followSend(convID) {
+    clearTimeout(followTimer);
+    var i = 0;
+    function step() {
+      if (state.current !== convID) return;
+      loadMessages(false, true).then(function () {
+        if (state.current !== convID || !state.mineSending || ++i >= FOLLOW_MS.length) return;
+        followTimer = setTimeout(step, FOLLOW_MS[i] - FOLLOW_MS[i - 1]);
+      });
+    }
+    followTimer = setTimeout(step, FOLLOW_MS[0]);
   }
 
   // ---------- message menu (⋮) + delete ----------
@@ -1890,10 +2954,6 @@
     btn.classList.add("open");
     btn.setAttribute("aria-expanded", "true");
     var menu = $("msgMenu");
-    var pinned = isPinned(m.MessageID);
-    $("msgMenuPinLabel").textContent = pinned ? "Unpin" : "Pin";
-    $("msgMenuPin").classList.toggle("is-pinned", pinned);
-    $("msgMenuPin").hidden = !!state.folder || /^(tm-|tmp_)/.test(String(m.MessageID || ""));
     menu.hidden = false;
     placePopover(menu, btn.getBoundingClientRect());
   }
@@ -1950,87 +3010,8 @@
     });
   }
 
-  // ---------- pinned messages ----------
-  // Stored on this server per conversation (GET /api/tesla/pins, POST
-  // /api/tesla/messages/pin): Google Messages' web protocol (libgm) has no
-  // message-pin action, so pins are shared by every browser on this server
-  // but don't show on the phone.
+  // Pin icon (pinned conversations).
   var PIN_ICON = "M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z";
-  function isPinned(id) {
-    for (var i = 0; i < state.pins.length; i++) if (state.pins[i].message_id === id) return true;
-    return false;
-  }
-  function loadPins(id) {
-    return api("/api/tesla/pins?conversation_id=" + encodeURIComponent(id)).then(function (res) {
-      if (id !== state.current) return;
-      state.pins = (res && res.pins) || [];
-      renderPinBanner();
-    }).catch(function () { /* pins are optional; keep the last known list */ });
-  }
-  function pinSnippet(p) {
-    var t = String(p.body || "").replace(/\s+/g, " ").trim();
-    if (!t || GENERIC_MEDIA_BODY[t] || (p.has_media && BARE_FILENAME.test(t))) {
-      var mt = String(p.mime_type || "");
-      t = /^image\//.test(mt) ? "📷 Photo" : /^video\//.test(mt) ? "🎬 Video" : /^audio\//.test(mt) ? "🎤 Audio" : p.has_media ? "📎 Attachment" : "Message";
-    }
-    return t.length > 120 ? t.substring(0, 120) + "…" : t;
-  }
-  function pinAuthor(p) { return p.is_from_me ? "You" : (p.sender_name || "Them"); }
-  function renderPinBanner() {
-    var b = $("pinBanner"), n = state.pins.length;
-    b.hidden = !n || !!state.folder;
-    if (!n) { closePinList(); return; }
-    var p = state.pins[0];
-    $("pinBannerLabel").textContent = n > 1 ? "Pinned · latest of " + n : "Pinned message";
-    $("pinBannerText").textContent = pinAuthor(p) + ": " + pinSnippet(p);
-    $("pinAll").hidden = n < 2;
-    $("pinAllCount").textContent = String(n);
-    if (!$("pinListView").hidden) renderPinList();
-  }
-  function jumpToMessage(id) {
-    var rows = $("messages").querySelectorAll(".msg-row");
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].dataset.id === String(id)) {
-        rows[i].scrollIntoView({ block: "center", behavior: "smooth" });
-        rows[i].classList.add("flash");
-        (function (r) { setTimeout(function () { r.classList.remove("flash"); }, 1400); })(rows[i]);
-        return true;
-      }
-    }
-    toast("That message is older than what's shown here");
-    return false;
-  }
-  function setPinned(m, pinned) {
-    var id = m.MessageID || m.message_id, conv = state.current;
-    return postJSON("/api/tesla/messages/pin", { message_id: id, pinned: pinned }).then(function (res) {
-      if (conv !== state.current) return;
-      state.pins = (res && res.pins) || [];
-      renderPinBanner();
-      loadMessages(false);
-      toast(pinned ? "Message pinned" : "Message unpinned");
-    }).catch(function (e) {
-      if (e.message !== "login required") toast((pinned ? "Couldn't pin: " : "Couldn't unpin: ") + e.message, "error");
-    });
-  }
-  function renderPinList() {
-    var box = $("pinListItems");
-    box.textContent = "";
-    state.pins.forEach(function (p) {
-      var row = el("div", "pin-item");
-      var go = el("button", "pin-item-main");
-      go.type = "button";
-      go.appendChild(el("span", "pin-item-who", pinAuthor(p) + " · " + fmtTime(p.timestamp_ms)));
-      go.appendChild(el("span", "pin-item-text", pinSnippet(p)));
-      go.addEventListener("click", function () { closePinList(); jumpToMessage(p.message_id); });
-      var un = el("button", "btn btn-ghost pin-item-unpin", "Unpin");
-      un.type = "button";
-      un.addEventListener("click", function () { setPinned(p, false); });
-      row.appendChild(go); row.appendChild(un);
-      box.appendChild(row);
-    });
-  }
-  function openPinList() { renderPinList(); $("pinListView").hidden = false; }
-  function closePinList() { $("pinListView").hidden = true; }
 
   // ---------- folders (view only) ----------
   // Archived / Spam / Blocked are listed live from Google Messages
@@ -2200,14 +3181,16 @@
     mid.appendChild(el("div", "contact-name", c.name || c.number));
     if (c.name && c.name !== c.number) mid.appendChild(el("div", "contact-num", c.number));
     b.appendChild(mid);
-    if (nc.group) b.appendChild(el("span", "contact-check", "✓"));
+    if (nc.group) { var ck = el("span", "contact-check"); ck.appendChild(icon("check")); b.appendChild(ck); }
     b.addEventListener("click", function () { pickContact(c); });
     return b;
   }
   function renderNewChat() {
     $("newChatTitle").textContent = nc.group ? "New group conversation" : "New conversation";
     var g = $("newChatGroup");
-    g.textContent = nc.group ? "✕ Cancel group" : "👥 Start group conversation";
+    g.textContent = "";
+    g.appendChild(icon(nc.group ? "close" : "group"));
+    g.appendChild(el("span", null, nc.group ? "Cancel group" : "Start group conversation"));
     g.classList.toggle("on", nc.group);
     var next = $("newChatNext");
     next.hidden = !nc.group;
@@ -2220,7 +3203,7 @@
       chip.type = "button";
       chip.setAttribute("aria-label", "Remove " + (c.name || c.number));
       chip.appendChild(document.createTextNode(c.name || c.number));
-      chip.appendChild(el("b", null, "✕"));
+      var cx = el("b"); cx.appendChild(icon("close")); chip.appendChild(cx);
       chip.addEventListener("click", function () { toggleChip(c); });
       chips.appendChild(chip);
     });
@@ -2232,7 +3215,9 @@
       if (looksLikeAddress(q)) {
         var sendRow = el("button", "contact-row contact-send");
         sendRow.type = "button";
-        sendRow.appendChild(el("div", "avatar", q.indexOf("@") >= 0 ? "✉" : "#"));
+        var sav = el("div", "avatar", q.indexOf("@") >= 0 ? null : "#");
+        if (q.indexOf("@") >= 0) sav.appendChild(icon("mail", "avatar-ico"));
+        sendRow.appendChild(sav);
         var mid = el("div", "contact-mid");
         mid.appendChild(el("div", "contact-name", (nc.group ? "Add " : "Send to ") + q));
         sendRow.appendChild(mid);
@@ -2331,8 +3316,11 @@
 
   // ---------- init ----------
   function init() {
+    hydrateIcons();
+    $("conn").addEventListener("click", function () { toast(connStatusText()); });
     $("compose").addEventListener("submit", sendMessage);
     $("input").addEventListener("input", autosize);
+    $("input").addEventListener("blur", rememberSelection);
     $("input").addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
     });
@@ -2349,6 +3337,22 @@
       saveSettings(st);
       applySettings();
     });
+    $("setEmoji").addEventListener("click", function () {
+      var st = loadSettings();
+      st.showEmoji = st.showEmoji === false;
+      saveSettings(st);
+      applySettings();
+    });
+    initEmoji();
+    initComposerFloat();
+    $("setMicRecheck").addEventListener("click", function () { setMicRecheck(!micRecheckOn()); });
+    $("setLiveTyping").addEventListener("click", function () {
+      var st = loadSettings();
+      st.liveTyping = !liveTypingOn();
+      saveSettings(st);
+      applySettings();
+    });
+    $("micCheckBtn").addEventListener("click", micCheckNow);
     $("zoomOut").addEventListener("click", function () { stepZoom(-1); });
     $("zoomIn").addEventListener("click", function () { stepZoom(1); });
     applySettings();
@@ -2358,10 +3362,30 @@
     $("signOutView").addEventListener("click", function (e) { if (e.target === $("signOutView")) $("signOutView").hidden = true; });
     $("recDone").addEventListener("click", stopRecording);
     $("recCancel").addEventListener("click", cancelRecording);
-    $("threadHeader").addEventListener("click", function (e) {
-      if ($("backBtn").contains(e.target) || $("convMenuBtn").contains(e.target)) return;
+    $("convMenuTheme").addEventListener("click", function () {
+      closeConvMenu();
       openChatTheme();
     });
+    $("convMenuDetails").addEventListener("click", function () {
+      var f = state.convMenuFor;
+      closeConvMenu();
+      if (f) openDetails(f.conv);
+    });
+    $("convMenuArchive").addEventListener("click", function () {
+      var f = state.convMenuFor, archived = this.dataset.archived === "1";
+      closeConvMenu();
+      if (f) setConvArchived(f.conv, !archived);
+    });
+    $("convMenuTrash").addEventListener("click", function () {
+      var f = state.convMenuFor;
+      closeConvMenu();
+      if (f) askTrash(f.conv);
+    });
+    $("detailsClose").addEventListener("click", closeDetails);
+    $("detailsView").addEventListener("click", function (e) { if (e.target === $("detailsView")) closeDetails(); });
+    $("trashCancel").addEventListener("click", hideTrash);
+    $("trashOk").addEventListener("click", confirmTrash);
+    $("trashView").addEventListener("click", function (e) { if (e.target === $("trashView") && !$("trashOk").disabled) hideTrash(); });
     $("ctBack").addEventListener("click", ctBack);
     $("ctApply").addEventListener("click", ctPrimary);
     $("ctReset").addEventListener("click", ctReset);
@@ -2371,15 +3395,6 @@
     $("replyCancel").addEventListener("click", function () { clearReply(); $("input").focus(); });
     $("backBtn").addEventListener("click", function () { closeThread(); renderConversations(); });
     // message menu + delete confirm
-    $("msgMenuPin").addEventListener("click", function () {
-      var f = state.menuFor;
-      closeMsgMenu();
-      if (f) setPinned(f.msg, !isPinned(f.msg.MessageID));
-    });
-    $("pinBannerMain").addEventListener("click", function () { if (state.pins[0]) jumpToMessage(state.pins[0].message_id); });
-    $("pinAll").addEventListener("click", openPinList);
-    $("pinListClose").addEventListener("click", closePinList);
-    $("pinListView").addEventListener("click", function (e) { if (e.target === $("pinListView")) closePinList(); });
     $("msgMenuDelete").addEventListener("click", function () {
       var f = state.menuFor;
       closeMsgMenu();
@@ -2415,10 +3430,12 @@
     document.addEventListener("keydown", function (e) {
       if (e.key !== "Escape") return;
       if (closeImageViewer()) { /* photo viewer first: it's on top */ }
+      else if (!$("trashView").hidden) { if (!$("trashOk").disabled) hideTrash(); }
+      else if (!$("detailsView").hidden) closeDetails();
+      else if (emojiOpen()) showEmoji(false);
       else if (!$("confirmView").hidden) { if (!$("confirmOk").disabled) hideConfirm(); }
       else if (!$("signOutView").hidden) $("signOutView").hidden = true;
       else if (!$("settingsView").hidden) showSettings(false);
-      else if (!$("pinListView").hidden) closePinList();
       else if (state.menuFor) closeMsgMenu();
       else if (state.convMenuFor) closeConvMenu();
       else if (!$("newChatView").hidden) closeNewChat();
@@ -2466,12 +3483,24 @@
     img.addEventListener("load", function () { $("pairEmojiWrap").classList.add("img-ok"); });
     img.addEventListener("error", function () { $("pairEmojiWrap").classList.remove("img-ok"); });
     window.addEventListener("hashchange", route);
-    document.addEventListener("visibilitychange", function () { if (!document.hidden) loadThemes(); });
+    // Tapping a notification while the page is open (pwa.js relays it).
+    window.addEventListener("tm-open-conversation", function (e) {
+      var id = e.detail && e.detail.conv;
+      if (!id) return;
+      showSettings(false);
+      if (state.folder) exitFolder();
+      loadConversations().then(function () { openConversation(id); });
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) return;
+      loadThemes(); onPageResume();
+      loadConversations();
+      if (state.current) loadMessages(false, true);
+    });
+    window.addEventListener("focus", onPageResume);
+    window.addEventListener("pageshow", onPageResume);
 
-    api("/api/tesla/config").then(function (c) {
-      state.config = c;
-      document.body.classList.toggle("no-stt", !sttUsable());
-    }).catch(function () {});
+    checkMic(true);
     loadConversations().then(function () {
       var m = /[?&]c=([^&]+)/.exec(location.search);
       if (m) openConversation(decodeURIComponent(m[1]));
@@ -2480,7 +3509,7 @@
     fetchTyping();
     refreshPairing();
     setInterval(refreshPairing, 15000);
-    setInterval(function () { if (!es || es.readyState === 2) scheduleRefresh(); }, 20000);
+    setInterval(pollIfStreamDead, POLL_MS);
     connectEvents();
     route();
     autosize();

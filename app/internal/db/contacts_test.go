@@ -373,3 +373,62 @@ func TestListContactsFromConversationsPrefilter(t *testing.T) {
 		}
 	})
 }
+
+// Regression: Google's contact list reports participant IDs from a different
+// numbering than conversation participants. A contact-list photo cached under
+// participant "29" was served for conversation participant "29" (a different
+// person), so rows near the bottom of the car page list showed the wrong face.
+func TestContactAvatarParticipantIDCollisionFallsBackToContact(t *testing.T) {
+	store := newTestStore(t)
+	now := int64(1700000000000)
+	// Legacy row: contact-list photo of Bob cached under contact-list participant 29.
+	if _, err := store.db.Exec(`INSERT INTO contact_avatars
+		(avatar_id, source_platform, participant_id, contact_id, phone_number, mime_type, image_data, image_hash, updated_at_ms, last_checked_at_ms)
+		VALUES ('sms:participant:29', 'sms', '29', 'contact-bob', '+15550000029', 'image/png', 'bob', 'hash-bob', ?, ?)`, now, now); err != nil {
+		t.Fatalf("seed legacy row: %v", err)
+	}
+	// Alice's photo, cached from the contact list.
+	if err := store.UpsertContactAvatar(ContactAvatarCandidate{
+		SourcePlatform: "sms", ParticipantID: "916", ContactID: "contact-alice",
+		PhoneNumber: "+15551110000", Source: "contacts",
+	}, []byte("alice"), "image/png", "hash-alice", now); err != nil {
+		t.Fatalf("upsert alice: %v", err)
+	}
+
+	// Conversation participant 29 is Alice.
+	got, err := store.GetContactAvatar("sms", "29", "contact-alice", "+1 555 111 0000")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got == nil || got.ImageHash != "hash-alice" {
+		t.Fatalf("participant 29 / contact-alice got %#v, want hash-alice (not Bob's photo)", got)
+	}
+	// Participant 29 with no contact ID but a different phone: not Bob either.
+	got, err = store.GetContactAvatar("sms", "29", "", "+15559999999")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("participant 29 / other phone got %q, want no photo", got.ImageHash)
+	}
+	// Consistent identifiers still hit the participant row.
+	got, err = store.GetContactAvatar("sms", "29", "contact-bob", "")
+	if err != nil || got == nil || got.ImageHash != "hash-bob" {
+		t.Fatalf("participant 29 / contact-bob got %#v, %v; want hash-bob", got, err)
+	}
+	// Participant ID alone (no other identifiers) keeps the old behavior.
+	got, err = store.GetContactAvatar("sms", "29", "", "")
+	if err != nil || got == nil || got.ImageHash != "hash-bob" {
+		t.Fatalf("participant 29 alone got %#v, %v; want hash-bob", got, err)
+	}
+	// The contact-list candidate is not cached under its participant ID.
+	if got, _ := store.GetContactAvatar("sms", "916", "", ""); got != nil {
+		t.Fatalf("contact-list participant 916 is cached as a participant row (%s)", got.AvatarID)
+	}
+	if id := ContactAvatarID(ContactAvatarCandidate{SourcePlatform: "sms", ParticipantID: "916", ContactID: "contact-alice", Source: "contacts"}); id != "sms:contact:contact-alice" {
+		t.Fatalf("contacts candidate avatar id = %q, want sms:contact:contact-alice", id)
+	}
+	if id := ContactAvatarID(ContactAvatarCandidate{SourcePlatform: "sms", ParticipantID: "29", ContactID: "contact-alice", Source: "backfill"}); id != "sms:participant:29" {
+		t.Fatalf("conversation candidate avatar id = %q, want sms:participant:29", id)
+	}
+}

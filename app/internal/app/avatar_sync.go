@@ -137,7 +137,7 @@ func (a *App) fetchGoogleAvatarCandidate(candidate db.ContactAvatarCandidate) {
 		a.fetchGoogleGroupAvatar(candidate)
 		return
 	}
-	existing, err := a.Store.GetContactAvatar(candidate.SourcePlatform, candidate.ParticipantID, candidate.ContactID, candidate.PhoneNumber)
+	existing, err := a.Store.GetContactAvatar(candidate.SourcePlatform, candidate.CacheParticipantID(), candidate.ContactID, candidate.PhoneNumber)
 	if err != nil {
 		a.Logger.Debug().Err(err).Msg("Google avatar lookup before fetch failed")
 		return
@@ -209,7 +209,7 @@ func avatarCandidateLogSource(candidate db.ContactAvatarCandidate) string {
 
 func avatarCandidateLogKeyType(candidate db.ContactAvatarCandidate) string {
 	switch {
-	case strings.TrimSpace(candidate.ParticipantID) != "":
+	case candidate.CacheParticipantID() != "":
 		return "participant"
 	case strings.TrimSpace(candidate.ContactID) != "":
 		return "contact"

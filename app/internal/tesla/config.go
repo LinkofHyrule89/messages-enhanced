@@ -18,7 +18,7 @@ type Config struct {
 	Secret         string        // TESLA_SECRET: login secret (>= 16 chars)
 	SessionTTL     time.Duration // TESLA_SESSION_DAYS (default 30)
 	CookieSecure   string        // TESLA_COOKIE_SECURE: "auto" (default), "1", "0"
-	STTProvider    string        // TESLA_STT_PROVIDER: openai | groq | fake | none
+	STTProvider    string        // TESLA_STT_PROVIDER: whisper (local whisper.cpp) | openai | groq | fake | none
 	STTMode        string        // TESLA_STT_MODE: auto (default: browser speech, then server) | builtin | server
 	STTLanguage    string        // TESLA_STT_LANGUAGE: optional ISO-639-1 hint, e.g. "en"
 	STTPrompt      string        // TESLA_STT_PROMPT: optional vocabulary hint
@@ -29,6 +29,10 @@ type Config struct {
 	OpenAIBaseURL  string        // TESLA_OPENAI_BASE_URL (default https://api.openai.com/v1)
 	GroqKey        string        // GROQ_API_KEY
 	GroqModel      string        // TESLA_GROQ_MODEL (default whisper-large-v3-turbo)
+	WhisperURL     string        // TESLA_WHISPER_URL: whisper.cpp whisper-server inference URL (default http://127.0.0.1:8178/inference)
+	WhisperModel   string        // TESLA_WHISPER_MODEL: label only, e.g. base.en-q8_0 (the server picks the model)
+	WhisperLiveURL string        // TESLA_WHISPER_LIVE_URL: whisper-server for live-typing passes (WAV in, no --convert needed; default TESLA_WHISPER_URL)
+	LiveDisabled   bool          // TESLA_STT_LIVE=0 turns off live typing (/api/transcribe/partial)
 	FakeTranscript string        // TESLA_FAKE_TRANSCRIPT: canned text for the fake provider
 	FakePairing    string        // TESLA_DEV_FAKE_PAIRING: dev only; emoji to show instead of contacting Google
 	NtfyURL        string        // TESLA_NTFY_URL: optional, e.g. https://ntfy.sh/<private-topic>
@@ -52,6 +56,10 @@ func ConfigFromEnv() (Config, error) {
 		OpenAIBaseURL:  strings.TrimRight(strings.TrimSpace(os.Getenv("TESLA_OPENAI_BASE_URL")), "/"),
 		GroqKey:        strings.TrimSpace(os.Getenv("GROQ_API_KEY")),
 		GroqModel:      strings.TrimSpace(os.Getenv("TESLA_GROQ_MODEL")),
+		WhisperURL:     strings.TrimSpace(os.Getenv("TESLA_WHISPER_URL")),
+		WhisperModel:   strings.TrimSpace(os.Getenv("TESLA_WHISPER_MODEL")),
+		WhisperLiveURL: strings.TrimSpace(os.Getenv("TESLA_WHISPER_LIVE_URL")),
+		LiveDisabled:   envOff("TESLA_STT_LIVE"),
 		FakeTranscript: os.Getenv("TESLA_FAKE_TRANSCRIPT"),
 		FakePairing:    strings.TrimSpace(os.Getenv("TESLA_DEV_FAKE_PAIRING")),
 		NtfyURL:        strings.TrimSpace(os.Getenv("TESLA_NTFY_URL")),
@@ -96,6 +104,15 @@ func NormalizeSTTMode(v string) (string, error) {
 	default:
 		return "", errors.New("unknown TESLA_STT_MODE " + strconv.Quote(v) + " (want auto, builtin, or server)")
 	}
+}
+
+// envOff is true when name is set to 0/false/off/no.
+func envOff(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "0", "false", "off", "no":
+		return true
+	}
+	return false
 }
 
 func envInt(name string, def int) int {

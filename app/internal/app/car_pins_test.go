@@ -9,42 +9,6 @@ import (
 	"github.com/maxghenis/openmessage/internal/db"
 )
 
-func TestCarPinMessageWorksWithoutGoogleAndSharesAcrossClients(t *testing.T) {
-	a := newDisconnectedApp(t) // pins are local; no Google connection needed
-	putMsg(t, a.Store, "m1", "c1", "sms", false)
-	putMsg(t, a.Store, "m2", "c1", "sms", true) // own (sent) messages can be pinned too
-	res, err := a.CarPinMessage("m1", true)
-	if err != nil || !res.Pinned || res.Scope != "local" || res.ConversationID != "c1" || len(res.Pins) != 1 {
-		t.Fatalf("pin m1: %+v %v", res, err)
-	}
-	if _, err := a.CarPinMessage("m2", true); err != nil {
-		t.Fatal(err)
-	}
-	pins, err := a.CarPins("c1")
-	if err != nil || len(pins) != 2 || pins[0].MessageID != "m2" || !pins[0].IsFromMe {
-		t.Fatalf("pins: %+v %v", pins, err)
-	}
-	res, err = a.CarPinMessage("m1", false)
-	if err != nil || res.Pinned || len(res.Pins) != 1 {
-		t.Fatalf("unpin: %+v %v", res, err)
-	}
-	for _, c := range []struct {
-		id   string
-		want int
-	}{{"", http.StatusBadRequest}, {"nope", http.StatusNotFound}} {
-		if _, err := a.CarPinMessage(c.id, true); carStatus(t, err) != c.want {
-			t.Errorf("CarPinMessage(%q) status %d want %d", c.id, carStatus(t, err), c.want)
-		}
-	}
-	putMsg(t, a.Store, "tm-1-x", "c1", "sms", true)
-	if _, err := a.CarPinMessage("tm-1-x", true); carStatus(t, err) != http.StatusConflict {
-		t.Errorf("placeholder: %v", err)
-	}
-	if _, err := a.CarPins(" "); carStatus(t, err) != http.StatusBadRequest {
-		t.Errorf("CarPins empty: %v", err)
-	}
-}
-
 func TestCarPinConversationIsLocalAndKeepsGoogleFlag(t *testing.T) {
 	a := newDisconnectedApp(t)
 	pinnedOnPhone := true

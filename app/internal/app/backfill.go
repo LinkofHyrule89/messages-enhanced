@@ -644,6 +644,9 @@ func reconcileBatchReachedLocalBoundary(msgs []*gmproto.Message, localLatestTS i
 }
 
 func (a *App) storeConversation(conv *gmproto.Conversation) error {
+	if client.GoogleConversationDeleted(conv) {
+		return a.Store.DeleteConversation(conv.GetConversationID())
+	}
 	participantsJSON := "[]"
 	var avatarCandidates []db.ContactAvatarCandidate
 	if ps := conv.GetParticipants(); len(ps) > 0 {
@@ -708,6 +711,7 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 	}); err != nil {
 		return err
 	}
+	client.MirrorGoogleConversationStatus(a.Store, a.Logger, conv)
 	a.QueueGoogleAvatarCandidates(avatarCandidates)
 	return nil
 }

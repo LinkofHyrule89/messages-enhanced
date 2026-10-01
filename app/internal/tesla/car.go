@@ -20,11 +20,12 @@ type CarBackend interface {
 	StartConversation(numbers []string, groupName string) (any, error)
 	FolderConversations(folder string) (any, error)
 	FolderMessages(conversationID string) (any, error)
-	// PinMessage pins/unpins a message; Pins lists a conversation's pins.
-	PinMessage(messageID string, pinned bool) (any, error)
-	Pins(conversationID string) (any, error)
 	// PinConversation pins/unpins a conversation on this server.
 	PinConversation(conversationID string, pinned bool) (any, error)
+	// ArchiveConversation archives/unarchives on the phone (Google).
+	ArchiveConversation(conversationID string, archived bool) (any, error)
+	// TrashConversation deletes the conversation on the phone (Google).
+	TrashConversation(conversationID string) (any, error)
 }
 
 func (s *Server) registerCarRoutes(mux *http.ServeMux) {
@@ -34,9 +35,56 @@ func (s *Server) registerCarRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/tesla/folder", s.handleCarFolder)
 	mux.HandleFunc("/api/tesla/folder/messages", s.handleCarFolderMessages)
 	mux.HandleFunc("/api/tesla/typing", s.handleTyping)
-	mux.HandleFunc("/api/tesla/messages/pin", s.handleCarPin)
-	mux.HandleFunc("/api/tesla/pins", s.handleCarPins)
 	mux.HandleFunc("/api/tesla/conversations/pin", s.handleCarConversationPin)
+	mux.HandleFunc("/api/tesla/conversations/archive", s.handleCarConversationArchive)
+	mux.HandleFunc("/api/tesla/conversations/trash", s.handleCarConversationTrash)
+}
+
+// POST /api/tesla/conversations/archive {"conversation_id": "...", "archived": true|false}
+func (s *Server) handleCarConversationArchive(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	b := s.carBackend(w)
+	if b == nil {
+		return
+	}
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+		Archived       *bool  `json:"archived"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.ConversationID) == "" || req.Archived == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "conversation_id and archived are required"})
+		return
+	}
+	v, err := b.ArchiveConversation(req.ConversationID, *req.Archived)
+	writeCarResult(w, v, err)
+}
+
+// POST /api/tesla/conversations/trash {"conversation_id": "..."}
+func (s *Server) handleCarConversationTrash(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	b := s.carBackend(w)
+	if b == nil {
+		return
+	}
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.ConversationID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "conversation_id is required"})
+		return
+	}
+	v, err := b.TrashConversation(req.ConversationID)
+	writeCarResult(w, v, err)
 }
 
 // POST /api/tesla/conversations/pin {"conversation_id": "...", "pinned": true|false}
@@ -61,48 +109,6 @@ func (s *Server) handleCarConversationPin(w http.ResponseWriter, r *http.Request
 	}
 	v, err := b.PinConversation(req.ConversationID, *req.Pinned)
 	writeCarResult(w, v, err)
-}
-
-// POST /api/tesla/messages/pin {"message_id": "...", "pinned": true|false}
-func (s *Server) handleCarPin(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodPost) {
-		return
-	}
-	b := s.carBackend(w)
-	if b == nil {
-		return
-	}
-	var req struct {
-		MessageID string `json:"message_id"`
-		Pinned    *bool  `json:"pinned"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	if strings.TrimSpace(req.MessageID) == "" || req.Pinned == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message_id and pinned are required"})
-		return
-	}
-	v, err := b.PinMessage(req.MessageID, *req.Pinned)
-	writeCarResult(w, v, err)
-}
-
-// GET /api/tesla/pins?conversation_id=...
-func (s *Server) handleCarPins(w http.ResponseWriter, r *http.Request) {
-	if !requireMethod(w, r, http.MethodGet) {
-		return
-	}
-	b := s.carBackend(w)
-	if b == nil {
-		return
-	}
-	id := strings.TrimSpace(r.URL.Query().Get("conversation_id"))
-	if id == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "conversation_id is required"})
-		return
-	}
-	v, err := b.Pins(id)
-	writeCarResult(w, map[string]any{"conversation_id": id, "pins": v}, err)
 }
 
 func writeCarResult(w http.ResponseWriter, v any, err error) {

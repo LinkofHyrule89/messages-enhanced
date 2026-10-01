@@ -50,6 +50,30 @@ type mockGMClient struct {
 	deleteErr     error
 	deleteFailure bool // respond Success=false
 	getOrCreateFn func(*gmproto.GetOrCreateConversationRequest) (*gmproto.GetOrCreateConversationResponse, error)
+
+	updateConvCalls []*gmproto.UpdateConversationRequest
+	updateConvErr   error
+	updateConvFail  bool
+	phoneConvs      map[string]*gmproto.Conversation
+}
+
+func (m *mockGMClient) UpdateConversation(req *gmproto.UpdateConversationRequest) (*gmproto.UpdateConversationResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateConvCalls = append(m.updateConvCalls, req)
+	if m.updateConvErr != nil {
+		return nil, m.updateConvErr
+	}
+	return &gmproto.UpdateConversationResponse{Success: !m.updateConvFail}, nil
+}
+
+func (m *mockGMClient) GetConversation(conversationID string) (*gmproto.Conversation, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c, ok := m.phoneConvs[conversationID]; ok {
+		return c, nil
+	}
+	return nil, fmt.Errorf("conversation not found")
 }
 
 func (m *mockGMClient) DeleteMessage(messageID string) (*gmproto.DeleteMessageResponse, error) {

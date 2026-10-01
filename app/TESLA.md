@@ -95,8 +95,12 @@ OpenMessage (loopback-only UI at `/`).
 | `TESLA_SECRET` | (unset = Tesla mode off) | Login secret, ≥ 16 chars. It also derives the cookie-vault key and signs session cookies, so changing it logs everyone out and makes stored cookies unreadable (paste them again). |
 | `TESLA_SESSION_DAYS` | `30` | Login cookie lifetime. |
 | `TESLA_COOKIE_SECURE` | `auto` | `auto` marks the cookie Secure when the request came over TLS or `X-Forwarded-Proto: https`. `1` forces it on, `0` forces it off. |
-| `TESLA_STT_MODE` | `auto` | `auto`: browser speech (Web Speech API), then server STT as a fallback. `builtin`: browser speech only (`/api/transcribe` returns 503). `server`: always record and use server STT. |
-| `TESLA_STT_PROVIDER` | `none` | Server STT: `openai`, `groq`, `fake` or `none`. With `none` (and no browser speech) the mic button is dimmed and explains that speech isn't available. |
+| `TESLA_STT_MODE` | `auto` | `auto`: browser speech (Web Speech API), then server STT as a fallback. If browser speech fails for good (e.g. `network` in the Tesla browser, no Google speech service), auto mode skips it on that device for 24 h and goes straight to server STT (Settings → Microphone & speech-to-text → Check again resets it). `builtin`: browser speech only (`/api/transcribe` returns 503). `server`: always record and use server STT. |
+| `TESLA_STT_PROVIDER` | `none` | Server STT: `whisper` (local whisper.cpp, no key), `openai`, `groq`, `fake` or `none`. With `none` (and no browser speech) the mic button is dimmed and explains that speech isn't available. |
+| `TESLA_WHISPER_URL` | `http://127.0.0.1:8178/inference` | For `whisper`: a whisper.cpp `whisper-server` started with `--convert` (needs `ffmpeg` on PATH, since browsers record webm/opus). Keep it on loopback. |
+| `TESLA_WHISPER_MODEL` | `local` | For `whisper`: label only (shown as `whisper:<label>`), e.g. `base.en-q8_0`. The model is chosen by whisper-server's `-m`. |
+| `TESLA_WHISPER_LIVE_URL` | (= `TESLA_WHISPER_URL`) | For `whisper`: whisper-server used for **live typing** passes (`POST /api/transcribe/partial`). The page sends 16 kHz mono PCM that the server wraps as WAV, so this instance doesn't need `--convert`; run it with `-ac 768` (≈15 s encoder context) for ~2× faster passes. |
+| `TESLA_STT_LIVE` | on | `0` turns live typing off server-side (the page then records and transcribes on Done only). Live typing exists only for `whisper` (and `fake`); cloud providers would bill every overlapping window. |
 | `OPENAI_API_KEY` | | Needed for `openai`. |
 | `TESLA_OPENAI_MODEL` | `gpt-4o-mini-transcribe` | Or `whisper-1` / `gpt-4o-transcribe`. |
 | `TESLA_OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible `/audio/transcriptions` server (e.g. a self-hosted whisper server). |

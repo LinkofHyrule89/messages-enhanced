@@ -227,3 +227,35 @@ func TestEventStreamRejectsNewestSubscriberAtLimit(t *testing.T) {
 		t.Fatalf("status = %d, want 503", w.Code)
 	}
 }
+
+func TestControlAuthEnforceModeRejectsUnauthenticated(t *testing.T) {
+	a, err := NewControlAuth(t.TempDir(), zerolog.Nop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.SetEnforce(true)
+	h := ProtectLocalControl(a.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })))
+	do := func(path string, apply func(*http.Request)) int {
+		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1"+path, nil)
+		r.RemoteAddr = "127.0.0.1:5000"
+		apply(r)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w.Code
+	}
+	none := func(*http.Request) {}
+	for _, p := range []string{"/api/status", "/api/conversations", "/mcp", "/mcp/sse"} {
+		if got := do(p, none); got != http.StatusUnauthorized {
+			t.Fatalf("%s missing auth: %d", p, got)
+		}
+		if got := do(p, func(r *http.Request) { r.Header.Set("Authorization", "Bearer nope") }); got != http.StatusUnauthorized {
+			t.Fatalf("%s bad auth: %d", p, got)
+		}
+		if got := do(p, a.Authorize); got != http.StatusNoContent {
+			t.Fatalf("%s with Authorize: %d", p, got)
+		}
+	}
+	if a.Status()["mode"] != AuthModeEnforce {
+		t.Fatalf("status mode = %v", a.Status()["mode"])
+	}
+}

@@ -288,6 +288,14 @@ func (h *EventHandler) handleConversation(conv *gmproto.Conversation) {
 }
 
 func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
+	if GoogleConversationDeleted(conv) {
+		// Deleted on the phone / from the car page: drop the local copy
+		// instead of re-creating it from this update.
+		if err := h.Store.DeleteConversation(conv.GetConversationID()); err != nil {
+			h.Logger.Warn().Err(err).Str("conv_id", conv.GetConversationID()).Msg("Failed to delete conversation removed in Google Messages")
+		}
+		return true
+	}
 	participantsJSON := "[]"
 	var avatarCandidates []db.ContactAvatarCandidate
 	if ps := conv.GetParticipants(); len(ps) > 0 {
@@ -356,6 +364,7 @@ func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
 		h.Logger.Error().Err(err).Str("conv_id", dbConv.ConversationID).Msg("Failed to store conversation")
 		return false
 	}
+	MirrorGoogleConversationStatus(h.Store, h.Logger, conv)
 	if h.OnGoogleAvatarCandidates != nil && len(avatarCandidates) > 0 {
 		h.OnGoogleAvatarCandidates(avatarCandidates)
 	}

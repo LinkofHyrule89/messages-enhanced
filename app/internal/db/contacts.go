@@ -232,10 +232,25 @@ func avatarCandidateKey(c ContactAvatarCandidate) (source, participantID, contac
 	if source == "" {
 		source = "sms"
 	}
-	participantID = strings.TrimSpace(c.ParticipantID)
+	participantID = c.CacheParticipantID()
 	contactID = strings.TrimSpace(c.ContactID)
 	phone = NormalizeAvatarPhone(c.PhoneNumber)
 	return source, participantID, contactID, phone
+}
+
+// CacheParticipantID is the participant ID an avatar candidate is cached
+// (and looked up) under. Google's contact list (Source "contacts") reports a
+// participant ID from a different numbering than conversation participants:
+// the same person can be participant 4 in conversations and 916 in the
+// contact list, and contact-list participant 29 can be someone else entirely
+// than conversation participant 29. Caching a contact-list photo under its
+// participant ID therefore served it for the wrong conversation participant,
+// so contact-list candidates are cached by contact ID / phone only.
+func (c ContactAvatarCandidate) CacheParticipantID() string {
+	if strings.EqualFold(strings.TrimSpace(c.Source), "contacts") {
+		return ""
+	}
+	return strings.TrimSpace(c.ParticipantID)
 }
 
 func ContactAvatarID(c ContactAvatarCandidate) string {
@@ -311,11 +326,20 @@ func (s *Store) GetContactAvatar(sourcePlatform, participantID, contactID, phone
 	participantID = strings.TrimSpace(participantID)
 	contactID = strings.TrimSpace(contactID)
 	phoneNumber = NormalizeAvatarPhone(phoneNumber)
+	// A participant-ID match is only trusted when it doesn't contradict the
+	// caller's other identifiers: a row cached under the same participant ID
+	// for a different contact (or a different phone number) is someone else's
+	// photo (participant IDs aren't unique across Google's contact list and
+	// conversations, see CacheParticipantID), so fall through to the
+	// contact-ID / phone lookups instead of returning it.
 	queries := []struct {
 		where string
 		args  []any
 	}{
-		{"source_platform = ? AND participant_id = ? AND participant_id != ''", []any{source, participantID}},
+		{"source_platform = ? AND participant_id = ? AND participant_id != ''" +
+			" AND (? = '' OR contact_id = '' OR contact_id = ?)" +
+			" AND (? = '' OR phone_number = '' OR phone_number = ?)",
+			[]any{source, participantID, contactID, contactID, phoneNumber, phoneNumber}},
 		{"source_platform = ? AND contact_id = ? AND contact_id != ''", []any{source, contactID}},
 		{"source_platform = ? AND phone_number = ? AND phone_number != ''", []any{source, phoneNumber}},
 	}

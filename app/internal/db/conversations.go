@@ -522,3 +522,22 @@ func (s *Store) ApplyConversationSnapshot(c *Conversation) error {
 	}
 	return s.UpsertConversation(c)
 }
+
+// MirrorGoogleArchive applies Google Messages' archived state to the local
+// tab: archived on the phone -> "archive" (only from Recent, so custom tabs
+// are left alone); active on the phone -> back to Recent if it was archived.
+// Reports whether the tab changed.
+func (s *Store) MirrorGoogleArchive(id string, archived bool) (bool, error) {
+	var res sql.Result
+	var err error
+	if archived {
+		res, err = s.db.Exec(`UPDATE conversations SET tab = ? WHERE conversation_id = ? AND tab = ''`, TabArchive, id)
+	} else {
+		res, err = s.db.Exec(`UPDATE conversations SET tab = '' WHERE conversation_id = ? AND tab = ?`, id, TabArchive)
+	}
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}

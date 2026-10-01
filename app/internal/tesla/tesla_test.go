@@ -343,6 +343,78 @@ func TestOpenAICompatibleProviderRequestShape(t *testing.T) {
 	}
 }
 
+func TestLocalWhisperProviderRequestShape(t *testing.T) {
+	var gotPath, gotAuth, gotFormat, gotLang, gotFileName string
+	var gotLen int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Error(err)
+		}
+		gotFormat = r.FormValue("response_format")
+		gotLang = r.FormValue("language")
+		f, hdr, err := r.FormFile("file")
+		if err == nil {
+			b, _ := io.ReadAll(f)
+			gotLen = len(b)
+			gotFileName = hdr.Filename
+		}
+		// whisper-server's json reply has a leading space and trailing newline.
+		_, _ = w.Write([]byte(`{"text":" Running ten minutes late.\n"}`))
+	}))
+	defer srv.Close()
+	tr, err := NewTranscriber(Config{STTProvider: "whisper", WhisperURL: srv.URL + "/inference", WhisperModel: "base.en-q8_0", STTLanguage: "en"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Name() != "whisper:base.en-q8_0" || ProviderLabel(tr.Name()) != "Local Whisper" {
+		t.Fatalf("name=%q label=%q", tr.Name(), ProviderLabel(tr.Name()))
+	}
+	text, err := tr.Transcribe(context.Background(), []byte("0123456789"), "audio/webm;codecs=opus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "Running ten minutes late." || gotPath != "/inference" || gotAuth != "" || gotFormat != "json" || gotLang != "en" || gotFileName != "clip.webm" || gotLen != 10 {
+		t.Fatalf("text=%q path=%q auth=%q format=%q lang=%q file=%q len=%d", text, gotPath, gotAuth, gotFormat, gotLang, gotFileName, gotLen)
+	}
+}
+
+func TestLocalWhisperProviderDefaultsAndErrors(t *testing.T) {
+	for _, name := range []string{"whisper", "local", "whisper.cpp"} {
+		tr, err := NewTranscriber(Config{STTProvider: name})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		o, ok := tr.(*OpenAICompatTranscriber)
+		if !ok || o.Endpoint != DefaultWhisperURL || tr.Name() != "whisper:local" {
+			t.Fatalf("%s: got %#v", name, tr)
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"failed to read audio data"}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+	tr, _ := NewTranscriber(Config{STTProvider: "whisper", WhisperURL: srv.URL + "/inference"})
+	if _, err := tr.Transcribe(context.Background(), []byte("abc"), "audio/webm"); err == nil || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("want HTTP 400 error, got %v", err)
+	}
+}
+
+func TestWhisperConfigFromEnv(t *testing.T) {
+	t.Setenv("TESLA_SECRET", testSecret)
+	t.Setenv("TESLA_STT_PROVIDER", "Whisper")
+	t.Setenv("TESLA_WHISPER_URL", " http://127.0.0.1:9999/inference ")
+	t.Setenv("TESLA_WHISPER_MODEL", "small.en-q5_1")
+	c, err := ConfigFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.STTProvider != "whisper" || c.WhisperURL != "http://127.0.0.1:9999/inference" || c.WhisperModel != "small.en-q5_1" {
+		t.Fatalf("got %+v", c)
+	}
+}
+
 func TestProviderSelection(t *testing.T) {
 	if _, err := NewTranscriber(Config{STTProvider: "openai"}); err == nil {
 		t.Error("openai without key should fail")

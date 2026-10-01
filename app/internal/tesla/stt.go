@@ -55,10 +55,42 @@ func NewTranscriber(cfg Config) (Transcriber, error) {
 			Language:     cfg.STTLanguage,
 			Prompt:       cfg.STTPrompt,
 		}, nil
+	case "whisper", "local", "whisper.cpp", "whispercpp":
+		// A self-hosted whisper.cpp whisper-server (or anything speaking its
+		// multipart /inference contract). No API key; keep it on loopback.
+		return &OpenAICompatTranscriber{
+			ProviderName: "whisper",
+			Endpoint:     firstNonEmpty(cfg.WhisperURL, DefaultWhisperURL),
+			Model:        firstNonEmpty(cfg.WhisperModel, "local"),
+			Language:     cfg.STTLanguage,
+			Prompt:       cfg.STTPrompt,
+			HTTPClient:   &http.Client{Timeout: 120 * time.Second},
+		}, nil
 	default:
-		return nil, fmt.Errorf("unknown TESLA_STT_PROVIDER %q (want openai, groq, fake, or none)", cfg.STTProvider)
+		return nil, fmt.Errorf("unknown TESLA_STT_PROVIDER %q (want whisper, openai, groq, fake, or none)", cfg.STTProvider)
 	}
 }
+
+// NewPartialTranscriber builds the live-typing engine for cfg, or nil when
+// the provider has none (only local whisper.cpp does; cloud APIs would bill
+// for every overlapping window).
+func NewPartialTranscriber(cfg Config) PartialTranscriber {
+	switch cfg.STTProvider {
+	case "whisper", "local", "whisper.cpp", "whispercpp":
+		return &WhisperCppPartial{
+			Endpoint: firstNonEmpty(cfg.WhisperLiveURL, cfg.WhisperURL, DefaultWhisperURL),
+			Language: cfg.STTLanguage,
+			Prompt:   cfg.STTPrompt,
+		}
+	case "fake":
+		return FakeTranscriber{Text: cfg.FakeTranscript}
+	}
+	return nil
+}
+
+// DefaultWhisperURL is where whisper.cpp's whisper-server listens by default
+// (127.0.0.1:8080 upstream; start-all.sh uses 8178 to stay clear of 8080).
+const DefaultWhisperURL = "http://127.0.0.1:8178/inference"
 
 // ProviderLabel is a short human name for a transcriber's Name(), shown in
 // the car UI so you can tell which engine produced a transcript.
@@ -69,6 +101,8 @@ func ProviderLabel(name string) string {
 		return "OpenAI"
 	case "groq":
 		return "Groq"
+	case "whisper":
+		return "Local Whisper"
 	case "fake":
 		return "Fake STT"
 	case "none", "":
@@ -105,7 +139,8 @@ func (f FakeTranscriber) Transcribe(ctx context.Context, audio []byte, mimeType 
 }
 
 // OpenAICompatTranscriber talks to OpenAI's /v1/audio/transcriptions API or
-// any compatible one (Groq exposes the same multipart contract).
+// any compatible one (Groq exposes the same multipart contract, and
+// whisper.cpp's whisper-server /inference accepts it too, without a key).
 type OpenAICompatTranscriber struct {
 	ProviderName string
 	Endpoint     string
@@ -149,7 +184,9 @@ func (o *OpenAICompatTranscriber) Transcribe(ctx context.Context, audio []byte, 
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+o.APIKey)
+	if o.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+o.APIKey)
+	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	client := o.HTTPClient
 	if client == nil {

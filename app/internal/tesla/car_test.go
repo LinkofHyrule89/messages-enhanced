@@ -24,8 +24,25 @@ type fakeCar struct {
 	folder    string
 	folderMsg string
 	deleteErr error
-	pins      map[string]bool
 	convPins  map[string]bool
+	archived  map[string]bool
+	trashed   []string
+}
+
+func (f *fakeCar) ArchiveConversation(id string, archived bool) (any, error) {
+	if id == "offline" {
+		return nil, statusErr{503, "Google Messages isn't connected"}
+	}
+	if f.archived == nil {
+		f.archived = map[string]bool{}
+	}
+	f.archived[id] = archived
+	return map[string]any{"conversation_id": id, "archived": archived, "scope": "google"}, nil
+}
+
+func (f *fakeCar) TrashConversation(id string) (any, error) {
+	f.trashed = append(f.trashed, id)
+	return map[string]any{"conversation_id": id, "action": "trash", "scope": "google"}, nil
 }
 
 func (f *fakeCar) PinConversation(id string, pinned bool) (any, error) {
@@ -67,69 +84,6 @@ func (f *fakeCar) FolderConversations(folder string) (any, error) {
 func (f *fakeCar) FolderMessages(id string) (any, error) {
 	f.folderMsg = id
 	return nil, statusErr{503, "Google Messages isn't connected"}
-}
-
-func (f *fakeCar) PinMessage(id string, pinned bool) (any, error) {
-	if id == "missing" {
-		return nil, statusErr{404, "message not found"}
-	}
-	if f.pins == nil {
-		f.pins = map[string]bool{}
-	}
-	f.pins[id] = pinned
-	return map[string]any{"message_id": id, "pinned": pinned, "scope": "local"}, nil
-}
-func (f *fakeCar) Pins(conv string) (any, error) {
-	out := []map[string]string{}
-	for id, on := range f.pins {
-		if on {
-			out = append(out, map[string]string{"message_id": id, "conversation_id": conv})
-		}
-	}
-	return out, nil
-}
-
-func TestCarPinEndpoints(t *testing.T) {
-	car := &fakeCar{}
-	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) { d.Car = car })
-	// login required
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "http://car.example/api/tesla/pins?conversation_id=c1", nil))
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("pins without login: %d", rr.Code)
-	}
-	c := login(t, h)
-	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"m1"}`)); rr.Code != 400 {
-		t.Fatalf("missing pinned flag: %d", rr.Code)
-	}
-	if rr := authedReq(t, h, c, http.MethodGet, "/api/tesla/messages/pin", "", nil); rr.Code != 405 {
-		t.Fatalf("GET pin: %d", rr.Code)
-	}
-	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"missing","pinned":true}`)); rr.Code != 404 {
-		t.Fatalf("missing message: %d", rr.Code)
-	}
-	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"m1","pinned":true}`)); rr.Code != 200 {
-		t.Fatalf("pin: %d %s", rr.Code, rr.Body.String())
-	}
-	rr = authedReq(t, h, c, http.MethodGet, "/api/tesla/pins?conversation_id=c1", "", nil)
-	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"message_id":"m1"`) {
-		t.Fatalf("list: %d %s", rr.Code, rr.Body.String())
-	}
-	if rr := authedReq(t, h, c, http.MethodGet, "/api/tesla/pins", "", nil); rr.Code != 400 {
-		t.Fatalf("list without conv: %d", rr.Code)
-	}
-	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/messages/pin", "application/json", strings.NewReader(`{"message_id":"m1","pinned":false}`)); rr.Code != 200 || car.pins["m1"] {
-		t.Fatalf("unpin: %d", rr.Code)
-	}
-	// cross-origin write refused
-	req := httptest.NewRequest(http.MethodPost, "http://car.example/api/tesla/messages/pin", strings.NewReader(`{"message_id":"m1","pinned":true}`))
-	req.Header.Set("Origin", "https://evil.example")
-	req.AddCookie(c)
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	if rr.Code != http.StatusForbidden || car.pins["m1"] {
-		t.Fatalf("cross-origin pin: %d", rr.Code)
-	}
 }
 
 func TestCarConversationPinEndpoint(t *testing.T) {
@@ -316,5 +270,52 @@ func TestTypingEndpoint(t *testing.T) {
 	}
 	if len(out.Typing) != 1 || out.Typing[0].ConversationID != "c9" || out.TTL != 15000 {
 		t.Fatalf("typing = %+v", out)
+	}
+}
+
+func TestCarConversationArchiveAndTrashEndpoints(t *testing.T) {
+	car := &fakeCar{}
+	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) { d.Car = car })
+	for _, p := range []string{"/api/tesla/conversations/archive", "/api/tesla/conversations/trash"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "http://car.example"+p, strings.NewReader(`{"conversation_id":"c1","archived":true}`)))
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("%s without login: %d", p, rr.Code)
+		}
+	}
+	if len(car.trashed) != 0 || car.archived != nil {
+		t.Fatal("unauthenticated request reached the backend")
+	}
+	c := login(t, h)
+	for body, want := range map[string]int{
+		`{"conversation_id":"c1"}`:                      400,
+		`{"archived":true}`:                             400,
+		`{"conversation_id":"offline","archived":true}`: 503,
+		`{"conversation_id":"c1","archived":true}`:      200,
+	} {
+		if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/conversations/archive", "application/json", strings.NewReader(body)); rr.Code != want {
+			t.Fatalf("archive %s: got %d want %d", body, rr.Code, want)
+		}
+	}
+	if !car.archived["c1"] {
+		t.Fatal("c1 not archived")
+	}
+	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/conversations/trash", "application/json", strings.NewReader(`{}`)); rr.Code != 400 {
+		t.Fatalf("trash without id: %d", rr.Code)
+	}
+	if rr := authedReq(t, h, c, http.MethodGet, "/api/tesla/conversations/trash", "", nil); rr.Code != 405 {
+		t.Fatalf("GET trash: %d", rr.Code)
+	}
+	if rr := authedReq(t, h, c, http.MethodPost, "/api/tesla/conversations/trash", "application/json", strings.NewReader(`{"conversation_id":"c1"}`)); rr.Code != 200 || len(car.trashed) != 1 {
+		t.Fatalf("trash: %d %v", rr.Code, car.trashed)
+	}
+	// Cross-origin writes are refused by the gate.
+	req := httptest.NewRequest(http.MethodPost, "http://car.example/api/tesla/conversations/trash", strings.NewReader(`{"conversation_id":"c2"}`))
+	req.AddCookie(c)
+	req.Header.Set("Origin", "https://evil.example")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || len(car.trashed) != 1 {
+		t.Fatalf("cross-origin trash: %d", rr.Code)
 	}
 }
