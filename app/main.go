@@ -25,7 +25,7 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "Usage: openmessage <pair|serve|demo|backup|migrate|read|thread|threads|send|import>")
 		fmt.Fprintln(os.Stderr, "  pair [--google|--google-file path]       - Pair with your phone via QR or Google account cookies")
-		fmt.Fprintln(os.Stderr, "  tesla-cookies [--file path|--status|--clear] - Store Google cookies (stdin) in the encrypted Tesla vault (needs TESLA_SECRET)")
+		fmt.Fprintln(os.Stderr, "  google-cookies [--file path|--status|--clear] - Store Google cookies (stdin) in the encrypted cookie vault (needs MESSAGES_SECRET)")
 		fmt.Fprintln(os.Stderr, "  serve [--demo] [--web|--no-web] [--mcp-sse|--no-mcp-sse] [--mcp-stdio] - Start explicit web/MCP transports")
 		fmt.Fprintln(os.Stderr, "  demo                                     - Start a seeded fake-data UI with live transports disabled")
 		fmt.Fprintln(os.Stderr, "  backup [--to dir] [--json]               - Create a verified legacy migration backup and manifest")
@@ -49,8 +49,8 @@ func main() {
 	switch os.Args[1] {
 	case "pair":
 		err = cmd.RunPair(logger, os.Args[2:]...)
-	case "tesla-cookies":
-		err = cmd.RunTeslaCookies(logger, os.Args[2:]...)
+	case "google-cookies":
+		err = cmd.RunCookieVault(logger, os.Args[2:]...)
 	case "serve":
 		err = cmd.RunServe(logger, os.Args[2:]...)
 	case "demo":

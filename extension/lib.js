@@ -1,5 +1,5 @@
 /*
- * Pure helpers for the Tesla Messages cookie sender. No chrome.* or DOM use,
+ * Pure helpers for the Messages Enhanced cookie sender. No chrome.* or DOM use,
  * so this file can be unit-tested in Node (see tests/lib.test.js) and reused
  * by popup.js in the browser.
  *
@@ -11,7 +11,7 @@
 
   const DEFAULT_APP = 'http://localhost:7117';
 
-  // Must match internal/tesla/cookies.go in the app.
+  // Must match internal/webapp/cookies.go in the app.
   const REQUIRED = ['SID', 'HSID', 'SSID', 'OSID', 'APISID', 'SAPISID'];
   const OPTIONAL = [
     '__Secure-1PSID', '__Secure-3PSID', '__Secure-1PSIDTS', '__Secure-3PSIDTS',

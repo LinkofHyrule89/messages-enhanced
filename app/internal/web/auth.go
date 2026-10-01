@@ -34,7 +34,7 @@ type ControlAuth struct {
 	warned            map[string]struct{}
 	warnedMapOverflow bool
 	// enforce rejects unauthenticated requests to protected local paths
-	// instead of accept-and-log. Turned on when an outer gate (the Tesla
+	// instead of accept-and-log. Turned on when an outer gate (the web app
 	// login) fronts this handler and injects the token via Authorize.
 	enforce atomic.Bool
 }

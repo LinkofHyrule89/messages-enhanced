@@ -541,3 +541,20 @@ func (s *Store) MirrorGoogleArchive(id string, archived bool) (bool, error) {
 	n, _ := res.RowsAffected()
 	return n > 0, nil
 }
+
+// LatestEncryptionTombstone returns the status of the newest Google Messages
+// tombstone that says whether a chat is end-to-end encrypted (e.g.
+// TOMBSTONE_ENCRYPTED_ONE_ON_ONE_RCS_CREATED, ..._PROTOCOL_SWITCH_TO_TEXT),
+// or "" if there is none.
+func (s *Store) LatestEncryptionTombstone(conversationID string) (string, error) {
+	var status string
+	err := s.db.QueryRow(`
+		SELECT status FROM messages
+		WHERE conversation_id = ? AND status LIKE '%TOMBSTONE%'
+			AND (status LIKE '%ENCRYPT%' OR status LIKE '%PROTOCOL_SWITCH%' OR status LIKE '%_CREATED%')
+		ORDER BY timestamp_ms DESC, message_id DESC LIMIT 1`, conversationID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return status, err
+}

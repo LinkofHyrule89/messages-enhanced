@@ -35,10 +35,10 @@ import (
 	"github.com/maxghenis/openmessage/internal/readsource"
 	"github.com/maxghenis/openmessage/internal/storage/sqlite"
 	"github.com/maxghenis/openmessage/internal/telemetry"
-	"github.com/maxghenis/openmessage/internal/tesla"
 	"github.com/maxghenis/openmessage/internal/tools"
 	"github.com/maxghenis/openmessage/internal/v2read"
 	"github.com/maxghenis/openmessage/internal/web"
+	"github.com/maxghenis/openmessage/internal/webapp"
 	"github.com/maxghenis/openmessage/internal/whatsapplive"
 )
 
@@ -187,20 +187,20 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		events.PublishStatus(isConnected())
 	}
 	a.OnConversationsChange = events.PublishConversations
-	// Web Push for the Tesla UI: the hub is created now so it sees every
-	// message change; it stays idle until the Tesla UI opens it below.
-	teslaPush := tesla.NewPushHub()
+	// Web Push for the web app UI: the hub is created now so it sees every
+	// message change; it stays idle until the web app UI opens it below.
+	webPush := webapp.NewPushHub()
 	a.OnMessagesChange = func(conversationID string) {
 		events.PublishMessages(conversationID)
-		teslaPush.MessagesChanged(conversationID)
+		webPush.MessagesChanged(conversationID)
 	}
 	a.OnStatusChange = func(bool) { publishOverallStatus() }
 	// Typing events go to the SSE stream and to the car page's in-memory
-	// tracker (GET /api/tesla/typing, 15s expiry).
-	teslaTyping := tesla.NewTypingTracker()
+	// tracker (GET /api/app/typing, 15s expiry).
+	webTyping := webapp.NewTypingTracker()
 	a.OnTypingChange = func(conversationID, senderName, senderNumber string, typing bool) {
 		events.PublishTyping(conversationID, senderName, senderNumber, typing)
-		teslaTyping.Set(conversationID, senderName, senderNumber, typing)
+		webTyping.Set(conversationID, senderName, senderNumber, typing)
 	}
 	a.OnWhatsAppStatusChange = func() {
 		publishOverallStatus()
@@ -734,39 +734,39 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		} else {
 			httpHandler = web.ProtectLocalControl(controlAuth.Handler(mcpHTTPHandler))
 		}
-		if opts.web && tesla.Enabled() {
-			// Tesla Messages: shared-secret login + car UI + STT in front of
+		if opts.web && webapp.Enabled() {
+			// Messages Enhanced: shared-secret login + car UI + STT in front of
 			// OpenMessage's (loopback-only) handler, so the server can sit
 			// behind a public HTTPS hostname.
-			teslaCfg, err := tesla.ConfigFromEnv()
+			webCfg, err := webapp.ConfigFromEnv()
 			if err != nil {
 				return err
 			}
-			if err := teslaPush.Open(a.DataDir, teslaPushSource(a), logger); err != nil {
+			if err := webPush.Open(a.DataDir, webPushSource(a), logger); err != nil {
 				logger.Warn().Err(err).Msg("Web Push unavailable")
 			}
-			teslaHandler, _, err := tesla.NewHandler(teslaCfg, tesla.Deps{
+			webHandler, _, err := webapp.NewHandler(webCfg, webapp.Deps{
 				DataDir:     a.DataDir,
 				SessionPath: a.SessionPath,
 				Inner:       httpHandler,
 				InnerHost:   net.JoinHostPort("127.0.0.1", port),
-				// The Tesla login gates everything; the inner control API
+				// The web app login gates everything; the inner control API
 				// then only accepts requests the gate stamped with the
 				// control token (no accept-and-log hole behind the gate).
 				InnerAuthorize: controlAuth.Authorize,
 				Reconnect:      reconnectGoogle,
 				GoogleStatus:   googleStatus,
 				Logger:         logger,
-				Car:            teslaCarBackend{a: a},
-				Typing:         teslaTyping,
-				Push:           teslaPush,
+				Car:            webCarBackend{a: a},
+				Typing:         webTyping,
+				Push:           webPush,
 			})
 			if err != nil {
-				return fmt.Errorf("initialize Tesla UI: %w", err)
+				return fmt.Errorf("initialize web app UI: %w", err)
 			}
 			controlAuth.SetEnforce(true)
-			httpHandler = teslaHandler
-			logger.Info().Str("stt", teslaCfg.STTProvider).Str("stt_mode", teslaCfg.STTMode).Bool("fake_pairing", teslaCfg.FakePairing != "").Msg("Tesla Messages UI enabled at " + baseURL + "/tesla/ (login required)")
+			httpHandler = webHandler
+			logger.Info().Str("stt", webCfg.STTProvider).Str("stt_mode", webCfg.STTMode).Bool("fake_pairing", webCfg.FakePairing != "").Msg("Messages Enhanced UI enabled at " + baseURL + "/app/ (login required)")
 		}
 
 		ln, err := net.Listen("tcp", listenAddr)

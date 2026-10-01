@@ -1,5 +1,5 @@
 /*
- * Popup controller for the Tesla Messages cookie sender.
+ * Popup controller for the Messages Enhanced cookie sender.
  *
  * SECURITY: cookie values are read via chrome.cookies, put straight into the
  * POST body, and never logged, stored, or shown. Only cookie NAMES appear in

@@ -8,11 +8,11 @@ const L = require('../lib.js');
 
 const c = (name, value, domain) => ({ name, value, domain: domain || '.google.com' });
 
-test('cookie name lists match the app (internal/tesla/cookies.go)', () => {
+test('cookie name lists match the app (internal/webapp/cookies.go)', () => {
   assert.deepEqual(L.REQUIRED, ['SID', 'HSID', 'SSID', 'OSID', 'APISID', 'SAPISID']);
   assert.deepEqual(L.OPTIONAL, ['__Secure-1PSID', '__Secure-3PSID', '__Secure-1PSIDTS',
     '__Secure-3PSIDTS', '__Secure-1PAPISID', '__Secure-3PAPISID', 'NID', 'SIDCC']);
-  const goPath = path.join(__dirname, '..', '..', 'app', 'internal', 'tesla', 'cookies.go');
+  const goPath = path.join(__dirname, '..', '..', 'app', 'internal', 'webapp', 'cookies.go');
   if (fs.existsSync(goPath)) {
     const go = fs.readFileSync(goPath, 'utf8');
     const grab = (v) => JSON.parse('[' + go.match(new RegExp(v + ' = \\[\\]string\\{([^}]*)\\}'))[1] + ']');

@@ -1,14 +1,14 @@
-# Tesla Messages Cookie Sender (Chrome extension, MV3)
+# Messages Enhanced Cookie Sender (Chrome extension, MV3)
 
-Send your Google Messages sign-in cookies to **your own** Tesla Messages app in
+Send your Google Messages sign-in cookies to **your own** Messages Enhanced app in
 one click, instead of copying them out of DevTools by hand.
 
 ## Install (Load unpacked)
 
-1. Unzip `tesla-messages-extension.zip` (or use this folder as-is).
+1. Unzip `messages-enhanced-extension.zip` (or use this folder as-is).
 2. Open `chrome://extensions`, turn on **Developer mode** (top right).
 3. Click **Load unpacked** and select the folder that contains `manifest.json`.
-4. Optional: pin the extension (puzzle icon → pin) so the red chat icon is always visible.
+4. Optional: pin the extension (puzzle icon → pin) so the blue chat icon is always visible.
 
 Chrome 116 or newer is required. Edge, Brave and other Chromium browsers work the same way.
 
@@ -17,11 +17,11 @@ Chrome 116 or newer is required. Edge, Brave and other Chromium browsers work th
 1. In Chrome, open <https://messages.google.com/web> and sign in to Google
    normally. It's fine if Messages then shows the QR / pairing screen.
    (The `OSID` cookie only exists after you visit messages.google.com.)
-2. In another tab, open your Tesla Messages app (default
+2. In another tab, open your Messages Enhanced app (default
    `http://localhost:7117`) and **sign in to the app** with your
-   `TESLA_SECRET`. The extension uses that login session.
+   `MESSAGES_SECRET`. The extension uses that login session.
 3. Click the extension icon. Check the **App address**, then click
-   **Send cookies to Tesla Messages**.
+   **Send cookies to Messages Enhanced**.
 4. The popup shows which required cookies were found (✓/✗, **names only**) and
    the app's answer:
    - `Saved: APISID, HSID, …`: done. Go to the app and pair.
@@ -60,7 +60,7 @@ incognito session.
 
 ## Server compatibility (CSRF check)
 
-The app's `sameOriginWrite` check (internal/tesla/auth.go) accepts
+The app's `sameOriginWrite` check (internal/webapp/auth.go) accepts
 `Sec-Fetch-Site: none`, which Chrome sends on extension fetches **to hosts the
 extension has permission for** (and extension fetches with host permission carry
 SameSite=Lax cookies such as `tm_session`). That works with no server change when the app is at:
@@ -77,8 +77,8 @@ small server change in `sameOriginWrite`, placed before the host comparison:
 
 ```go
 // Allow this extension's popup (Chrome sends no Sec-Fetch-Site over plain http).
-// TESLA_EXTENSION_ORIGINS: comma-separated, e.g. "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
-for _, o := range strings.Split(os.Getenv("TESLA_EXTENSION_ORIGINS"), ",") {
+// MESSAGES_EXTENSION_ORIGINS: comma-separated, e.g. "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+for _, o := range strings.Split(os.Getenv("MESSAGES_EXTENSION_ORIGINS"), ",") {
     if o = strings.TrimSpace(o); o != "" && origin == o {
         return true
     }
@@ -93,7 +93,8 @@ stay the same. This keeps the CSRF protection intact: web pages can't forge a
 ## Development
 
 ```
-python3 scripts/make_icons.py   # regenerate icons/icon{16,32,48,128}.png (stdlib only)
+# icons/icon{16,32,48,128}.png are rendered from the app icon:
+# app/internal/webapp/icons-src/render-icons.js (ext-*.png)
 node --test tests/              # unit tests for lib.js + manifest/icon checks
 ```
 

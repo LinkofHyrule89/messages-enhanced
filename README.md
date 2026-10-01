@@ -1,17 +1,28 @@
-# Tesla Messages
+# Messages Enhanced
 
-A Google Messages client made for a car screen. It runs in the Tesla in-car
-browser and is self-hosted: the server runs on your own computer, and the car
-(or any browser) connects to it.
+A self-hosted Google Messages client with a large, touch-friendly UI. The
+server runs on your own computer; your phone, tablet, laptop or car browser
+connects to it. It has a Car Mode made to work in the Tesla car browser.
 
 It's a fork of [OpenMessage](https://github.com/MaxGhenis/openmessage) by Max
 Ghenis, which talks to Google Messages through mautrix-gmessages' `libgm`.
 Many thanks to that project, and to the mautrix-gmessages authors.
 
+## Screenshots
+
+All screenshots use the built-in demo data (`serve --demo`); the names and
+messages are made up.
+
+| Car Mode (car screen) | Desktop layout |
+|---|---|
+| ![Car Mode](docs/screenshots/car-mode.png) | ![Desktop layout](docs/screenshots/desktop.png) |
+| **Chat theme** | **Composer** |
+| ![Chat theme picker](docs/screenshots/theme.png) | ![Composer](docs/screenshots/composer.png) |
+
 ## What's here
 
-- **`app/`**: the Go program (server and car page are one binary). The car
-  page is at `/tesla/` and adds:
+- **`app/`**: the Go program (server and web app are one binary). The web app
+  is at `/app/` and adds:
   - a password-protected page (shared secret, session cookie)
   - large, dark, touch-friendly layout for a car screen
   - voice-to-text (browser speech, with a server speech-to-text fallback)
@@ -21,7 +32,7 @@ Many thanks to that project, and to the mautrix-gmessages authors.
   - a pairing screen and a place to paste Google sign-in cookies
   - chat themes: color palettes, 90 freely licensed Wikimedia Commons
     wallpapers in 9 categories (credits in
-    [`app/internal/tesla/wallpapers/CREDITS.md`](app/internal/tesla/wallpapers/CREDITS.md)),
+    [`app/internal/webapp/wallpapers/CREDITS.md`](app/internal/webapp/wallpapers/CREDITS.md)),
     or your own photo; saved on the server so every device sees them
   - pinned conversations: pins from your phone sync read-only from Google,
     and you can add local pins from the car
@@ -33,14 +44,18 @@ Many thanks to that project, and to the mautrix-gmessages authors.
     conversation list that updates live
   - installable app (PWA) with its own icon, on phones, tablets and computers
   - push notifications for new messages, even with the page closed (Web Push;
-    not available in the Tesla browser), with an option to hide message text
+    not available in the car browser), with an option to hide message text
   - in Car Mode, the message box moves up under the conversation title while
     you type, so the on-screen keyboard can't cover it
   - conversation ⋮ menu: chat theme, group/contact details, pin, archive and
     move to trash (archive and trash sync with Google Messages)
-  See [`app/TESLA.md`](app/TESLA.md) for details.
-- **`extension/`**: "Tesla Messages Cookie Sender", a small Chrome extension
-  that sends your Google Messages sign-in cookies to your own Tesla Messages
+  - notification actions (Reply inline where the browser supports it, and
+    Mark as read), a mute bell per conversation, and a Google Messages-style
+    composer ("RCS message" / "Text message", SMS label, end-to-end
+    encryption lock)
+  See [`app/GUIDE.md`](app/GUIDE.md) for details.
+- **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
+  that sends your Google Messages sign-in cookies to your own Messages Enhanced
   server in one click. See [`extension/README.md`](extension/README.md).
 
 ## Build and run
@@ -49,11 +64,11 @@ Requires Go 1.25 or newer.
 
 ```bash
 cd app
-go build -o tesla-messages .
-./tesla-messages serve --web
+go build -o messages-enhanced .
+./messages-enhanced serve --web
 ```
 
-Then open `http://<host>:<port>/tesla/` and sign in with your secret.
+Then open `http://<host>:<port>/app/` and sign in with your secret.
 Keep the server on loopback and put a tunnel or reverse proxy in front of it
 if the car needs to reach it over the internet.
 
@@ -65,11 +80,11 @@ included here):
 | `OPENMESSAGES_DATA_DIR` | Where the session, database and cookie vault live. |
 | `OPENMESSAGES_PORT` | Port to listen on. |
 | `OPENMESSAGES_HOST` | Address to listen on. |
-| `TESLA_SECRET` | Login secret for the car page (turns the car page on). |
-| `TESLA_STT_MODE` | Voice-to-text engine choice (browser, server, or auto). |
-| `TESLA_STT_PROVIDER` | Server speech-to-text provider. |
+| `MESSAGES_SECRET` | Login secret for the web app (turns it on). |
+| `MESSAGES_STT_MODE` | Voice-to-text engine choice (browser, server, or auto). |
+| `MESSAGES_STT_PROVIDER` | Server speech-to-text provider. |
 
-More options are documented in [`app/TESLA.md`](app/TESLA.md).
+Variable names from earlier versions are still read as a fallback. More options are documented in [`app/GUIDE.md`](app/GUIDE.md).
 
 ## License
 

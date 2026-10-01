@@ -26,6 +26,8 @@ type GMClient interface {
 	UpdateConversation(req *gmproto.UpdateConversationRequest) (*gmproto.UpdateConversationResponse, error)
 	// GetConversation reads one conversation from the phone.
 	GetConversation(conversationID string) (*gmproto.Conversation, error)
+	// MarkRead marks a conversation read on the phone up to messageID.
+	MarkRead(conversationID, messageID string) error
 }
 
 // realGMClient wraps *libgm.Client to implement GMClient.
@@ -75,4 +77,8 @@ func (r *realGMClient) UpdateConversation(req *gmproto.UpdateConversationRequest
 
 func (r *realGMClient) GetConversation(conversationID string) (*gmproto.Conversation, error) {
 	return r.gm.GetConversation(conversationID)
+}
+
+func (r *realGMClient) MarkRead(conversationID, messageID string) error {
+	return r.gm.MarkRead(conversationID, messageID)
 }

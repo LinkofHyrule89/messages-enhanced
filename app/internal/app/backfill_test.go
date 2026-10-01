@@ -55,6 +55,14 @@ type mockGMClient struct {
 	updateConvErr   error
 	updateConvFail  bool
 	phoneConvs      map[string]*gmproto.Conversation
+	markReadCalls   [][2]string
+}
+
+func (m *mockGMClient) MarkRead(conversationID, messageID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.markReadCalls = append(m.markReadCalls, [2]string{conversationID, messageID})
+	return nil
 }
 
 func (m *mockGMClient) UpdateConversation(req *gmproto.UpdateConversationRequest) (*gmproto.UpdateConversationResponse, error) {

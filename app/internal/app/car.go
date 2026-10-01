@@ -15,9 +15,9 @@ import (
 	"github.com/maxghenis/openmessage/internal/db"
 )
 
-// Backend for the Tesla car page's message menu (Delete), "Start chat" panel
+// Backend for the car page's message menu (Delete), "Start chat" panel
 // and read-only Google folders (Archived / Spam / Blocked). The HTTP layer
-// lives in internal/tesla; these methods hold the logic so they can be tested
+// lives in internal/webapp; these methods hold the logic so they can be tested
 // with the mock GMClient.
 
 // CarError is an error with the HTTP status the car endpoints should return.

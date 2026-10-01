@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Tesla Messages Cookie Sender",
-  "short_name": "TM Cookies",
-  "version": "1.0.1",
-  "description": "Send your Google Messages sign-in cookies to your own Tesla Messages server in one click.",
+  "name": "Messages Enhanced Cookie Sender",
+  "short_name": "ME Cookies",
+  "version": "1.1.0",
+  "description": "Send your Google Messages sign-in cookies to your own Messages Enhanced server in one click.",
   "minimum_chrome_version": "116",
   "action": {
-    "default_title": "Send Google Messages cookies to Tesla Messages",
+    "default_title": "Send Google Messages cookies to Messages Enhanced",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

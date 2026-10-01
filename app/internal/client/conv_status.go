@@ -17,6 +17,14 @@ func GoogleConversationDeleted(conv *gmproto.Conversation) bool {
 // the phone: archived there -> "archive" here, active again (e.g. a new
 // message) -> back to Recent. Other statuses leave the tab alone.
 func MirrorGoogleConversationStatus(store *db.Store, logger zerolog.Logger, conv *gmproto.Conversation) {
+	// Google's conversation type drives the composer's "RCS message" /
+	// "Text message" placeholder.
+	switch conv.GetType() {
+	case gmproto.ConversationType_RCS:
+		_ = store.SetConversationDisplayProtocol(conv.GetConversationID(), "RCS")
+	case gmproto.ConversationType_SMS:
+		_ = store.SetConversationDisplayProtocol(conv.GetConversationID(), "Text")
+	}
 	var archived bool
 	switch conv.GetStatus() {
 	case gmproto.ConversationStatus_ARCHIVED, gmproto.ConversationStatus_KEEP_ARCHIVED:
