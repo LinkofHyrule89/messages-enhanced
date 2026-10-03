@@ -120,7 +120,10 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	s.registerThemeRoutes(protected)
 	s.registerPushRoutes(protected)
 	protected.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
+		// The bare domain, and any page address that isn't the web app's, go
+		// to the app's start path instead of a blank page. API and asset
+		// requests still reach the inner server.
+		if r.URL.Path == "/" || isPageNavigation(r) {
 			http.Redirect(w, r, "/app/", http.StatusFound)
 			return
 		}
@@ -446,3 +449,24 @@ const adminCookiesHTML = `<!doctype html>
   <p><a href="/app/">← Back to messages</a></p>
 </main>
 </body></html>`
+
+// isPageNavigation reports a browser loading a page (not fetch/XHR or an
+// asset) for a path outside the web app and the inner server's API.
+func isPageNavigation(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	p := r.URL.Path
+	if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/app/") {
+		return false
+	}
+	if mode := r.Header.Get("Sec-Fetch-Mode"); mode != "" {
+		return mode == "navigate"
+	}
+	// Older browsers (car): no Fetch Metadata. A page load asks for HTML;
+	// extensions mark assets.
+	if path.Ext(p) != "" {
+		return false
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
+}

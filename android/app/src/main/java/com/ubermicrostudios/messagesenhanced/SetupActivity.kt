@@ -67,12 +67,13 @@ class SetupActivity : ComponentActivity() {
                     var status by remember { mutableStateOf("") }
                     var ok by remember { mutableStateOf(false) }
                     var busy by remember { mutableStateOf(false) }
+                    var saved by remember { mutableStateOf(prefs.serverAddress) }
                     var log by remember { mutableStateOf(LaunchLog.read(this@SetupActivity)) }
                     val fromFailure = intent?.getBooleanExtra(EXTRA_FROM_FAILURE, false) == true
                     Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("Messages Enhanced", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            "Enter the https address of your own Messages Enhanced server.",
+                            "Enter the https address of your own Messages Enhanced server: just the domain, or the full web app address. The app finds the start page itself.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         OutlinedTextField(
@@ -94,15 +95,18 @@ class SetupActivity : ComponentActivity() {
                                     status = if (!norm.ok) norm.error ?: "Invalid address." else "The address must start with https://."
                                     return@Button
                                 }
-                                busy = true; status = "Checking ${norm.origin}…"; ok = false
+                                val base = ServerAddress.basePath(typed)
+                                busy = true; status = "Checking ${norm.origin}$base…"; ok = false
                                 Thread {
-                                    val err = probe(norm.origin)
+                                    val found = probe(norm.origin, base)
                                     runOnUiThread {
                                         busy = false
-                                        if (err == null) {
-                                            prefs.serverAddress = norm.origin
-                                            address = norm.origin
-                                            ok = true; status = "Connected. Saved."
+                                        val start = found.first
+                                        if (start != null) {
+                                            prefs.serverAddress = start
+                                            address = start
+                                            saved = start
+                                            ok = true; status = "Connected. Saved: $start"
                                             try {
                                                 startActivity(Intent(this@SetupActivity, TwaActivity::class.java))
                                                 finish()
@@ -111,7 +115,7 @@ class SetupActivity : ComponentActivity() {
                                                 log = LaunchLog.read(this@SetupActivity)
                                                 ok = false; status = "Saved, but the web app couldn't open. See the log below."
                                             }
-                                        } else { ok = false; status = err }
+                                        } else { ok = false; status = found.second ?: "Couldn't check the server." }
                                     }
                                 }.start()
                             },
@@ -119,6 +123,12 @@ class SetupActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth().height(56.dp),
                         ) { Text(if (busy) "Checking…" else "Test and open", fontSize = 18.sp) }
                         if (status.isNotEmpty()) Text(status, color = if (ok) OkGreen else ErrRed)
+                        if (saved.isNotBlank() && !ok) {
+                            Text(
+                                "Saved: ${ServerAddress.launchUrl(saved) ?: saved}",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         OutlinedButton(
                             onClick = { startActivity(Intent(this@SetupActivity, CookieSenderActivity::class.java)) },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -141,18 +151,40 @@ class SetupActivity : ComponentActivity() {
         }
     }
 
-    /** Null when [origin] answers like a Messages Enhanced server, else an error to show. */
-    private fun probe(origin: String): String? = try {
+    /**
+     * Finds the web app's start URL for [origin] + [base] (the path the user
+     * typed, minus "/app..."), from the server's web app manifest. Tries the
+     * typed path first, then the bare origin. (start URL, null) on success,
+     * else (null, error to show).
+     */
+    private fun probe(origin: String, base: String): Pair<String?, String?> {
         val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
-        client.newCall(Request.Builder().url("$origin/app/manifest.webmanifest").build()).execute().use { r ->
-            val body = r.body?.string().orEmpty()
-            when {
-                !r.isSuccessful -> "The server answered HTTP ${r.code}. Is this a Messages Enhanced server?"
-                !body.contains("\"start_url\"") || !body.contains("/app/") -> "That server doesn't look like Messages Enhanced."
-                else -> null
+        var lastErr: String? = null
+        for (b in if (base.isEmpty()) listOf("") else listOf(base, "")) {
+            val manifestUrl = "${origin}${b}/app/manifest.webmanifest"
+            try {
+                client.newCall(Request.Builder().url(manifestUrl).build()).execute().use { r ->
+                    val body = r.body?.string().orEmpty()
+                    if (!r.isSuccessful) {
+                        lastErr = "The server answered HTTP ${r.code} for $manifestUrl. Is this a Messages Enhanced server?"
+                        return@use
+                    }
+                    val startRel = try { org.json.JSONObject(body).optString("start_url", "") } catch (_: Exception) { "" }
+                    if (startRel.isEmpty()) {
+                        lastErr = "That server doesn't look like Messages Enhanced (no start_url in its web app manifest)."
+                        return@use
+                    }
+                    val start = r.request.url.resolve(startRel)?.toString()
+                    if (start == null || !start.startsWith(origin)) {
+                        lastErr = "The server's start page ($startRel) is on a different address."
+                        return@use
+                    }
+                    return Pair(start, null)
+                }
+            } catch (e: Exception) {
+                lastErr = "Couldn't reach $origin (${e.javaClass.simpleName}: ${e.message ?: "no details"})."
             }
         }
-    } catch (e: Exception) {
-        "Couldn't reach $origin (${e.javaClass.simpleName}: ${e.message ?: "no details"})."
+        return Pair(null, lastErr)
     }
 }

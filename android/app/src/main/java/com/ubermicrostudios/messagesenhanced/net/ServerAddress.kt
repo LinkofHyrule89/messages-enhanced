@@ -63,6 +63,43 @@ object ServerAddress {
         return Normalized(true, origin = "$scheme://${auth.lowercase()}", isHttps = isHttps, host = host.lowercase())
     }
 
+    /** Everything after the host: "/messages/app/" for "https://h/messages/app/?x". */
+    private fun pathOf(input: String): String {
+        val s = input.trim()
+        val rest = if (s.contains("://")) s.substring(s.indexOf("://") + 3) else s
+        val slash = rest.indexOf('/')
+        return if (slash < 0) "" else rest.substring(slash).substringBefore('?').substringBefore('#')
+    }
+
+    /**
+     * The path prefix the server lives under, from what the user typed: ""
+     * for the bare domain or ".../app...", "/messages" for
+     * "https://h/messages" or "https://h/messages/app/". The web app's own
+     * start path ("/app" and anything after it) is dropped; it's added back
+     * by [startUrl].
+     */
+    fun basePath(input: String?): String {
+        val segs = pathOf(input ?: "").split('/').filter { it.isNotEmpty() }
+        val appIdx = segs.indexOf("app")
+        var keep = if (appIdx >= 0) segs.take(appIdx) else segs
+        if (keep.lastOrNull() == "login") keep = keep.dropLast(1)
+        return if (keep.isEmpty()) "" else "/" + keep.joinToString("/")
+    }
+
+    /** The web app's start address for a server at [origin] + [basePath]. */
+    fun startUrl(origin: String, basePath: String = "") = origin.trimEnd('/') + basePath + "/app/"
+
+    /**
+     * What to open for a saved address: a saved start URL as is, or (a bare
+     * origin saved by an older version or the cookie screen) origin + "/app/".
+     */
+    fun launchUrl(saved: String?): String? {
+        val n = normalize(saved)
+        if (!n.ok) return null
+        val p = pathOf(saved!!)
+        return if (p.isEmpty() || p == "/") startUrl(n.origin) else n.origin + p
+    }
+
     fun loginUrl(origin: String) = origin.trimEnd('/') + "/login"
     fun cookiesEndpoint(origin: String) = origin.trimEnd('/') + "/admin/cookies"
 }

@@ -55,10 +55,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             setStatus(norm.error ?: "Invalid address.", StatusKind.ERROR)
             return false
         }
-        prefs.serverAddress = norm.origin
+        val keep = keepAddress(_state.value.address, norm.origin)
+        prefs.serverAddress = keep
         if (newPassword.isNotEmpty()) prefs.savePassword(newPassword)
         _state.update {
-            it.copy(address = norm.origin, passwordSaved = prefs.hasPassword)
+            it.copy(address = keep, passwordSaved = prefs.hasPassword)
         }
         setStatus("Settings saved.", StatusKind.OK)
         return true
@@ -102,7 +103,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (secret.isNullOrEmpty()) {
             setStatus("Enter and save the server password first.", StatusKind.ERROR); return
         }
-        prefs.serverAddress = norm.origin
+        prefs.serverAddress = keepAddress(_state.value.address, norm.origin)
 
         // Cookie values stay in this local only; the UI sees names.
         val map = WebViewCookies.collect()
@@ -145,4 +146,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun setStatus(msg: String, kind: StatusKind) =
         _state.update { it.copy(status = msg, statusKind = kind) }
+
+    /**
+     * The address to store: the web app's start URL, not just the origin, so
+     * this screen never strips the path the setup screen found. Same server
+     * as saved: keep the saved start URL. Otherwise: what was typed, with the
+     * app's start path added.
+     */
+    private fun keepAddress(typed: String, origin: String): String {
+        val saved = prefs.serverAddress
+        if (saved.isNotBlank() && ServerAddress.normalize(saved).origin == origin) return saved
+        return ServerAddress.startUrl(origin, ServerAddress.basePath(typed))
+    }
 }

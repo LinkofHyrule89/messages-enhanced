@@ -80,4 +80,25 @@ class ServerAddressAndPolicyTest {
         assertFalse(WebPolicy.isAllowedInWebView("intent://x#Intent;end"))
         assertFalse(WebPolicy.isAllowedInWebView("market://details?id=x"))
     }
+
+    @Test fun basePathAndStartUrl() {
+        assertEquals("", ServerAddress.basePath("messages.example.com"))
+        assertEquals("", ServerAddress.basePath("https://messages.example.com/"))
+        assertEquals("", ServerAddress.basePath("https://messages.example.com/app"))
+        assertEquals("", ServerAddress.basePath("https://messages.example.com/app/?x=1#y"))
+        assertEquals("", ServerAddress.basePath("https://messages.example.com/login?next=%2Fapp%2F"))
+        assertEquals("/messages", ServerAddress.basePath("https://example.com/messages"))
+        assertEquals("/messages", ServerAddress.basePath("https://example.com/messages/app/"))
+        assertEquals("https://example.com/messages/app/", ServerAddress.startUrl("https://example.com", "/messages"))
+        assertEquals("https://example.com/app/", ServerAddress.startUrl("https://example.com/"))
+    }
+
+    @Test fun launchUrlKeepsSavedPath() {
+        assertEquals("https://example.com/app/", ServerAddress.launchUrl("https://example.com"))
+        assertEquals("https://example.com/app/", ServerAddress.launchUrl("https://example.com/"))
+        assertEquals("https://example.com/app/", ServerAddress.launchUrl("https://example.com/app/"))
+        assertEquals("https://example.com/messages/app/", ServerAddress.launchUrl("https://example.com/messages/app/"))
+        assertEquals("https://example.com/app/", ServerAddress.launchUrl("https://EXAMPLE.com:443/app/"))
+        assertEquals(null, ServerAddress.launchUrl(""))
+    }
 }

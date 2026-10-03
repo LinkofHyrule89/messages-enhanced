@@ -14,6 +14,7 @@ import androidx.browser.trusted.TrustedWebActivityIntentBuilder
 import androidx.core.content.ContextCompat
 import com.google.androidbrowserhelper.trusted.TwaLauncher
 import com.google.androidbrowserhelper.trusted.splashscreens.PwaWrapperSplashScreenStrategy
+import com.ubermicrostudios.messagesenhanced.net.ServerAddress
 
 /**
  * Opens the web app at the user's saved server, in this order:
@@ -134,12 +135,13 @@ class TwaActivity : Activity() {
 
     /** The saved server's /app/, or a link for the same server from the launching intent. */
     private fun urlToOpen(): Uri? {
-        val origin = SecurePrefs(this).serverAddress.trimEnd('/')
-        if (origin.isEmpty()) return null
+        val saved = SecurePrefs(this).serverAddress
+        val start = ServerAddress.launchUrl(saved) ?: return null
+        val origin = ServerAddress.normalize(saved).origin
         val data = intent?.data
         if (data != null && data.scheme == "https" &&
             "${data.scheme}://${data.authority}".equals(origin, ignoreCase = true)) return data
-        return Uri.parse("$origin/app/")
+        return Uri.parse(start)
     }
 
     override fun onEnterAnimationComplete() {
