@@ -12,7 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +51,10 @@ import java.util.concurrent.TimeUnit
  * is saved. Also links to the cookie sender.
  */
 class SetupActivity : ComponentActivity() {
+    companion object {
+        /** Set when the web app couldn't be opened; the screen then shows the log. */
+        const val EXTRA_FROM_FAILURE = "from_failure"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,7 +67,9 @@ class SetupActivity : ComponentActivity() {
                     var status by remember { mutableStateOf("") }
                     var ok by remember { mutableStateOf(false) }
                     var busy by remember { mutableStateOf(false) }
-                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    var log by remember { mutableStateOf(LaunchLog.read(this@SetupActivity)) }
+                    val fromFailure = intent?.getBooleanExtra(EXTRA_FROM_FAILURE, false) == true
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("Messages Enhanced", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                         Text(
                             "Enter the https address of your own Messages Enhanced server.",
@@ -92,8 +103,14 @@ class SetupActivity : ComponentActivity() {
                                             prefs.serverAddress = norm.origin
                                             address = norm.origin
                                             ok = true; status = "Connected. Saved."
-                                            startActivity(Intent(this@SetupActivity, TwaActivity::class.java))
-                                            finish()
+                                            try {
+                                                startActivity(Intent(this@SetupActivity, TwaActivity::class.java))
+                                                finish()
+                                            } catch (t: Throwable) {
+                                                LaunchLog.record(this@SetupActivity, "Couldn't open the web app", t)
+                                                log = LaunchLog.read(this@SetupActivity)
+                                                ok = false; status = "Saved, but the web app couldn't open. See the log below."
+                                            }
                                         } else { ok = false; status = err }
                                     }
                                 }.start()
@@ -106,6 +123,18 @@ class SetupActivity : ComponentActivity() {
                             onClick = { startActivity(Intent(this@SetupActivity, CookieSenderActivity::class.java)) },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                         ) { Text("Send Google sign-in cookies…") }
+                        if (log.isNotEmpty()) {
+                            Text(
+                                if (fromFailure) "The web app couldn't open. Details:" else "Recent problems:",
+                                color = if (fromFailure) ErrRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            SelectionContainer {
+                                Text(log, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { LaunchLog.clear(this@SetupActivity); log = "" }) { Text("Clear log") }
+                        }
                     }
                 }
             }

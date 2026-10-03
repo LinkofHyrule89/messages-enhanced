@@ -23,6 +23,11 @@ does two things:
    (it reads `/app/manifest.webmanifest`, then `/app/`) before saving it.
 3. The web app opens. Sign in with your server password as usual.
 
+The app opens the web app as a Trusted Web Activity. If no installed browser
+supports that, or it doesn't start within 10 seconds, it opens a Custom Tab, and
+failing that the default browser. If nothing can open it, you land back on the
+setup screen with an error log (errors and crash traces only, kept on the phone).
+
 To change the server later, long-press the app icon and pick **Server**, or open the
 app's settings from Android's app info page. Both open the **Server settings** screen.
 

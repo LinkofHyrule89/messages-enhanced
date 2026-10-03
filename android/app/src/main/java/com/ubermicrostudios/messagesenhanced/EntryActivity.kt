@@ -11,9 +11,13 @@ import android.os.Bundle
 class EntryActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val saved = SecurePrefs(this).serverAddress
-        val next = if (saved.isBlank()) Intent(this, SetupActivity::class.java)
-        else Intent(this, TwaActivity::class.java)
+        val next = try {
+            if (SecurePrefs(this).serverAddress.isBlank()) Intent(this, SetupActivity::class.java)
+            else Intent(this, TwaActivity::class.java)
+        } catch (t: Throwable) {
+            LaunchLog.record(this, "Couldn't read the saved server address", t)
+            Intent(this, SetupActivity::class.java)
+        }
         startActivity(next)
         finish()
     }
