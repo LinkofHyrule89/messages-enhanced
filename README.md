@@ -23,7 +23,7 @@ messages are made up.
 
 ![Desktop layout](docs/screenshots/desktop.png)
 
-**Car Mode** (Tesla screen scale: 1920×1200 display, browser viewport 1280×706 CSS px at 1.5× pixel ratio; attachment and emoji buttons turned off in Settings)
+**Car Mode** (Tesla screen scale: 1920×1200 display, browser viewport 1280×706 CSS px at 1.5× pixel ratio; attachment and emoji buttons and quick replies turned off in Settings)
 
 ![Car Mode](docs/screenshots/car-mode.png)
 
