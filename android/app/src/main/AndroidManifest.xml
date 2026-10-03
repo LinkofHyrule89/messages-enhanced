@@ -21,28 +21,51 @@
         <!-- Opt out of WebView usage metrics reporting to Google. -->
         <meta-data android:name="android.webkit.WebView.MetricsOptOut" android:value="true" />
 
-        <!-- Launcher entry: setup on first run, else the web app. -->
-        <activity
-            android:name=".EntryActivity"
-            android:exported="true"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:noHistory="true">
-            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
 
-        <!-- Opens the web app at the saved server: Trusted Web Activity (no URL
-             bar once the server's assetlinks.json matches this app's key),
-             else a Custom Tab, else the default browser. -->
+        <!-- The launcher: android-browser-helper's LauncherActivity (TwaActivity
+             overrides the URL with the saved server, or opens setup). Chrome's
+             Trusted Web Activity runs in this task; no URL bar once the
+             server's assetlinks.json matches this app's key. -->
         <activity
             android:name=".TwaActivity"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.MessagesEnhanced.Launcher">
+            <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR" android:resource="@color/dark" />
+            <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR_DARK" android:resource="@color/dark" />
+            <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/dark" />
+            <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR_DARK" android:resource="@color/dark" />
+            <meta-data android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE" android:resource="@drawable/splash" />
+            <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR" android:resource="@color/brand" />
+            <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_FADE_OUT_DURATION" android:value="300" />
+            <meta-data android:name="android.support.customtabs.trusted.FILE_PROVIDER_AUTHORITY" android:value="com.ubermicrostudios.messagesenhanced.fileprovider" />
+            <meta-data android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION" android:value="any" />
         </activity>
+        <!-- Keeps the old launcher component name, so existing home screen
+             icons keep working after updating. -->
+        <activity-alias
+            android:name=".EntryActivity"
+            android:targetActivity=".TwaActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Required by LauncherActivity: it enables this component and manages
+             a "Site settings" shortcut (no MANAGE_SPACE_URL, so none is added). -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.ManageDataLauncherActivity"
+            android:exported="false"
+            android:excludeFromRecents="true" />
+        <!-- Lets Chrome bring this app's task to the front. -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.FocusActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Server address (first run, and later from the shortcut / app info
              "settings" button). -->

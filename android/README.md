@@ -10,7 +10,7 @@ does two things:
    does the same job as the "Messages Enhanced Cookie Sender" Chrome extension.
 
 - Application id `com.ubermicrostudios.messagesenhanced`, minSdk 26, targetSdk 36, compileSdk 37
-- Kotlin, Jetpack Compose (Material 3), androidx.browser helper (TWA), OkHttp, security-crypto
+- Kotlin, Jetpack Compose (Material 3), android-browser-helper LauncherActivity (TWA), OkHttp, security-crypto
 - Adaptive icon (white chat glyph on `#3E6AE1`) with a monochrome layer for Android 13+ themed icons
 - No analytics. The only traffic is your server and Google (inside the cookie sender's WebView).
 - **No server is built in.** The APK is the same for everyone.

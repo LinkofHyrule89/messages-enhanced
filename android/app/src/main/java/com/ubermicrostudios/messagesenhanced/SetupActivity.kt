@@ -108,7 +108,14 @@ class SetupActivity : ComponentActivity() {
                                             saved = start
                                             ok = true; status = "Connected. Saved: $start"
                                             try {
-                                                startActivity(Intent(this@SetupActivity, TwaActivity::class.java))
+                                                // NEW_TASK: LauncherActivity's expected launch flags (it would
+                                                // otherwise relaunch itself). The URL as data, so it opens even
+                                                // if an older launcher instance is still being torn down.
+                                                startActivity(
+                                                    Intent(this@SetupActivity, TwaActivity::class.java)
+                                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        .setData(android.net.Uri.parse(start))
+                                                )
                                                 finish()
                                             } catch (t: Throwable) {
                                                 LaunchLog.record(this@SetupActivity, "Couldn't open the web app", t)
