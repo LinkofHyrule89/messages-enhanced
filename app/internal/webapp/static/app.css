@@ -1141,3 +1141,77 @@ html.desk .thread-view > .compose .compose-pill .compose-input:focus,
 html.desk .thread-view > .compose .compose-pill .compose-input:focus-visible { border: 0; box-shadow: none; background: transparent; outline: none; }
 html:not(.desk) .thread-view > .compose .compose-input:focus,
 html:not(.desk) .thread-view > .compose .compose-input:focus-visible { border-color: transparent; }
+
+/* Car Mode title: "Messages Enhanced" in Google Sans, no logo; the
+   connection dot only appears for a problem (same as non-car). */
+html:not(.desk) .brand-ico, html:not(.desk) .brand-car { display: none; }
+html:not(.desk) .brand-desk { display: inline; }
+html:not(.desk) .brand { font-family: "Google Sans", system-ui, sans-serif; font-weight: 500; font-size: 44px; letter-spacing: -.2px; }
+html:not(.desk) .topbar .conn-dot.conn-ok, html:not(.desk) .topbar .conn-dot.conn-muted,
+html:not(.desk) .topbar .conn-dot[data-state="Connecting"] { display: none; }
+
+/* No Settings gear anywhere: Settings is in the ⋮ menus. */
+.btn-gear { display: none !important; }
+/* Car Mode: no top-bar ⋮ either; with no conversation open, a ⋮ sits at the
+   top right of the empty conversation pane, exactly where the conversation
+   header's ⋮ (which has Settings) appears once one is open. */
+html:not(.desk) .app-menu-btn { display: none; }
+.thread-empty { position: relative; }
+.empty-menu-btn { display: none; }
+html:not(.desk) .empty-menu-btn { display: grid; position: absolute; top: 10px; right: 28px; margin: 0; }
+
+/* Dictation (both modes): the field keeps the live transcript (or
+   "Listening…"), with a thin red edge. Inside the field: Cancel (X) at the
+   left, in place of + / emoji / gallery, and Edit (pencil, with a pulsing
+   red dot = listening) at the right, where the mic was. Outside: only the
+   round Send, filled (active) while recording; it sends the transcript. */
+.rec-acts { display: none; flex: none; align-items: center; }
+body.rec-ui .rec-acts { display: flex; }
+body.rec-ui #micBtn, body.rec-ui #sendBtn, body.rec-ui #attachBtn, body.rec-ui #emojiBtn,
+body.rec-ui #plusBtn, body.rec-ui #galleryBtn { display: none !important; }
+.rec-acts #recSend { width: 96px; height: 96px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: 0 2px 12px rgba(0, 0, 0, .4); }
+.rec-acts #recSend svg { width: 46px; height: 46px; }
+html.desk .rec-acts #recSend { width: 84px; height: 84px; box-shadow: none; }
+html.desk .rec-acts #recSend svg { width: 40px; height: 40px; }
+.rec-inline { display: none; flex: none; place-items: center; position: relative; width: 88px; height: 88px; margin: 2px 0; padding: 0; border: 0;
+  border-radius: 50%; background: transparent; color: #c9cdd3; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+body.rec-ui .rec-inline { display: grid; }
+.rec-inline svg { width: 46px; height: 46px; fill: currentColor; }
+.rec-inline:active, .rec-inline.pending { background: rgba(255, 255, 255, .12); }
+html.desk .rec-inline { width: 72px; height: 72px; margin: 0; }
+html.desk .rec-inline svg { width: 38px; height: 38px; }
+.rec-cancel { order: -1; margin-left: 4px; }
+html.desk .rec-cancel { margin-left: 0; }
+html.desk .compose-pill .rec-edit { order: 3; }
+html:not(.desk) .rec-edit { margin-right: 4px; }
+.rec-edit::after { content: ""; position: absolute; top: 13%; right: 12%; width: 20%; height: 20%; border-radius: 50%;
+  background: var(--danger); box-shadow: 0 0 0 3px var(--panel); animation: pulse 1.1s ease-in-out infinite; }
+body.rec-busy .rec-edit::after { display: none; }
+body.rec-ui .compose-input.empty::before { content: "Listening…"; }
+body.rec-busy .compose-input.empty::before { content: "Transcribing…"; }
+html.desk body.rec-ui .thread-view > .compose > .compose-pill { box-shadow: 0 0 0 2px rgba(229, 72, 77, .85), 0 3px 19px rgba(0, 0, 0, .4); }
+html:not(.desk) body.rec-ui .thread-view > .compose .compose-field > .compose-input { padding-left: 6px; }
+html:not(.desk) body.rec-ui .thread-view > .compose .compose-field > .compose-input.empty::before { left: 6px; }
+
+/* Voice button inside the message field (when voice typing is shown).
+   Non-car: an icon at the right of the pill, after emoji and gallery.
+   Car Mode: the field itself (.compose-field) is the rounded box, with the
+   mic as a car-sized icon button inside it on the right. Send stays round
+   outside; while dictating the mic is hidden (Cancel/Edit/Send row). */
+.compose-field { display: contents; }
+html.desk .compose-pill .btn-emoji { order: 1; }
+html.desk .compose-pill .gallery-btn { order: 2; }
+html.desk .compose-pill .btn-mic { order: 3; }
+html.desk .thread-view > .compose .compose-pill .btn-mic { flex: none; width: 72px; height: 72px; background: transparent; box-shadow: none; }
+html.desk .compose-pill .btn-mic svg { width: 42px; height: 42px; fill: #c9cdd3; }
+html.desk .compose-pill .btn-mic:active { background: rgba(255, 255, 255, .1); transform: none; }
+html:not(.desk) .thread-view > .compose .compose-field { display: flex; align-items: flex-end; flex: 1; min-width: 0; border: 2px solid transparent;
+  border-radius: 48px; background: var(--panel); box-shadow: 0 2px 14px rgba(0, 0, 0, .45); }
+html:not(.desk) .thread-view > .compose .compose-field > .compose-input { flex: 1; min-height: 92px; border: 0 !important; border-radius: 0;
+  background: transparent; box-shadow: none; padding-right: 6px; }
+html:not(.desk) .thread-view > .compose .compose-field > .btn-mic { flex: none; width: 88px; height: 88px; margin: 2px 4px 2px 0;
+  background: transparent; box-shadow: none; }
+html:not(.desk) .compose-field > .btn-mic svg { width: 48px; height: 48px; fill: #c9cdd3; }
+html:not(.desk) .compose-field > .btn-mic:active { background: rgba(255, 255, 255, .1); }
+html:not(.desk) body.rec-ui .thread-view > .compose .compose-field { border-color: rgba(229, 72, 77, .85); }
+html:not(.desk) .thread-view > .compose .compose-field:has(.drop-target) { border-color: var(--accent); border-style: dashed; }

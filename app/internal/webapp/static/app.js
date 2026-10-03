@@ -748,18 +748,19 @@
     $("convMenuArchiveLabel").textContent = archived ? "Unarchive" : "Archive";
     arch.dataset.archived = archived ? "1" : "";
     $("convMenuTrash").hidden = !google;
-    // Non-car: the header's mute bell and the Settings gear live in this menu.
+    // Non-car: the header's mute bell lives in this menu too.
     var inHeader = btn.id === "convMenuBtn" && isDesk();
     $("convMenuMute").hidden = !inHeader;
     $("convMenuMuteLabel").textContent = $("muteBtn").classList.contains("muted") ? "Unmute notifications" : "Mute notifications";
-    $("convMenuSettings").hidden = !inHeader;
+    // Settings is in the conversation header's ⋮ in every mode (no gear).
+    $("convMenuSettings").hidden = btn.id !== "convMenuBtn";
     var menu = $("convMenu");
     menu.hidden = false;
     placePopover(menu, anchor);
   }
   function closeAppMenu() {
     if ($("appMenu").hidden) return false;
-    $("appMenu").hidden = true; $("appMenuBtn").setAttribute("aria-expanded", "false"); $("profileBtn").setAttribute("aria-expanded", "false");
+    $("appMenu").hidden = true; $("appMenuBtn").setAttribute("aria-expanded", "false"); $("profileBtn").setAttribute("aria-expanded", "false"); $("emptyMenuBtn").setAttribute("aria-expanded", "false");
     return true;
   }
   function closeConvMenu() {
@@ -3757,7 +3758,13 @@
     if (s) b.classList.add(s);
     b.setAttribute("aria-label", s === "recording" ? "Stop dictating" : s === "busy" ? "Transcribing" : "Dictate message");
     b.disabled = s === "busy";
-    $("recBar").hidden = s !== "recording" && s !== "busy";
+    // Dictation lives in the composer row: the box shows the live words (or
+    // "Listening…"), a thin red edge marks recording, and Cancel / Edit /
+    // Send replace the mic and Send buttons. The old panel stays hidden
+    // (its timer still drives the 1-minute auto-stop, invisibly).
+    $("recBar").hidden = true;
+    document.body.classList.toggle("rec-ui", s === "recording" || s === "busy");
+    document.body.classList.toggle("rec-busy", s === "busy");
     $("recLabel").textContent = s === "busy" ? "Transcribing…" : "Listening… tap Done when finished";
     if (!s) { state.afterRec = ""; }
     $("recEdit").classList.toggle("pending", state.afterRec === "edit");
@@ -5184,8 +5191,10 @@
     $("convMenuMute").addEventListener("click", function () { closeConvMenu(); toggleMute(); });
     $("convMenuSettings").addEventListener("click", function () { closeConvMenu(); showSettings(true); });
     // Non-car conversation list: Settings sits under the top bar's ⋮.
-    // The app menu opens from ⋮ (Car Mode) or the profile photo (non-car).
-    ["appMenuBtn", "profileBtn"].forEach(function (id) {
+    // The app menu (Settings) opens from the profile photo (non-car) or, in
+    // Car Mode with no conversation open, the ⋮ in the empty conversation
+    // pane (where the conversation header's ⋮ sits once one is open).
+    ["appMenuBtn", "profileBtn", "emptyMenuBtn"].forEach(function (id) {
       $(id).addEventListener("click", function () {
         var m = $("appMenu");
         if (!m.hidden) { closeAppMenu(); return; }
@@ -5221,7 +5230,7 @@
     })();
     $("appMenuSettings").addEventListener("click", function () { closeAppMenu(); showSettings(true); });
     document.addEventListener("pointerdown", function (e) {
-      if ($("appMenu").hidden || $("appMenu").contains(e.target) || $("appMenuBtn").contains(e.target) || $("profileBtn").contains(e.target)) return;
+      if ($("appMenu").hidden || $("appMenu").contains(e.target) || $("appMenuBtn").contains(e.target) || $("profileBtn").contains(e.target) || $("emptyMenuBtn").contains(e.target)) return;
       closeAppMenu();
     }, true);
     $("convMenuPin").addEventListener("click", function () {

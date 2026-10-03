@@ -10,24 +10,27 @@ Many thanks to that project, and to the mautrix-gmessages authors.
 
 ## Screenshots
 
-All screenshots use the built-in demo data (`serve --demo`); the names and
+Messages Enhanced is made for tablets, laptops and car screens. All
+screenshots use the built-in demo data (`serve --demo`); the names and
 messages are made up.
 
-| Home screen (phone) | Conversation: "Read by" in a group |
-|---|---|
-| ![Home screen](docs/screenshots/home.png) | ![Group conversation with Read by](docs/screenshots/conversation.png) |
-| **Swipe left for times, read-receipt checks** | **Long-press menu** |
-| ![Swipe timestamps](docs/screenshots/swipe-times.png) | ![Long-press menu](docs/screenshots/long-press.png) |
-| **(+) attachment sheet** | **Chat theme** |
-| ![Attachment sheet](docs/screenshots/plus-sheet.png) | ![Chat theme picker](docs/screenshots/theme.png) |
+**Tablet** (1280×800, Car Mode off): conversation list and an RCS group with
+"Read by"
 
-| Car Mode (car screen) |
-|---|
-| ![Car Mode](docs/screenshots/car-mode.png) |
+![Tablet layout](docs/screenshots/tablet.png)
 
-| Tablet / desktop layout (Car Mode off) |
-|---|
-| ![Desktop layout](docs/screenshots/desktop.png) |
+**Laptop / desktop** (1440×900)
+
+![Desktop layout](docs/screenshots/desktop.png)
+
+**Car Mode** (1920×1200, attachment and emoji buttons turned off in Settings)
+
+![Car Mode](docs/screenshots/car-mode.png)
+
+**Long-press menu** (tablet): reactions, reply, forward, copy, star, delete,
+select more, info
+
+![Long-press menu](docs/screenshots/tablet-menu.png)
 
 ## What's here
 
@@ -69,8 +72,8 @@ messages are made up.
     round photos, RCS badges, "You:" previews with status checks, pin icons,
     a search button, your Google account photo as the menu button, and a
     floating "Start chat" button plus scroll-to-top; a pill composer with a
-    (+) sheet (Gallery, Camera, Files), emoji and gallery buttons, voice
-    typing and an always-visible Send button
+    (+) sheet (Gallery, Camera, Files), emoji, gallery and voice buttons,
+    and an always-visible Send button
   - Google Messages-style read receipts: sending / sent / delivered / read /
     failed icons under your latest message (tap a bubble for the time and
     status), and in RCS groups "Read by Alice, Bob" with small photos until
@@ -81,7 +84,11 @@ messages are made up.
     reloads itself after the server is updated
   - Car Mode gets the same bubble colors, grouping, sender names and photos,
     and read-receipt icons, with large touch targets and visible buttons
-    instead of gestures
+    instead of gestures; its title bar is just "Messages Enhanced", and
+    Settings is in the ⋮ menu
+  - voice typing from a mic button inside the message field: while it
+    listens, the live words appear in the field (thin red edge) with Cancel
+    and Edit inside it and Send outside; it stops on its own after a minute
   See [`app/GUIDE.md`](app/GUIDE.md) for details.
 - **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Messages Enhanced
