@@ -68,12 +68,16 @@ type PushSource func(convID string, limit int) (PushConversation, []PushMessage,
 
 // PushSubscription is one device's browser push subscription.
 type PushSubscription struct {
-	Endpoint  string       `json:"endpoint"`
-	Keys      webpush.Keys `json:"keys"`
-	HideText  bool         `json:"hide_text"`
-	Label     string       `json:"label,omitempty"`
-	CreatedMS int64        `json:"created_ms"`
-	LastOKMS  int64        `json:"last_ok_ms,omitempty"`
+	Endpoint string       `json:"endpoint"`
+	Keys     webpush.Keys `json:"keys"`
+	HideText bool         `json:"hide_text"`
+	Label    string       `json:"label,omitempty"`
+	// Origin is the page origin the subscription was made from (e.g.
+	// https://messages.example.ts.net), so subscriptions from an old
+	// address can be told apart and pruned.
+	Origin    string `json:"origin,omitempty"`
+	CreatedMS int64  `json:"created_ms"`
+	LastOKMS  int64  `json:"last_ok_ms,omitempty"`
 }
 
 // pushSender delivers one encrypted payload; returns the push service's
@@ -266,6 +270,9 @@ func (h *PushHub) Subscribe(s PushSubscription, hideText *bool) (*PushSubscripti
 	cur.Keys = s.Keys
 	if s.Label != "" {
 		cur.Label = s.Label
+	}
+	if s.Origin != "" {
+		cur.Origin = s.Origin
 	}
 	if hideText != nil {
 		cur.HideText = *hideText
@@ -629,7 +636,7 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 	if len(label) > 80 {
 		label = label[:80]
 	}
-	sub, err := h.Subscribe(PushSubscription{Endpoint: req.Endpoint, Keys: req.Keys, Label: label}, req.HideText)
+	sub, err := h.Subscribe(PushSubscription{Endpoint: req.Endpoint, Keys: req.Keys, Label: label, Origin: requestOrigin(r)}, req.HideText)
 	if err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
 		return
@@ -697,6 +704,19 @@ func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"sent": true, "status": status})
+}
+
+// requestOrigin is the page origin (scheme://host) a request came from:
+// the Origin header, else the Referer's origin ("" when neither is usable).
+func requestOrigin(r *http.Request) string {
+	for _, v := range []string{r.Header.Get("Origin"), r.Header.Get("Referer")} {
+		u, err := url.Parse(strings.TrimSpace(v))
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || len(u.Host) > 255 {
+			continue
+		}
+		return strings.ToLower(u.Scheme + "://" + u.Host)
+	}
+	return ""
 }
 
 // deviceLabel is a rough "Chrome on Android" from the User-Agent.

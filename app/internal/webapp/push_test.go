@@ -328,6 +328,9 @@ func TestPushAPIAuthAndOrigin(t *testing.T) {
 	if hub.Count() != 1 {
 		t.Fatal("not stored")
 	}
+	if got, _ := hub.Get("https://fcm.googleapis.com/fcm/send/xyz"); got == nil || got.Origin != "http://car.example" {
+		t.Fatalf("subscription origin not stored: %+v", got)
+	}
 	if rr := do("POST", "/api/app/push/settings", `{"endpoint":"https://fcm.googleapis.com/fcm/send/xyz","hide_text":true}`, "http://car.example"); rr.Code != 200 {
 		t.Fatalf("settings: %d", rr.Code)
 	}
