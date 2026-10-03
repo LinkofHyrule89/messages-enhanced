@@ -53,6 +53,8 @@ messages are made up.
     Mark as read), a mute bell per conversation, and a Google Messages-style
     composer ("RCS message" / "Text message", SMS label, end-to-end
     encryption lock)
+  - paste or drop images, stickers and GIFs (including from Gboard) into the
+    message box; they wait as previews with a remove button until you send
   See [`app/GUIDE.md`](app/GUIDE.md) for details.
 - **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Messages Enhanced
@@ -91,6 +93,26 @@ included here):
 | `MESSAGES_STT_PROVIDER` | Server speech-to-text provider. |
 
 Variable names from earlier versions are still read as a fallback. More options are documented in [`app/GUIDE.md`](app/GUIDE.md).
+
+## Android app
+
+The app in [`android/`](android/README.md) opens your server's web app full
+screen (Trusted Web Activity). Build it with Android Studio or
+`./gradlew assembleRelease` (JDK 21).
+
+**Setup:** on first launch, enter your server URL (a bare domain such as
+`messages.example.com` or a full `https://` URL). The app checks that it's a
+Messages Enhanced server, finds the web app's start URL and saves it; change
+it later from the app's "Server" shortcut. Nothing is built in: the default
+server address is blank.
+
+**Digital Asset Links:** the server serves `/.well-known/assetlinks.json`
+for the official signing key automatically. If you sign your own build (for
+example with a self-signed debug or release key), set the server's
+`MESSAGES_ANDROID_CERT_SHA256` to your key's SHA-256 fingerprint
+(`apksigner verify --print-certs app-release.apk`; several can be given,
+comma-separated), and `MESSAGES_ANDROID_PACKAGE` if you change the package
+name. Without a match, Android shows a URL bar instead of full screen.
 
 ## License
 
