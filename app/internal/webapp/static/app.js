@@ -1137,6 +1137,7 @@
     closeMsgMenu();
     closeConvMenu();
     closeImageViewer();
+    if (state.current !== id) clearPending();
     state.current = id;
     loadConvMeta(id);
     var readOnly = !!state.folder;
@@ -1168,6 +1169,7 @@
     closeMsgMenu();
     clearReply();
     setComposerFloat(false);
+    clearPending();
     state.current = null; document.body.classList.remove("has-thread", "readonly-thread");
     $("threadView").hidden = true; $("threadEmpty").hidden = false;
   }
@@ -1666,7 +1668,7 @@
     t.style.height = "auto";
     t.style.height = Math.min(t.scrollHeight, 260) + "px";
     // No sending while dictating: finish (Done) and review first.
-    $("sendBtn").disabled = !t.value.trim() || state.transcribing || !!state.rec;
+    $("sendBtn").disabled = (!t.value.trim() && !state.pending.length) || state.transcribing || !!state.rec;
   }
   // ---------- optimistic sends ----------
   // Tapping Send clears the box and shows the bubble ("Sending…") right
@@ -1785,7 +1787,18 @@
   function sendMessage(ev) {
     if (ev) ev.preventDefault();
     var t = $("input"), text = t.value.trim();
-    if (!text || !state.current || state.rec || state.transcribing) return;
+    if ((!text && !state.pending.length) || !state.current || state.rec || state.transcribing) return;
+    if (state.pending.length) {
+      // Pasted / dropped attachments go first, through the same path as
+      // the attach button (the first one takes the caption where the
+      // platform has captions); text that's left goes as its own message.
+      var files = state.pending.map(function (p) { return p.file; });
+      clearPending();
+      files.forEach(sendMedia);
+      text = t.value.trim();
+      showEmoji(false);
+      if (!text) { autosize(); return; }
+    }
     var reply = state.replyTo;
     var l = newLocal(state.current, text, reply ? reply.MessageID : "", null, "");
     t.value = ""; lastSel = null; autosize();
@@ -1812,6 +1825,120 @@
     var f = $("fileInput"), file = f.files && f.files[0];
     f.value = "";
     if (file) sendMedia(file);
+  }
+  // ---------- pasted / dropped attachments ----------
+  // Images, stickers and GIFs from the keyboard (Gboard commitContent, which
+  // Chrome only delivers to contenteditable: see composer.js), the clipboard
+  // or a desktop drag-drop wait in a tray above the box (preview chip with a
+  // remove button) and go out on Send via sendMedia, like the attach button.
+  state.pending = [];  // [{ file, url }]
+  var MAX_PENDING = 10;
+  function addPending(file) {
+    if (!file || !state.current || document.body.classList.contains("readonly-thread")) return false;
+    if (file.size > MAX_MEDIA_BYTES) { toast("That file is too large to send (limit 128 MB).", "error"); return false; }
+    if (state.pending.length >= MAX_PENDING) { toast("Up to " + MAX_PENDING + " attachments at a time.", "error"); return false; }
+    var type = String(file.type || "");
+    if (!file.name || file.name === "image.png" && type !== "image/png") {
+      var ext = (type.split("/")[1] || "bin").replace(/\+.*$/, "").replace("jpeg", "jpg");
+      try { file = new File([file], "pasted-" + Date.now() + "." + ext, { type: type }); } catch (e) {}
+    }
+    var url = "";
+    if (/^(image|video)\//.test(type)) { try { url = URL.createObjectURL(file); } catch (e) {} }
+    state.pending.push({ file: file, url: url });
+    renderTray();
+    return true;
+  }
+  // A keyboard image that still landed in the box as <img src="blob:/data:">.
+  function addPendingFromURL(src) {
+    fetch(src).then(function (r) { return r.blob(); }).then(function (b) {
+      if (!/^(image|video)\//.test(b.type || "")) return;
+      addPending(new File([b], "", { type: b.type }));
+    }).catch(function () { toast("Couldn't attach that image.", "error"); });
+  }
+  function removePending(i) {
+    var p = state.pending.splice(i, 1)[0];
+    if (p && p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} }
+    renderTray();
+  }
+  function clearPending() {
+    if (!state.pending.length) return;
+    state.pending.forEach(function (p) { if (p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} } });
+    state.pending = [];
+    renderTray();
+  }
+  function renderTray() {
+    var tray = $("attachTray");
+    tray.textContent = "";
+    state.pending.forEach(function (p, i) {
+      var chip = el("div", "attach-chip");
+      var type = String(p.file.type || "");
+      if (p.url && type.indexOf("video/") === 0) {
+        var v = document.createElement("video"); v.src = p.url; v.muted = true; v.playsInline = true; v.preload = "metadata";
+        chip.appendChild(v);
+      } else if (p.url) {
+        var im = document.createElement("img"); im.src = p.url; im.alt = p.file.name || "Pasted image";
+        chip.appendChild(im);
+      } else chip.appendChild(el("span", "attach-chip-name", p.file.name || "Attachment"));
+      var x = el("button", "attach-chip-x", "\u00d7");
+      x.type = "button";
+      x.setAttribute("aria-label", "Remove attachment");
+      x.addEventListener("click", function (e) { e.preventDefault(); removePending(i); });
+      chip.appendChild(x);
+      tray.appendChild(chip);
+    });
+    tray.hidden = !state.pending.length;
+    autosize();
+  }
+  // Files in a paste / drop / keyboard-insert DataTransfer.
+  function transferFiles(dt) {
+    if (!dt) return [];
+    var out = [];
+    if (dt.files && dt.files.length) out = Array.prototype.slice.call(dt.files);
+    else if (dt.items) Array.prototype.forEach.call(dt.items, function (it) {
+      if (it.kind === "file") { var f = it.getAsFile(); if (f) out.push(f); }
+    });
+    return out.filter(function (f) { return f && f.size > 0; });
+  }
+  function takeFiles(files) {
+    var n = 0;
+    files.forEach(function (f) { if (addPending(f)) n++; });
+    return n;
+  }
+  function initPaste() {
+    var box = $("input"), form = $("compose");
+    box.addEventListener("paste", function (e) {
+      var files = transferFiles(e.clipboardData);
+      e.preventDefault();
+      if (files.length) { takeFiles(files); return; }
+      // Text only, as plain text (no pasted formatting in the box).
+      var text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+      if (text) document.execCommand("insertText", false, text.replace(/\r\n?/g, "\n"));
+    });
+    box.addEventListener("beforeinput", function (e) {
+      var it = e.inputType;
+      if (it === "insertFromPaste" || it === "insertReplacementText" || it === "insertFromDrop" || it === "insertFromYank") {
+        var files = transferFiles(e.dataTransfer);
+        if (files.length) { e.preventDefault(); takeFiles(files); }
+        return;
+      }
+      // Some Android keyboards send Enter only as an input event.
+      if (it === "insertParagraph" && !e.isComposing) { e.preventDefault(); sendMessage(); }
+    });
+    var hasFiles = function (e) {
+      var t = e.dataTransfer && e.dataTransfer.types;
+      return !!t && Array.prototype.indexOf.call(t, "Files") >= 0;
+    };
+    var depth = 0;
+    form.addEventListener("dragenter", function (e) { if (hasFiles(e)) { depth++; box.classList.add("drop-target"); } });
+    form.addEventListener("dragleave", function (e) { if (hasFiles(e) && --depth <= 0) { depth = 0; box.classList.remove("drop-target"); } });
+    form.addEventListener("dragover", function (e) { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } });
+    form.addEventListener("drop", function (e) {
+      depth = 0; box.classList.remove("drop-target");
+      var files = transferFiles(e.dataTransfer);
+      if (!files.length) return;
+      e.preventDefault();
+      takeFiles(files);
+    });
   }
   function setAttachBusy(busy) {
     state.sendingMedia = busy;
@@ -3592,6 +3719,8 @@
 
   // ---------- init ----------
   function init() {
+    window.TMTextbox($("input"), { onImage: addPendingFromURL });
+    initPaste();
     hydrateIcons();
     $("conn").addEventListener("click", function () { toast(connStatusText()); });
     $("compose").addEventListener("submit", sendMessage);

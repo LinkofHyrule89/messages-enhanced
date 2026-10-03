@@ -170,7 +170,7 @@ func setPageSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
 			"img-src 'self' data: blob: https://fonts.gstatic.com; media-src 'self' blob:; "+
-			"connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+			"connect-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "same-origin")
 	w.Header().Set("Permissions-Policy", "microphone=(self), camera=()")
