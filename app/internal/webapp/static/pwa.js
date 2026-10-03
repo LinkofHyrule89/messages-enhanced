@@ -106,6 +106,7 @@
     if (!pushOK) return Promise.resolve();
     return Promise.all([regReady, getCfg()]).then(function (v) {
       var reg = v[0], cfg = v[1];
+      if (reg) st.reg = reg;
       if (!reg || !cfg.available) { st.sub = null; return; }
       return reg.pushManager.getSubscription().then(function (sub) {
         if (!sub) { st.sub = null; return; }
@@ -142,17 +143,51 @@
       canEnable = true;
       text = "Off. Get a notification for each new message, even with this page closed.";
     }
+    if (st.busy && st.step) text = "Turning on\u2026 " + st.step + "\u2026";
     if (st.msg) text += " " + st.msg;
     status.textContent = text;
     $("notifRow").dataset.state = !pushOK ? "unsupported" : perm === "denied" ? "blocked" : on ? "enabled" : "off";
     en.hidden = !canEnable; en.disabled = st.busy;
     dis.hidden = !on; dis.disabled = st.busy;
     hide.hidden = !on; test.hidden = !on; test.disabled = st.busy;
+    renderDebug();
     var appBtn = $("notifAppSettings");
     if (appBtn) appBtn.hidden = !(app && pushOK && !on && (perm === "denied" || st.needApp));
     var h = hideLocal();
     hide.classList.toggle("on", h);
     hide.setAttribute("aria-checked", h ? "true" : "false");
+  }
+
+  // Settings > Debug > Notification debug.
+  function renderDebug() {
+    var el = $("notifDebug");
+    if (!el) return;
+    var sw = "not supported";
+    if (swOK) {
+      var r = st.reg, w = r && (r.active || r.waiting || r.installing);
+      sw = !r ? (st.swError ? "registration failed: " + st.swError : "not registered yet")
+        : (w ? w.state : "no worker") + " · scope " + r.scope.replace(location.origin, "") +
+          (navigator.serviceWorker.controller ? " · controls this page" : " · not controlling this page");
+    }
+    var host = "none";
+    if (st.sub && st.sub.endpoint) { try { host = new URL(st.sub.endpoint).host; } catch (e) { host = "?"; } }
+    var rows = [
+      ["Web Push support", pushOK ? "yes" : "no (" + ["serviceWorker", "PushManager", "Notification"].filter(function (k) { return k === "serviceWorker" ? !swOK : !(k in window); }).join(", ") + " missing)"],
+      ["Permission", permission()],
+      ["Service worker", sw],
+      ["Subscription", host],
+      ["Server", st.cfg ? (st.cfg.available ? "push on · " + (st.cfg.devices || 0) + " device(s)" : "push off") : "not checked"],
+      ["Android app", inAndroidApp() ? "yes" : "no"],
+      ["Last tap", st.lastClick || "-"],
+      ["Last error", st.lastError || "-"],
+    ];
+    el.textContent = "";
+    rows.forEach(function (r) {
+      var d = document.createElement("div"); d.className = "stt-info-row";
+      var dt = document.createElement("dt"); dt.textContent = r[0];
+      var dd = document.createElement("dd"); dd.textContent = r[1];
+      d.appendChild(dt); d.appendChild(dd); el.appendChild(d);
+    });
   }
 
   function refresh() {
@@ -161,40 +196,76 @@
     return sync().then(function () { render(); }, function () { render(); });
   }
 
+  // Each step of turning notifications on is time-limited and named, so a
+  // hang or failure always ends with the exact step and error under the
+  // button (and in Settings > Debug > Notification debug).
+  function step(label, fn, ms) {
+    st.step = label; render();
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error(label + ": no answer after " + Math.round(ms / 1000) + " s")); }, ms);
+      Promise.resolve().then(fn).then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+    });
+  }
+  function errText(e) {
+    if (!e) return "unknown error";
+    var m = e.message || String(e);
+    if (e.name && e.name !== "Error" && m.indexOf(e.name) < 0) m = e.name + ": " + (m || "no details");
+    if (e.name === "AbortError" && /push service/i.test(m)) m += " (the browser couldn't reach its push service; check that Chrome is up to date, has network access and isn't restricted in battery settings)";
+    if (e.name === "NotAllowedError" || /permission denied/i.test(m)) m += inAndroidApp()
+      ? " (Chrome refused: check the app's notification permission, and Chrome's own notification setting for this site)"
+      : " (allow notifications for this site in the browser's site settings)";
+    return m || "unknown error";
+  }
   function enable() {
-    if (!pushOK || st.busy) return;
-    st.busy = true; st.msg = ""; render();
+    if (st.busy) return;
+    st.lastClick = new Date().toLocaleTimeString();
+    if (!pushOK) { st.msg = "Couldn't turn on: this browser has no Web Push support."; st.lastError = st.msg; render(); return; }
+    st.busy = true; st.msg = ""; st.lastError = ""; render();
     // Ask for permission only here, on the user's tap.
-    var ask = Notification.permission === "granted" ? Promise.resolve("granted")
-      : new Promise(function (res) { var p = Notification.requestPermission(res); if (p && p.then) p.then(res); });
-    ask.then(function (perm) {
+    step("Asking for notification permission", function () {
+      if (Notification.permission === "granted") return "granted";
+      return new Promise(function (res) { var p = Notification.requestPermission(res); if (p && p.then) p.then(res); });
+    }, 60000).then(function (perm) {
       if (perm !== "granted") {
         st.needApp = inAndroidApp();
-        throw new Error(perm === "denied" ? "" : st.needApp
-          ? "Android didn't grant notification permission to the app. Tap “Allow notifications for the app” below."
+        throw new Error(perm === "denied"
+          ? "Notification permission is blocked" + (st.needApp ? " for the app. Tap \u201cAllow notifications for the app\u201d below." : " for this site.")
+          : st.needApp ? "Android didn't grant notification permission to the app. Tap \u201cAllow notifications for the app\u201d below."
           : "Permission wasn't granted (the prompt was dismissed or blocked).");
       }
       st.needApp = false;
-      return Promise.all([regReady.then(function (r) { return r ? navigator.serviceWorker.ready : null; }), st.cfg && st.cfg.public_key ? st.cfg : getCfg()]);
-    }).then(function (v) {
-      var reg = v[0], cfg = v[1];
-      if (!reg) throw new Error("The service worker didn't start" + (st.swError ? ": " + st.swError : "."));
-      if (!cfg.available) throw new Error("Not available on this server.");
-      return reg.pushManager.getSubscription().then(function (old) {
-        if (old && !sameKey(old, cfg.public_key)) return old.unsubscribe().then(function () { return null; });
-        return old;
-      }).then(function (old) {
-        return old || reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.public_key) });
+      return step("Starting the service worker", function () {
+        return regReady.then(function (r) {
+          if (!r) throw new Error("The service worker didn't register" + (st.swError ? ": " + st.swError : "."));
+          return navigator.serviceWorker.ready;
+        });
+      }, 20000);
+    }).then(function (reg) {
+      st.reg = reg;
+      return step("Getting the server's push key", function () {
+        return st.cfg && st.cfg.public_key ? st.cfg : getCfg();
+      }, 15000).then(function (cfg) {
+        if (!cfg.available) throw new Error("Not available on this server" + (cfg.error ? " (" + cfg.error + ")" : "."));
+        if (!cfg.public_key) throw new Error("The server sent no push key.");
+        return step("Checking this device's subscription", function () { return reg.pushManager.getSubscription(); }, 15000).then(function (old) {
+          if (old && !sameKey(old, cfg.public_key)) return old.unsubscribe().then(function () { return null; }, function () { return null; });
+          return old;
+        }).then(function (old) {
+          return old || step("Subscribing with the browser's push service", function () {
+            return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(cfg.public_key) });
+          }, 45000);
+        });
       });
     }).then(function (sub) {
       var body = sub.toJSON(); body.hide_text = hideLocal();
-      return post("/api/app/push/subscribe", body).then(function (res) { st.sub = sub; setHideLocal(!!res.hide_text); st.msg = ""; });
+      return step("Saving on the server", function () { return post("/api/app/push/subscribe", body); }, 20000).then(function (res) {
+        st.sub = sub; setHideLocal(!!res.hide_text); st.msg = "";
+      });
     }).catch(function (e) {
-      var m = e && e.message ? e.message : "";
-      if (e && e.name && e.name !== "Error" && m.indexOf(e.name) < 0) m = e.name + ": " + (m || "no details");
-      if (e && e.name === "AbortError" && /push service/i.test(m)) m += " (the browser couldn't reach its push service; check that Chrome is up to date, has network access and isn't restricted in battery settings)";
-      st.msg = m ? "Couldn't turn on: " + m : "";
-    }).then(function () { st.busy = false; render(); });
+      st.lastError = (st.step ? st.step + ": " : "") + errText(e);
+      st.msg = "Couldn't turn on. " + st.lastError;
+      if (window.console) console.warn("notifications:", e);
+    }).then(function () { st.busy = false; st.step = ""; render(); });
   }
 
   function disable() {

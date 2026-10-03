@@ -706,3 +706,4 @@ html.desk .details-name { font-size: 28px; }
 .debug-summary-text::before { content: "▸ "; }
 .debug-fold[open] .debug-summary-text::before { content: "▾ "; }
 .debug-fold .sheet-label:first-of-type { margin-top: 4px; }
+.cookies-hint { display: block; margin: 18px 4px 0; padding: 0; border: 0; background: none; color: #ffc557; font: inherit; font-size: 20px; text-align: left; cursor: pointer; }

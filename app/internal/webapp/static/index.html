@@ -212,16 +212,6 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
-      <div class="setting-pair">
-        <button id="setSound" class="setting-row" type="button" role="switch" aria-checked="true">
-          <span class="setting-text">
-            <span class="setting-name">Notification sound</span>
-            <span class="setting-desc">Chime for new incoming messages on this device (not muted chats)</span>
-          </span>
-          <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
-        </button>
-        <button id="testSound" class="btn btn-lg setting-test" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg>Test sound</button>
-      </div>
       <div class="setting-row zoom-row" role="group" aria-labelledby="zoomName">
         <span class="setting-text">
           <span id="zoomName" class="setting-name">UI zoom</span>
@@ -260,6 +250,16 @@
         <button id="notifEnable" class="btn btn-primary btn-lg notif-btn" type="button" hidden>Turn on</button>
         <button id="notifDisable" class="btn btn-ghost btn-lg notif-btn" type="button" hidden>Turn off</button>
       </div>
+      <div class="setting-pair">
+        <button id="setSound" class="setting-row" type="button" role="switch" aria-checked="true">
+          <span class="setting-text">
+            <span class="setting-name">Notification sound</span>
+            <span class="setting-desc">Chime for new incoming messages on this device (not muted chats)</span>
+          </span>
+          <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+        </button>
+        <button id="testSound" class="btn btn-lg setting-test" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg>Test sound</button>
+      </div>
       <a id="notifAppSettings" class="setting-row" href="intent://notifications#Intent;scheme=messagesenhanced;package=com.ubermicrostudios.messagesenhanced;end" hidden>
         <span class="folder-icon" aria-hidden="true" data-icon="bell"></span>
         <span class="setting-text"><span class="setting-name">Allow notifications for the app</span><span class="setting-desc">Opens Android's permission prompt or the app's notification settings</span></span>
@@ -296,8 +296,9 @@
         <span class="folder-icon" aria-hidden="true" data-icon="logout"></span>
         <span class="setting-text"><span class="setting-name">Sign out</span><span class="setting-desc">Sign this device out of Messages Enhanced</span></span>
       </button>
+      <button id="cookiesHint" class="cookies-hint" type="button" hidden>Google cookies needed, see Debug below</button>
       <details id="debugFold" class="debug-fold">
-        <summary class="debug-summary"><span class="debug-summary-text">Debug</span><span class="setting-desc">Speech-to-text, microphone check and Google cookies</span></summary>
+        <summary class="debug-summary"><span class="debug-summary-text">Debug</span><span class="setting-desc">Speech-to-text, microphone check, notifications and Google cookies</span></summary>
         <div class="sheet-label">Microphone &amp; speech-to-text</div>
         <dl id="sttInfo" class="stt-info" aria-label="Speech-to-text details">
           <div class="stt-info-row"><dt>Provider</dt><dd id="sttInfoProvider">-</dd></div>
@@ -326,6 +327,8 @@
           <button id="micCheckBtn" class="btn btn-ghost btn-lg mic-check-btn" type="button">Check again</button>
           <output id="micCheckResult" class="mic-check-result" aria-live="polite"></output>
         </div>
+        <div class="sheet-label">Notification debug</div>
+        <dl id="notifDebug" class="stt-info" aria-label="Notification details"></dl>
         <div class="sheet-label">Google cookies</div>
         <a id="cookiesBtn" class="setting-row cookies-row" href="/admin/cookies">
           <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>

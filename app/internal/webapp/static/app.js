@@ -2973,8 +2973,8 @@
     if (open) { refreshPairing(); clearInterval(state.pairPoll); state.pairPoll = setInterval(refreshPairing, 1000); }
     else { clearInterval(state.pairPoll); state.pairPoll = null; }
   }
-  // Cookies: always a row in Settings > Debug (highlighted, and the fold
-  // opened, when needed);
+  // Cookies: always a row in Settings > Debug (highlighted when needed, with
+  // a "Cookies needed" hint above the collapsed fold);
   // the pairing-screen button only shows when cookies are actually needed:
   // none saved yet (and not dev fake pairing), or Google rejected the saved
   // ones (google.auth_expired). /admin/cookies stays reachable by URL.
@@ -2998,7 +2998,7 @@
     if (!p || p.cookies_saved === undefined) return;
     var need = cookiesNeeded(p);
     $("cookiesBtn").classList.toggle("needed", need);
-    if (need) $("debugFold").open = true;
+    $("cookiesHint").hidden = !need; // the Debug fold itself always starts collapsed
     $("cookiesDesc").textContent = need
       ? "Needed: paste your Google cookies to pair (easier from a computer)"
       : "Saved. Update them here if Google signs you out (easier from a computer)";
@@ -3068,7 +3068,7 @@
       setConn(phone === false ? "Phone offline" : "Connected", phone === false ? "warn" : "ok");
     } else if (connecting) setConn("Connecting", "warn");
     else setConn("Disconnected", "bad");
-    if (p && p.pairing && p.pairing.state === "emoji" && $("pairView").hidden && !state.pairAutoShown) { state.pairAutoShown = true; location.hash = "#pair"; }
+    if (p && p.pairing && p.pairing.state === "emoji" && $("pairView").hidden && !state.pairAutoShown) { state.pairAutoShown = true; openPair(); }
   }
 
   // ---------- live updates ----------
@@ -3520,6 +3520,75 @@
     $("toast").hidden = true;
     showPair(location.hash === "#pair");
   }
+  function openPair() { $("toast").hidden = true; showPair(true); }
+  function closePair() {
+    showPair(false);
+    if (location.hash) history.replaceState(history.state, "", location.pathname + location.search);
+  }
+
+  // ---------- back button / gesture ----------
+  // One "guard" history entry sits on top of the page's own entry whenever
+  // anything back-closable is open (conversation, folder, settings, a sheet,
+  // a menu, the photo viewer...). Back pops the guard; popstate then closes
+  // the topmost layer and re-adds the guard if more are still open. With
+  // nothing open there's no guard, so Back leaves the page / Android app as
+  // usual. Never more than one entry, so no duplicates pile up. Closing a
+  // layer with an on-screen button removes the guard with history.back().
+  var nav = { guard: false, pendingBack: false, timer: 0 };
+  function layerOpen() {
+    return !$("imageViewer").hidden || !$("trashView").hidden || !$("detailsView").hidden ||
+      emojiOpen() || !$("confirmView").hidden || !$("signOutView").hidden || !$("settingsView").hidden ||
+      !!state.menuFor || !!state.convMenuFor || !$("newChatView").hidden || !!ct || !$("pairView").hidden ||
+      !!state.rec || !!state.current || !!state.folder;
+  }
+  // Close the topmost layer; false when nothing was open.
+  function closeTopLayer() {
+    if (closeImageViewer()) return true;
+    if (!$("trashView").hidden) { if (!$("trashOk").disabled) hideTrash(); return true; }
+    if (!$("detailsView").hidden) { closeDetails(); return true; }
+    if (emojiOpen()) { showEmoji(false); return true; }
+    if (!$("confirmView").hidden) { if (!$("confirmOk").disabled) hideConfirm(); return true; }
+    if (!$("signOutView").hidden) { $("signOutView").hidden = true; return true; }
+    if (!$("settingsView").hidden) { showSettings(false); return true; }
+    if (state.menuFor) { closeMsgMenu(); return true; }
+    if (state.convMenuFor) { closeConvMenu(); return true; }
+    if (!$("newChatView").hidden) { closeNewChat(); return true; }
+    if (ct) { ctBack(); return true; }
+    if (!$("pairView").hidden) { closePair(); return true; }
+    if (state.rec) { cancelRecording(); return true; }
+    if (state.current) { closeThread(); renderConversations(); return true; }
+    if (state.folder) { exitFolder(); return true; }
+    return false;
+  }
+  function navSync() {
+    nav.timer = 0;
+    if (nav.pendingBack) return; // finishes in onPopState
+    var open = layerOpen();
+    try {
+      if (open && !nav.guard) { history.pushState({ me: "guard" }, ""); nav.guard = true; }
+      else if (!open && nav.guard) { nav.pendingBack = true; history.back(); }
+    } catch (e) { /* history API unavailable: buttons still work */ }
+  }
+  function scheduleNavSync() { if (!nav.timer) nav.timer = setTimeout(navSync, 0); }
+  function onPopState(e) {
+    var onGuard = !!(e.state && e.state.me === "guard");
+    // A typed #pair hash is handled by hashchange.
+    if (!onGuard && !(e.state && e.state.me) && location.hash === "#pair") return;
+    if (nav.pendingBack) { nav.pendingBack = false; nav.guard = onGuard; navSync(); return; }
+    if (onGuard) { nav.guard = true; navSync(); return; } // Forward onto a stale guard
+    nav.guard = false;
+    closeTopLayer();
+    navSync();
+  }
+  function initNav() {
+    try {
+      if (history.state && history.state.me === "guard") nav.guard = true; // reloaded on the guard
+      else history.replaceState({ me: "base" }, "");
+    } catch (e) { return; }
+    window.addEventListener("popstate", onPopState);
+    new MutationObserver(scheduleNavSync).observe(document.body, { attributes: true, subtree: true, attributeFilter: ["hidden", "class"] });
+    scheduleNavSync();
+  }
 
   // ---------- init ----------
   function init() {
@@ -3672,6 +3741,10 @@
       b.addEventListener("click", function () { showSettings(false); enterFolder(b.dataset.folder); });
     });
     $("folderBack").addEventListener("click", exitFolder);
+    $("cookiesHint").addEventListener("click", function () {
+      $("debugFold").open = true;
+      $("cookiesBtn").scrollIntoView({ block: "center" });
+    });
     // full-size photo viewer: any tap closes it
     $("imageViewer").addEventListener("click", function () { closeImageViewer(); });
     // start chat
@@ -3697,8 +3770,8 @@
       var first = $("newChatList").querySelector(".contact-row");
       if (first) first.click();
     });
-    $("pairBtn").addEventListener("click", function () { location.hash = "#pair"; });
-    $("pairClose").addEventListener("click", function () { history.replaceState(null, "", location.pathname); route(); });
+    $("pairBtn").addEventListener("click", openPair);
+    $("pairClose").addEventListener("click", closePair);
     $("pairStart").addEventListener("click", function () {
       postJSON("/api/app/pairing/start").then(renderPairing).catch(function (e) { toast(e.message, "error"); refreshPairing(); });
     });
@@ -3731,8 +3804,11 @@
     loadConversations().then(function () {
       var m = /[?&]c=([^&]+)/.exec(location.search);
       if (m) {
+        var reply = /[?&]reply=1/.test(location.search);
+        // Drop ?c= so a reload or Back doesn't reopen it; Back returns to the list.
+        try { history.replaceState(history.state, "", location.pathname + location.hash); } catch (e) {}
         openConversation(decodeURIComponent(m[1]));
-        if (/[?&]reply=1/.test(location.search)) focusComposer();
+        if (reply) focusComposer();
       }
     });
     loadThemes();
@@ -3742,6 +3818,7 @@
     setInterval(pollIfStreamDead, POLL_MS);
     connectEvents();
     route();
+    initNav();
     autosize();
   }
   init();
