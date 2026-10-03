@@ -153,6 +153,17 @@ class TwaActivity : Activity() {
         if (launched) finish()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Chrome's TWA / Custom Tab window is translucent, so this activity
+        // is only paused (never stopped) under it, and onRestart doesn't run
+        // when the user backs out. Resuming after the launch means the
+        // browser window is gone: close, so the task ends and the next tap
+        // on the icon or recents starts fresh. (Staying open left an empty,
+        // invisible window: the "black screen" on reopening.)
+        if (launched) finish()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_LAUNCHED, launched)

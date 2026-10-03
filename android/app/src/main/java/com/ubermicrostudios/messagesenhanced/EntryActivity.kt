@@ -13,7 +13,8 @@ class EntryActivity : Activity() {
         super.onCreate(savedInstanceState)
         val next = try {
             if (SecurePrefs(this).serverAddress.isBlank()) Intent(this, SetupActivity::class.java)
-            else Intent(this, TwaActivity::class.java)
+            // A link or notification for our server passes its URL through.
+            else Intent(this, TwaActivity::class.java).setData(intent?.data)
         } catch (t: Throwable) {
             LaunchLog.record(this, "Couldn't read the saved server address", t)
             Intent(this, SetupActivity::class.java)
