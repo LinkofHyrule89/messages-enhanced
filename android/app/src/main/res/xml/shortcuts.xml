@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="cookies"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_cookies"
+        android:shortcutShortLabel="@string/shortcut_cookies_short"
+        android:shortcutLongLabel="@string/shortcut_cookies_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.ubermicrostudios.messagesenhanced"
+            android:targetClass="com.ubermicrostudios.messagesenhanced.CookieSenderActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="server"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_cookies"
+        android:shortcutShortLabel="@string/shortcut_server_short"
+        android:shortcutLongLabel="@string/shortcut_server_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.ubermicrostudios.messagesenhanced"
+            android:targetClass="com.ubermicrostudios.messagesenhanced.SetupActivity" />
+    </shortcut>
+</shortcuts>

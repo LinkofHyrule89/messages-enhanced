@@ -162,6 +162,21 @@ a { color: var(--accent); }
 /* ---------- recording bar ---------- */
 .rec-bar { flex: none; display: flex; align-items: center; gap: 22px; padding: 14px 28px; background: #2a1215;
   border-top: 2px solid var(--danger); font-size: 28px; font-weight: 600; }
+.rec-act { flex: none; display: inline-grid; place-items: center; width: 88px; height: 88px; min-width: 0; min-height: 0; padding: 0; border-radius: 50%; }
+.rec-act svg { width: 44px; height: 44px; fill: currentColor; }
+.rec-bar { min-width: 0; flex-wrap: nowrap; }
+.rec-bar > * { flex-shrink: 0; }
+.rec-bar #recLabel { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-bar .rec-engine { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rec-bar .topbar-spacer { flex: 1 1 0; min-width: 0; }
+html.desk .rec-act { width: 64px; height: 64px; }
+html.desk .rec-act svg { width: 32px; height: 32px; }
+html.narrow .rec-bar { gap: 10px; padding: 12px 14px; }
+html.narrow:not(.desk) .rec-act { width: 72px; height: 72px; }
+html.narrow:not(.desk) .rec-act svg { width: 38px; height: 38px; }
+html.narrow .rec-time { font-size: 22px; flex-shrink: 1; min-width: 0; overflow: hidden; }
+html.narrow .rec-bar .rec-engine { display: none; }
+.rec-act.pending { outline: 4px solid #fff; outline-offset: 2px; }
 .rec-dot { width: 26px; height: 26px; border-radius: 50%; background: var(--danger); animation: pulse 1.1s ease-in-out infinite; }
 .rec-time { font-variant-numeric: tabular-nums; color: #ffb3b5; }
 .rec-engine { white-space: nowrap; padding: 4px 14px; border-radius: 10px; background: rgba(255,255,255,.08); color: #ffb3b5; font-size: 20px; font-weight: 600; }
@@ -676,3 +691,9 @@ html.desk .details-member { min-height: 84px; }
 html.desk .details-member-name { font-size: 22px; }
 html.desk .details-name { font-size: 28px; }
 .msg-menu-danger .conv-menu-ico { color: inherit; }
+
+/* Notification sound row: switch + Test button side by side. */
+.setting-pair { display: flex; gap: 16px; align-items: stretch; }
+.setting-pair .setting-row { flex: 1; min-width: 0; }
+.setting-test { flex: none; display: inline-flex; align-items: center; gap: 12px; min-height: 84px; align-self: center; }
+.setting-test svg { width: 36px; height: 36px; fill: currentColor; }

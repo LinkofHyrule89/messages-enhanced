@@ -57,6 +57,12 @@ messages are made up.
 - **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Messages Enhanced
   server in one click. See [`extension/README.md`](extension/README.md).
+- **`android/`**: the "Messages Enhanced" Android app. It opens your server's
+  web app full screen (Trusted Web Activity, no URL bar) and includes a cookie
+  sender. No server is built in: you enter yours on first launch. The server
+  serves `/.well-known/assetlinks.json` for the official build automatically;
+  set `MESSAGES_ANDROID_CERT_SHA256` if you sign your own. See
+  [`android/README.md`](android/README.md).
 
 ## Build and run
 

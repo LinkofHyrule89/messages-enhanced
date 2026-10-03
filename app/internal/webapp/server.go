@@ -135,7 +135,8 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	root.HandleFunc("/app/login.js", s.serveStatic) // login page keyboard lift; no secrets
 	root.HandleFunc("/app/fonts/", s.serveFont)     // bundled Noto Color Emoji (public font files)
 	registerLegacyRoutes(root)
-	s.registerPWARoutes(root) // manifest, service worker, icons, offline page (no private data)
+	root.HandleFunc("/.well-known/assetlinks.json", handleAssetLinks) // Android app (TWA) link; public
+	s.registerPWARoutes(root)                                         // manifest, service worker, icons, offline page (no private data)
 	root.Handle("/", s.auth.Require(protected))
 	return root, s, nil
 }

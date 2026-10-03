@@ -33,3 +33,8 @@
   if (vv) { vv.addEventListener("resize", lift); vv.addEventListener("scroll", lift); }
   lift();
 })();
+
+// Remember a launch from the Messages Enhanced Android app (see app.js).
+try {
+  if (document.referrer.indexOf("android-app://com.ubermicrostudios.messagesenhanced") === 0) sessionStorage.setItem("me_android_twa", "1");
+} catch (e) { /* storage blocked */ }

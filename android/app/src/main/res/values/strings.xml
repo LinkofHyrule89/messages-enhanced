@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Messages Enhanced</string>
+    <string name="cookies_label">Send Google cookies</string>
+    <string name="shortcut_cookies_short">Google cookies</string>
+    <string name="shortcut_cookies_long">Send Google sign-in cookies</string>
+    <string name="setup_label">Server settings</string>
+    <string name="shortcut_server_short">Server</string>
+    <string name="shortcut_server_long">Server settings</string>
+</resources>

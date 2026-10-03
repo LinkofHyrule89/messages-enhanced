@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MessagesEnhanced" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#FF121212</item>
+        <item name="android:statusBarColor">#FF121212</item>
+        <item name="android:navigationBarColor">#FF121212</item>
+    </style>
+    <!-- TWA launcher: no window of its own; the helper shows the splash. -->
+    <style name="Theme.MessagesEnhanced.Launcher" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:statusBarColor">@color/dark</item>
+        <item name="android:navigationBarColor">@color/dark</item>
+    </style>
+</resources>

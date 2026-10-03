@@ -65,8 +65,9 @@
           <span id="recTime" class="rec-time">0:00</span>
           <span id="recEngine" class="rec-engine"></span>
           <div class="topbar-spacer"></div>
-          <button id="recCancel" class="btn btn-danger btn-lg" type="button">Cancel</button>
-          <button id="recDone" class="btn btn-primary btn-lg" type="button">Done</button>
+          <button id="recCancel" class="btn btn-danger rec-act" type="button" aria-label="Cancel dictation" title="Cancel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+          <button id="recEdit" class="btn rec-act" type="button" aria-label="Stop and edit the text" title="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
+          <button id="recSend" class="btn btn-primary rec-act" type="button" aria-label="Stop and send now" title="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20V4l19 8-19 8zm2-3 11.85-5L5 7v3.5l6 1.5-6 1.5V17z"/></svg></button>
         </div>
         <div id="replyBar" class="reply-bar" hidden>
           <svg viewBox="0 0 24 24" class="reply-bar-icon" aria-hidden="true"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>
@@ -211,6 +212,16 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
+      <div class="setting-pair">
+        <button id="setSound" class="setting-row" type="button" role="switch" aria-checked="true">
+          <span class="setting-text">
+            <span class="setting-name">Notification sound</span>
+            <span class="setting-desc">Chime for new incoming messages on this device (not muted chats)</span>
+          </span>
+          <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+        </button>
+        <button id="testSound" class="btn btn-lg setting-test" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg>Test sound</button>
+      </div>
       <div class="setting-row zoom-row" role="group" aria-labelledby="zoomName">
         <span class="setting-text">
           <span id="zoomName" class="setting-name">UI zoom</span>
@@ -307,6 +318,11 @@
       <a id="cookiesBtn" class="setting-row cookies-row" href="/admin/cookies">
         <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>
         <span class="setting-text"><span class="setting-name">Google cookies</span><span id="cookiesDesc" class="setting-desc">Paste or update the Google cookies used for pairing (easier from a computer)</span></span>
+        <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
+      </a>
+      <a id="androidCookiesBtn" class="setting-row cookies-row" href="intent://cookies#Intent;scheme=messagesenhanced;package=com.ubermicrostudios.messagesenhanced;end" hidden>
+        <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>
+        <span class="setting-text"><span class="setting-name">Send cookies from this phone</span><span class="setting-desc">Open the Android app's cookie sender to sign in to Google and send cookies here</span></span>
         <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
       </a>
       <button id="signOutBtn" class="setting-row signout-row" type="button">

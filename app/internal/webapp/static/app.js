@@ -359,6 +359,119 @@
   }
 
   // ---------- conversations ----------
+  // ---------- notification sound ----------
+  // A chime for new incoming messages (not mine, not history, not muted
+  // chats), deduped by message id. Fed by both the live stream and the poll:
+  // each refresh of the list / open thread passes through here.
+  var chime = (function () {
+    var SRC = "/app/sounds/chime.mp3", GAP_MS = 1500;
+    var startedAt = Date.now(), seen = {}, base = {}, listReady = false, lastAt = 0, audio = null, ctx = null, buf = null, unlocked = false;
+    function enabled() { return loadSettings().sound !== false; }
+    function muted(id) {
+      var c = (state.convs || []).find(function (x) { return x.ConversationID === id; });
+      return !!(c && c.notification_mode === "muted");
+    }
+    function getAudio() {
+      if (!audio && window.Audio) { audio = new Audio(SRC); audio.preload = "auto"; audio.volume = 0.8; }
+      return audio;
+    }
+    function getCtx() {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!ctx && AC) { try { ctx = new AC(); } catch (e) { ctx = null; } }
+      return ctx;
+    }
+    function loadBuf() {
+      var c = getCtx();
+      if (!c || buf) return;
+      fetch(SRC, { credentials: "same-origin" }).then(function (r) { return r.arrayBuffer(); })
+        .then(function (ab) { return new Promise(function (ok, bad) { c.decodeAudioData(ab, ok, bad); }); })
+        .then(function (b) { buf = b; }).catch(function () {});
+    }
+    function webAudio() {
+      var c = getCtx();
+      if (!c) return;
+      if (c.state === "suspended") c.resume().catch(function () {});
+      if (buf) { var s = c.createBufferSource(); s.buffer = buf; s.connect(c.destination); s.start(); return; }
+      // Synthesized fallback: the same two-note chime.
+      [[1046.5, 0], [1567.98, 0.12]].forEach(function (n) {
+        var o = c.createOscillator(), g = c.createGain(), t = c.currentTime + n[1];
+        o.type = "sine"; o.frequency.value = n[0];
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.55);
+      });
+    }
+    function play(force) {
+      if (!force && !enabled()) return;
+      var now = Date.now();
+      if (!force && now - lastAt < GAP_MS) return;
+      lastAt = now;
+      var a = getAudio();
+      if (a) {
+        try { a.currentTime = 0; } catch (e) {}
+        var p = a.play();
+        if (p && p.catch) p.catch(webAudio);
+        return;
+      }
+      webAudio();
+    }
+    // Autoplay is blocked until the user interacts: on the first tap or key,
+    // prime both the <audio> element (silent play) and the AudioContext.
+    function unlock() {
+      if (unlocked) return;
+      unlocked = true;
+      var a = getAudio();
+      if (a) {
+        a.muted = true;
+        var p = a.play();
+        var done = function () { try { a.pause(); a.currentTime = 0; } catch (e) {} a.muted = false; };
+        if (p && p.then) p.then(done, done); else done();
+      }
+      var c = getCtx();
+      if (c && c.state === "suspended") c.resume().catch(function () {});
+      loadBuf();
+      ["pointerdown", "touchstart", "keydown"].forEach(function (t) { document.removeEventListener(t, unlock, true); });
+    }
+    function initUnlock() {
+      ["pointerdown", "touchstart", "keydown"].forEach(function (t) { document.addEventListener(t, unlock, true); });
+    }
+    function incoming(m) { return !m.IsFromMe && !/^TOMBSTONE/i.test(m.Status || ""); }
+    // Messages of one conversation (newest first or any order).
+    function noteMessages(id, msgs) {
+      var max = 0, fresh = false;
+      msgs.forEach(function (m) { if (m.TimestampMS > max) max = m.TimestampMS; });
+      if (!(id in base)) { // first look at this chat = history
+        base[id] = max;
+        msgs.forEach(function (m) { seen[m.MessageID] = 1; });
+        return;
+      }
+      msgs.forEach(function (m) {
+        if (!m.MessageID || seen[m.MessageID]) return;
+        seen[m.MessageID] = 1;
+        if (m.TimestampMS > base[id] && incoming(m)) fresh = true;
+      });
+      if (max > base[id]) base[id] = max;
+      if (fresh && !muted(id)) play(false);
+    }
+    // Conversation list: a newer LastMessageTS on a chat that isn't open
+    // means new messages; fetch its newest few to check sender and id.
+    function noteConversations(list) {
+      list.forEach(function (c) {
+        var id = c.ConversationID, ts = c.LastMessageTS || 0;
+        if (!(id in base)) {
+          // A chat that shows up later with a fresh message is a new chat.
+          base[id] = listReady && ts > startedAt ? startedAt : ts;
+          if (base[id] === ts) return;
+        }
+        if (!listReady || ts <= base[id] || id === state.current || c.notification_mode === "muted") return;
+        api("/api/conversations/" + encodeURIComponent(id) + "/messages?limit=5")
+          .then(function (msgs) { noteMessages(id, msgs || []); }).catch(function () {});
+      });
+      listReady = true;
+    }
+    return { play: play, initUnlock: initUnlock, noteMessages: noteMessages, noteConversations: noteConversations };
+  })();
+
   function loadConversations(force) {
     // Folder lists are read live from Google (read-only); refresh them only
     // on entry, not on every live-update ping.
@@ -366,6 +479,7 @@
     return api("/api/conversations?limit=100").then(function (list) {
       if (state.folder) return;
       state.convs = (list || []).filter(function (c) { return c.tab !== "archive"; });
+      chime.noteConversations(state.convs);
       applyConvPatches();
       renderConversations();
     }).catch(function (e) { if (e.message !== "login required") toast("Couldn't load conversations: " + e.message, "error"); });
@@ -1075,6 +1189,7 @@
       return Promise.resolve().then(function () {
         if (id !== state.current) return;
         state.serverMsgs = { id: id, msgs: (msgs || []).slice().reverse() };
+        if (!state.folder) chime.noteMessages(id, msgs || []);
         if (!state.folder && msgs && msgs.length) patchConv(id, msgs.filter(function (m) { return !/^TOMBSTONE/i.test(m.Status || ""); })[0]);
         var merged = mergeLocal(id, state.serverMsgs.msgs);
         var sig = JSON.stringify(msgs || []) + "|" + localSig(id);
@@ -1838,6 +1953,9 @@
     if (!showEm) showEmoji(false);
     es2.setAttribute("aria-checked", showEm ? "true" : "false");
     es2.classList.toggle("on", showEm);
+    var snd = s.sound !== false, ss = $("setSound");
+    ss.setAttribute("aria-checked", snd ? "true" : "false");
+    ss.classList.toggle("on", snd);
     var showVo = s.showVoice !== false, vs = $("setVoice");
     $("micBtn").hidden = !showVo;
     vs.setAttribute("aria-checked", showVo ? "true" : "false");
@@ -2339,7 +2457,9 @@
     b.disabled = s === "busy";
     $("recBar").hidden = s !== "recording" && s !== "busy";
     $("recLabel").textContent = s === "busy" ? "Transcribing…" : "Listening… tap Done when finished";
-    $("recDone").hidden = s === "busy";
+    if (!s) { state.afterRec = ""; }
+    $("recEdit").classList.toggle("pending", state.afterRec === "edit");
+    $("recSend").classList.toggle("pending", state.afterRec === "send");
     $("recTime").hidden = s === "busy";
     document.body.classList.toggle("is-recording", s === "recording");
     if (s) setComposerFloat(false); // never floated while dictating
@@ -2476,10 +2596,13 @@
     if (r.done) return;
     teardownBuiltin(r);
     r.render();
+    var act = state.afterRec;
     setMicState(null);
     var t = $("input");
+    if (act === "send" && !errorMsg && r.text()) { sendAfterDictation(); return; }
     t.focus();
-    try { var pos = t.value.length - r.after.length; t.setSelectionRange(pos, pos); } catch (e) {}
+    if (act === "edit") setComposerFloat(true);
+    try { var pos = act === "edit" ? t.value.length : t.value.length - r.after.length; t.setSelectionRange(pos, pos); } catch (e) {}
     if (errorMsg && r.fatal) showEngine(builtinLabel(), "error: " + r.fatal);
     if (errorMsg) toast(errorMsg + (r.text() ? " Check the text so far, then tap Send." : ""), "error");
     else if (r.text()) toast("Check the text, then tap Send");
@@ -2638,9 +2761,35 @@
       toast("Transcription failed: " + e.message, "error");
     }).finally(function () {
       state.transcribing = false;
+      var act = state.afterRec;
       setMicState(null);
       autosize();
+      if (act === "send") sendAfterDictation();
+      else if (act === "edit") editAfterDictation();
     });
+  }
+  // Voice typing "Edit" / "Send": stop listening, then act on the transcript
+  // once it's final. Tapping during "Transcribing…" just picks the action.
+  function recFinishAs(act) {
+    if (!state.rec && !state.transcribing) return;
+    state.afterRec = act;
+    $("recEdit").classList.toggle("pending", act === "edit");
+    $("recSend").classList.toggle("pending", act === "send");
+    if (state.rec) stopRecording();
+  }
+  function editAfterDictation() {
+    var t = $("input");
+    t.focus();
+    setComposerFloat(true); // Car Mode: float under the title, like a tap
+    try { t.setSelectionRange(t.value.length, t.value.length); } catch (e) {}
+  }
+  function sendAfterDictation() {
+    var t = $("input");
+    if (!t.value.trim()) return;
+    if (document.activeElement === t) t.blur(); // no keyboard, no float
+    setComposerFloat(false);
+    $("toast").hidden = true; // drop "Check the text, then tap Send"
+    sendMessage();
   }
 
   // --- live typing (server STT while you speak) ---
@@ -2834,6 +2983,16 @@
     if (g.auth_expired || g.AuthExpired) return true;
     return !p.cookies_saved && !st.fake;
   }
+  // Inside the Messages Enhanced Android app (a TWA), offer its native cookie
+  // sender. The TWA marks itself via the android-app:// referrer on launch;
+  // remember it so it survives the login redirect and in-app navigation.
+  (function () {
+    var KEY = "me_android_twa";
+    try {
+      if (document.referrer.indexOf("android-app://com.ubermicrostudios.messagesenhanced") === 0) sessionStorage.setItem(KEY, "1");
+      if (sessionStorage.getItem(KEY) === "1") $("androidCookiesBtn").hidden = false;
+    } catch (e) { /* storage blocked */ }
+  })();
   function updateCookiesEntry(p) {
     if (!p || p.cookies_saved === undefined) return;
     var need = cookiesNeeded(p);
@@ -3396,6 +3555,15 @@
       applySettings();
     });
     $("muteBtn").addEventListener("click", toggleMute);
+    $("setSound").addEventListener("click", function () {
+      var st = loadSettings();
+      st.sound = st.sound === false;
+      saveSettings(st);
+      applySettings();
+      if (st.sound) chime.play(true);
+    });
+    $("testSound").addEventListener("click", function () { chime.play(true); });
+    chime.initUnlock();
     initEmoji();
     initComposerFloat();
     $("setMicRecheck").addEventListener("click", function () { setMicRecheck(!micRecheckOn()); });
@@ -3413,7 +3581,8 @@
     $("signOutBtn").addEventListener("click", function () { showSettings(false); $("signOutView").hidden = false; });
     $("signOutCancel").addEventListener("click", function () { $("signOutView").hidden = true; });
     $("signOutView").addEventListener("click", function (e) { if (e.target === $("signOutView")) $("signOutView").hidden = true; });
-    $("recDone").addEventListener("click", stopRecording);
+    $("recEdit").addEventListener("click", function () { recFinishAs("edit"); });
+    $("recSend").addEventListener("click", function () { recFinishAs("send"); });
     $("recCancel").addEventListener("click", cancelRecording);
     $("convMenuTheme").addEventListener("click", function () {
       closeConvMenu();

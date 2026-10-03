@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The server address is typed by the user (usually a LAN IP such as
+  192.168.1.20), and network-security-config cannot express IP ranges, so
+  cleartext is permitted at the platform level. The app itself only accepts
+  http:// for private/LAN/loopback hosts (see WebPolicy.isCleartextAllowedHost);
+  every other address must be https://. Google is always https-only.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">google.com</domain>
+        <domain includeSubdomains="true">gstatic.com</domain>
+        <domain includeSubdomains="true">googleusercontent.com</domain>
+    </domain-config>
+</network-security-config>
