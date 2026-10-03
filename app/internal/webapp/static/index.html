@@ -232,34 +232,6 @@
         <button id="zoomIn" class="zoom-btn" type="button" aria-label="Larger"><span data-icon="plus"></span></button>
       </div>
       <div id="zoomSteps" class="zoom-steps" role="group" aria-label="UI zoom presets"></div>
-      <div class="sheet-label">Microphone &amp; speech-to-text</div>
-      <dl id="sttInfo" class="stt-info" aria-label="Speech-to-text details">
-        <div class="stt-info-row"><dt>Provider</dt><dd id="sttInfoProvider">-</dd></div>
-        <div class="stt-info-row"><dt>Model</dt><dd id="sttInfoModel">-</dd></div>
-        <div class="stt-info-row"><dt>Mode</dt><dd id="sttInfoMode">-</dd></div>
-        <div class="stt-info-row"><dt>Live typing</dt><dd id="sttInfoLive">-</dd></div>
-        <div class="stt-info-row"><dt>Built-in speech</dt><dd id="sttInfoBuiltin">-</dd></div>
-        <div class="stt-info-row"><dt>Last engine</dt><dd id="sttInfoLast">-</dd></div>
-        <div class="stt-info-row"><dt>Last transcription</dt><dd id="sttInfoLatency">-</dd></div>
-      </dl>
-      <button id="setMicRecheck" class="setting-row mic-recheck-row on" type="button" role="switch" aria-checked="true">
-        <span class="setting-text">
-          <span class="setting-name">Re-check microphone access</span>
-          <span id="micRecheckDesc" class="setting-desc">Checks the mic again when you come back to this page, and retries if the server can't be reached</span>
-        </span>
-        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
-      </button>
-      <button id="setLiveTyping" class="setting-row live-typing-row on" type="button" role="switch" aria-checked="true">
-        <span class="setting-text">
-          <span class="setting-name">Live typing</span>
-          <span id="liveTypingDesc" class="setting-desc">Words appear in the box as you speak (server transcription), then get a final clean-up when you tap Done</span>
-        </span>
-        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
-      </button>
-      <div class="mic-check-row">
-        <button id="micCheckBtn" class="btn btn-ghost btn-lg mic-check-btn" type="button">Check again</button>
-        <output id="micCheckResult" class="mic-check-result" aria-live="polite"></output>
-      </div>
       <div class="sheet-label">Folders</div>
       <div class="folder-rows">
         <button class="setting-row folder-row" type="button" data-folder="archived">
@@ -288,6 +260,11 @@
         <button id="notifEnable" class="btn btn-primary btn-lg notif-btn" type="button" hidden>Turn on</button>
         <button id="notifDisable" class="btn btn-ghost btn-lg notif-btn" type="button" hidden>Turn off</button>
       </div>
+      <a id="notifAppSettings" class="setting-row" href="intent://notifications#Intent;scheme=messagesenhanced;package=com.ubermicrostudios.messagesenhanced;end" hidden>
+        <span class="folder-icon" aria-hidden="true" data-icon="bell"></span>
+        <span class="setting-text"><span class="setting-name">Allow notifications for the app</span><span class="setting-desc">Opens Android's permission prompt or the app's notification settings</span></span>
+        <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
+      </a>
       <button id="notifHide" class="setting-row" type="button" role="switch" aria-checked="false" hidden>
         <span class="setting-text">
           <span class="setting-name">Hide message text</span>
@@ -315,20 +292,52 @@
         <p id="installHint" class="setting-note" hidden></p>
       </div>
       <div class="sheet-label">Account</div>
-      <a id="cookiesBtn" class="setting-row cookies-row" href="/admin/cookies">
-        <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>
-        <span class="setting-text"><span class="setting-name">Google cookies</span><span id="cookiesDesc" class="setting-desc">Paste or update the Google cookies used for pairing (easier from a computer)</span></span>
-        <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
-      </a>
-      <a id="androidCookiesBtn" class="setting-row cookies-row" href="intent://cookies#Intent;scheme=messagesenhanced;package=com.ubermicrostudios.messagesenhanced;end" hidden>
-        <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>
-        <span class="setting-text"><span class="setting-name">Send cookies from this phone</span><span class="setting-desc">Open the Android app's cookie sender to sign in to Google and send cookies here</span></span>
-        <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
-      </a>
       <button id="signOutBtn" class="setting-row signout-row" type="button">
         <span class="folder-icon" aria-hidden="true" data-icon="logout"></span>
         <span class="setting-text"><span class="setting-name">Sign out</span><span class="setting-desc">Sign this device out of Messages Enhanced</span></span>
       </button>
+      <details id="debugFold" class="debug-fold">
+        <summary class="debug-summary"><span class="debug-summary-text">Debug</span><span class="setting-desc">Speech-to-text, microphone check and Google cookies</span></summary>
+        <div class="sheet-label">Microphone &amp; speech-to-text</div>
+        <dl id="sttInfo" class="stt-info" aria-label="Speech-to-text details">
+          <div class="stt-info-row"><dt>Provider</dt><dd id="sttInfoProvider">-</dd></div>
+          <div class="stt-info-row"><dt>Model</dt><dd id="sttInfoModel">-</dd></div>
+          <div class="stt-info-row"><dt>Mode</dt><dd id="sttInfoMode">-</dd></div>
+          <div class="stt-info-row"><dt>Live typing</dt><dd id="sttInfoLive">-</dd></div>
+          <div class="stt-info-row"><dt>Built-in speech</dt><dd id="sttInfoBuiltin">-</dd></div>
+          <div class="stt-info-row"><dt>Last engine</dt><dd id="sttInfoLast">-</dd></div>
+          <div class="stt-info-row"><dt>Last transcription</dt><dd id="sttInfoLatency">-</dd></div>
+        </dl>
+        <button id="setMicRecheck" class="setting-row mic-recheck-row on" type="button" role="switch" aria-checked="true">
+          <span class="setting-text">
+            <span class="setting-name">Re-check microphone access</span>
+            <span id="micRecheckDesc" class="setting-desc">Checks the mic again when you come back to this page, and retries if the server can't be reached</span>
+          </span>
+          <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+        </button>
+        <button id="setLiveTyping" class="setting-row live-typing-row on" type="button" role="switch" aria-checked="true">
+          <span class="setting-text">
+            <span class="setting-name">Live typing</span>
+            <span id="liveTypingDesc" class="setting-desc">Words appear in the box as you speak (server transcription), then get a final clean-up when you tap Done</span>
+          </span>
+          <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+        </button>
+        <div class="mic-check-row">
+          <button id="micCheckBtn" class="btn btn-ghost btn-lg mic-check-btn" type="button">Check again</button>
+          <output id="micCheckResult" class="mic-check-result" aria-live="polite"></output>
+        </div>
+        <div class="sheet-label">Google cookies</div>
+        <a id="cookiesBtn" class="setting-row cookies-row" href="/admin/cookies">
+          <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>
+          <span class="setting-text"><span class="setting-name">Google cookies</span><span id="cookiesDesc" class="setting-desc">Paste or update the Google cookies used for pairing (easier from a computer)</span></span>
+          <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
+        </a>
+        <a id="androidCookiesBtn" class="setting-row cookies-row" href="intent://cookies#Intent;scheme=messagesenhanced;package=com.ubermicrostudios.messagesenhanced;end" hidden>
+          <span class="folder-icon" aria-hidden="true" data-icon="cookie"></span>
+          <span class="setting-text"><span class="setting-name">Send cookies from this phone</span><span class="setting-desc">Open the Android app's cookie sender to sign in to Google and send cookies here</span></span>
+          <span class="folder-chev" aria-hidden="true" data-icon="chevRight"></span>
+        </a>
+      </details>
     </div>
   </section>
 

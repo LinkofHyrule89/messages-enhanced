@@ -697,3 +697,12 @@ html.desk .details-name { font-size: 28px; }
 .setting-pair .setting-row { flex: 1; min-width: 0; }
 .setting-test { flex: none; display: inline-flex; align-items: center; gap: 12px; min-height: 84px; align-self: center; }
 .setting-test svg { width: 36px; height: 36px; fill: currentColor; }
+
+/* Settings > Debug: collapsed fold at the bottom */
+.debug-fold { margin: 26px 0 8px; border-top: 2px solid var(--line); }
+.debug-summary { display: flex; flex-direction: column; gap: 4px; padding: 20px 4px; cursor: pointer; list-style: none; }
+.debug-summary::-webkit-details-marker { display: none; }
+.debug-summary-text { color: var(--muted); font-size: 24px; font-weight: 600; }
+.debug-summary-text::before { content: "▸ "; }
+.debug-fold[open] .debug-summary-text::before { content: "▾ "; }
+.debug-fold .sheet-label:first-of-type { margin-top: 4px; }

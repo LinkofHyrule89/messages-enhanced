@@ -89,6 +89,15 @@
   function hideLocal() { try { return localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { return false; } }
   function setHideLocal(v) { try { localStorage.setItem(HIDE_KEY, v ? "1" : "0"); } catch (e) {} }
 
+  // Inside the Messages Enhanced Android app (TWA, or its Custom Tab fallback)
+  // the launch referrer is android-app://<package>; remembered for the tab.
+  var ANDROID_PKG = "com.ubermicrostudios.messagesenhanced";
+  function inAndroidApp() {
+    try {
+      if (document.referrer.indexOf("android-app://" + ANDROID_PKG) === 0) sessionStorage.setItem("me_android_twa", "1");
+      return sessionStorage.getItem("me_android_twa") === "1";
+    } catch (e) { return false; }
+  }
   function permission() { return pushOK ? Notification.permission : "unsupported"; }
 
   // Re-checks this device's subscription against the server (and re-sends
@@ -114,7 +123,7 @@
     if (!status) return;
     var en = $("notifEnable"), dis = $("notifDisable"), hide = $("notifHide"), test = $("notifTest");
     var text, on = false, canEnable = false;
-    var perm = permission();
+    var perm = permission(), app = inAndroidApp();
     if (!pushOK) {
       text = isIOS && !standalone
         ? "On iPhone or iPad, add Messages Enhanced to your Home Screen first (Share → Add to Home Screen), then turn notifications on from the installed app."
@@ -123,7 +132,9 @@
     } else if (st.cfg && !st.cfg.available) {
       text = "Not available on this server.";
     } else if (perm === "denied") {
-      text = "Blocked. Allow notifications for this site in the browser's site settings (tap the lock or ⓘ next to the address), then come back.";
+      text = app
+        ? "Blocked: Android hasn't allowed notifications for the Messages Enhanced app. Tap “Allow notifications for the app” below, allow them, then come back here and tap Turn on."
+        : "Blocked. Allow notifications for this site in the browser's site settings (tap the lock or ⓘ next to the address), then come back.";
     } else if (st.sub && perm === "granted") {
       on = true;
       text = "On. New messages notify this device, even with the page closed.";
@@ -137,6 +148,8 @@
     en.hidden = !canEnable; en.disabled = st.busy;
     dis.hidden = !on; dis.disabled = st.busy;
     hide.hidden = !on; test.hidden = !on; test.disabled = st.busy;
+    var appBtn = $("notifAppSettings");
+    if (appBtn) appBtn.hidden = !(app && pushOK && !on && (perm === "denied" || st.needApp));
     var h = hideLocal();
     hide.classList.toggle("on", h);
     hide.setAttribute("aria-checked", h ? "true" : "false");
@@ -155,7 +168,13 @@
     var ask = Notification.permission === "granted" ? Promise.resolve("granted")
       : new Promise(function (res) { var p = Notification.requestPermission(res); if (p && p.then) p.then(res); });
     ask.then(function (perm) {
-      if (perm !== "granted") throw new Error(perm === "denied" ? "" : "Permission wasn't granted.");
+      if (perm !== "granted") {
+        st.needApp = inAndroidApp();
+        throw new Error(perm === "denied" ? "" : st.needApp
+          ? "Android didn't grant notification permission to the app. Tap “Allow notifications for the app” below."
+          : "Permission wasn't granted (the prompt was dismissed or blocked).");
+      }
+      st.needApp = false;
       return Promise.all([regReady.then(function (r) { return r ? navigator.serviceWorker.ready : null; }), st.cfg && st.cfg.public_key ? st.cfg : getCfg()]);
     }).then(function (v) {
       var reg = v[0], cfg = v[1];
@@ -171,7 +190,10 @@
       var body = sub.toJSON(); body.hide_text = hideLocal();
       return post("/api/app/push/subscribe", body).then(function (res) { st.sub = sub; setHideLocal(!!res.hide_text); st.msg = ""; });
     }).catch(function (e) {
-      st.msg = e && e.message ? "Couldn't turn on: " + e.message : "";
+      var m = e && e.message ? e.message : "";
+      if (e && e.name && e.name !== "Error" && m.indexOf(e.name) < 0) m = e.name + ": " + (m || "no details");
+      if (e && e.name === "AbortError" && /push service/i.test(m)) m += " (the browser couldn't reach its push service; check that Chrome is up to date, has network access and isn't restricted in battery settings)";
+      st.msg = m ? "Couldn't turn on: " + m : "";
     }).then(function () { st.busy = false; render(); });
   }
 
@@ -217,6 +239,10 @@
       renderInstall();
       // Quietly keep an existing subscription registered with the server.
       if (pushOK && Notification.permission === "granted") sync().then(render, render);
+      // Back from Android's notification settings / permission prompt.
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") { if (permission() === "granted") st.needApp = false; refresh(); }
+      });
     }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();

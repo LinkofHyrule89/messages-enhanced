@@ -2365,7 +2365,7 @@
     applySettings();
   }
   // Which engine ran: shown in the recording bar while listening, and in
-  // Settings > Microphone & speech-to-text afterwards (not in the header).
+  // Settings > Debug > Microphone & speech-to-text afterwards (not in the header).
   var sttDbg = { last: null, latency: null, builtinErr: null };
   function showEngine(label, note) {
     $("recEngine").textContent = label;
@@ -2376,7 +2376,7 @@
   // to Google's speech service in the car, unsupported language, never
   // started) is skipped in auto mode for BUILTIN_SKIP_MS on this device, so
   // the mic goes straight to server transcription (and live typing).
-  // Settings > Check again clears it.
+  // Settings > Debug > Check again clears it.
   var BUILTIN_MEMO_KEY = "tm.builtinFailed", BUILTIN_SKIP_MS = 24 * 3600 * 1000;
   var BUILTIN_STICKY = { "network": 1, "language-not-supported": 1, "did not start": 1, "start failed": 1 };
   function builtinBroken() {
@@ -2973,7 +2973,8 @@
     if (open) { refreshPairing(); clearInterval(state.pairPoll); state.pairPoll = setInterval(refreshPairing, 1000); }
     else { clearInterval(state.pairPoll); state.pairPoll = null; }
   }
-  // Cookies: always a row in Settings > Account (highlighted when needed);
+  // Cookies: always a row in Settings > Debug (highlighted, and the fold
+  // opened, when needed);
   // the pairing-screen button only shows when cookies are actually needed:
   // none saved yet (and not dev fake pairing), or Google rejected the saved
   // ones (google.auth_expired). /admin/cookies stays reachable by URL.
@@ -2997,6 +2998,7 @@
     if (!p || p.cookies_saved === undefined) return;
     var need = cookiesNeeded(p);
     $("cookiesBtn").classList.toggle("needed", need);
+    if (need) $("debugFold").open = true;
     $("cookiesDesc").textContent = need
       ? "Needed: paste your Google cookies to pair (easier from a computer)"
       : "Saved. Update them here if Google signs you out (easier from a computer)";

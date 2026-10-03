@@ -2,7 +2,6 @@ package com.ubermicrostudios.messagesenhanced
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -54,6 +53,23 @@ class TwaActivity : Activity() {
         }
         if (url == null) { toSetup(); return }
         launchUrl = url
+        if (Notifications.shouldAskOnLaunch(this)) {
+            // First launch after setup (or after updating): ask for Android's
+            // notification permission, which the web app's notifications use
+            // via notification delegation. Launch either way afterwards.
+            Notifications.markAsked(this)
+            requestPermissions(arrayOf(Notifications.PERMISSION), REQ_NOTIFICATIONS)
+            return
+        }
+        startLaunch(url)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NOTIFICATIONS && !launched && !fellBack) launchUrl?.let { startLaunch(it) }
+    }
+
+    private fun startLaunch(url: Uri) {
         try {
             val dark = ContextCompat.getColor(this, R.color.dark)
             val colors = CustomTabColorSchemeParams.Builder()
@@ -151,9 +167,8 @@ class TwaActivity : Activity() {
 
     companion object {
         private const val STATE_LAUNCHED = "launched"
+        private const val REQ_NOTIFICATIONS = 41
         private const val WATCHDOG_MS = 10_000L
         private const val FILE_PROVIDER = "com.ubermicrostudios.messagesenhanced.fileprovider"
-
-        fun intent(context: Context) = Intent(context, TwaActivity::class.java)
     }
 }

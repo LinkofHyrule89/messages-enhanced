@@ -73,6 +73,29 @@
             </intent-filter>
         </activity>
 
+        <!-- messagesenhanced://notifications from the web app: ask for the
+             notification permission, or open the app's notification settings. -->
+        <activity
+            android:name=".NotificationSettingsActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="messagesenhanced" android:host="notifications" />
+            </intent-filter>
+        </activity>
+
+        <!-- Chrome asks for the notification permission through this when the
+             web app requests it (notification delegation, Android 13+). -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="com.ubermicrostudios.messagesenhanced.fileprovider"
