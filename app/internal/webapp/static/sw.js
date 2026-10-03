@@ -7,7 +7,9 @@
  * offline page. Push messages become notifications grouped per conversation.
  */
 "use strict";
-var VERSION = "tm-shell-v1";
+// The page registers /app/sw.js?v=<build version>: a new build is a new
+// worker script, so it installs, takes over and drops the old cache.
+var VERSION = "tm-shell-" + (new URL(self.location.href).searchParams.get("v") || "v2");
 var PRECACHE = ["/app/offline.html", "/app/icons/icon-192.png", "/app/icons/badge-96.png"];
 
 self.addEventListener("install", function (e) {

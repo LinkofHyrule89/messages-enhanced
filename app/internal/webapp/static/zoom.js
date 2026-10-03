@@ -18,6 +18,9 @@
   "use strict";
   var ZOOM_STEPS = [50, 60, 67, 75, 90, 100, 110, 125, 150, 175];
   var DESK_SCALE = 0.62;
+  // Build version this page was served with (see app.js checkVersion).
+  var vm = document.querySelector ? document.querySelector('meta[name="app-version"]') : null;
+  window.TM_VERSION = vm ? vm.getAttribute("content") : "";
   var CAR_DESIGN_W = 1800, CAR_DESIGN_H = 1000; // full-screen car browser: stays 100%
   var AUTO_MIN_W = 1000; // phones / portrait: no auto shrink (one-pane layout at 100%, as before)
   var AUTO_MIN = 50, NARROW_W = 1100;
@@ -59,6 +62,12 @@
       d.classList.toggle("narrow", w > 0 && (car ? w / k : w) <= NARROW_W);
       d.style.setProperty("--z", String(k));
       d.style.zoom = k === 1 ? "" : String(k);
+      // Live layout-viewport height for .app (app.css): 100vh can stay at a
+      // stale, too-tall value after a TWA relaunch / auto-reload (composer
+      // pushed under the navigation bar), so the height follows innerHeight
+      // and is re-applied whenever the viewport may have changed.
+      var h = window.innerHeight;
+      if (h > 0) d.style.setProperty("--app-h", h + "px");
       return k;
     },
   };
@@ -67,13 +76,32 @@
   P.apply(s && typeof s === "object" ? s : null);
   window.TMPrefs = P;
   if (window.addEventListener) {
-    var t = null;
-    window.addEventListener("resize", function () {
+    // Re-apply on every event that can change the viewport, and a few times
+    // while the page settles after load (the TWA window and the safe-area
+    // insets may reach their final size only after first paint, without a
+    // resize event). onchange (app.js: zoom UI, closes menus) runs on window
+    // resizes or when the scale / layout classes changed; onlayout (app.js:
+    // re-measure the floating composer) runs every time.
+    var t = null, pendingResize = false;
+    var sig = function () { var d = document.documentElement; return d.className + "|" + d.style.getPropertyValue("--z"); };
+    var settle = function (isResize) {
+      if (isResize === true) pendingResize = true;
       clearTimeout(t);
       t = setTimeout(function () {
-        var k = P.apply(P.current);
-        if (P.onchange) P.onchange(k);
+        var before = sig(), k = P.apply(P.current);
+        if ((pendingResize || sig() !== before) && P.onchange) P.onchange(k);
+        pendingResize = false;
+        if (P.onlayout) P.onlayout();
       }, 60);
-    });
+    };
+    window.addEventListener("resize", function () { settle(true); });
+    window.addEventListener("orientationchange", settle);
+    window.addEventListener("pageshow", settle);
+    window.addEventListener("load", settle);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) settle(); });
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", settle);
+    if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(settle); });
+    [350, 1200, 3000].forEach(function (ms) { setTimeout(settle, ms); });
+    P.settle = settle;
   }
 })();

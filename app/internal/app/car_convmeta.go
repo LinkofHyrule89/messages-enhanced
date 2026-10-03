@@ -14,6 +14,10 @@ type CarConversationMeta struct {
 	ConversationID string `json:"conversation_id"`
 	Protocol       string `json:"protocol"` // "RCS", "SMS" or "" (unknown / other platform)
 	E2EE           bool   `json:"e2ee"`
+	// E2EESource: "messages" (Google's per-message flag), "tombstone" (the
+	// latest "now end-to-end encrypted" notice) or "" (unknown).
+	E2EESource   string   `json:"e2ee_source,omitempty"`
+	EncryptedIDs []string `json:"e2ee_ids"`
 	Muted          bool   `json:"muted"`
 }
 
@@ -37,9 +41,17 @@ func (a *App) CarConversationMeta(conversationID string) (*CarConversationMeta, 
 	case "Text":
 		out.Protocol = "SMS"
 	}
-	if out.Protocol == "RCS" {
+	out.EncryptedIDs = []string{}
+	if latest, ok, ids, err := a.Store.ConversationEncryption(conversationID, 3000); err == nil {
+		out.EncryptedIDs = append(out.EncryptedIDs, ids...)
+		if ok {
+			out.E2EE, out.E2EESource = latest == 2, "messages"
+		}
+	}
+	if out.Protocol == "RCS" && out.E2EESource == "" {
 		if st, err := a.Store.LatestEncryptionTombstone(conversationID); err == nil && st != "" {
 			out.E2EE = strings.Contains(st, "ENCRYPTED") && !strings.Contains(st, "LOST_ENCRYPTION")
+			out.E2EESource = "tombstone"
 		}
 	}
 	return out, nil

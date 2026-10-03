@@ -13,11 +13,21 @@ Many thanks to that project, and to the mautrix-gmessages authors.
 All screenshots use the built-in demo data (`serve --demo`); the names and
 messages are made up.
 
-| Car Mode (car screen) | Desktop layout |
+| Home screen (phone) | Conversation: "Read by" in a group |
 |---|---|
-| ![Car Mode](docs/screenshots/car-mode.png) | ![Desktop layout](docs/screenshots/desktop.png) |
-| **Chat theme** | **Composer** |
-| ![Chat theme picker](docs/screenshots/theme.png) | ![Composer](docs/screenshots/composer.png) |
+| ![Home screen](docs/screenshots/home.png) | ![Group conversation with Read by](docs/screenshots/conversation.png) |
+| **Swipe left for times, read-receipt checks** | **Long-press menu** |
+| ![Swipe timestamps](docs/screenshots/swipe-times.png) | ![Long-press menu](docs/screenshots/long-press.png) |
+| **(+) attachment sheet** | **Chat theme** |
+| ![Attachment sheet](docs/screenshots/plus-sheet.png) | ![Chat theme picker](docs/screenshots/theme.png) |
+
+| Car Mode (car screen) |
+|---|
+| ![Car Mode](docs/screenshots/car-mode.png) |
+
+| Tablet / desktop layout (Car Mode off) |
+|---|
+| ![Desktop layout](docs/screenshots/desktop.png) |
 
 ## What's here
 
@@ -55,6 +65,23 @@ messages are made up.
     encryption lock)
   - paste or drop images, stickers and GIFs (including from Gboard) into the
     message box; they wait as previews with a remove button until you send
+  - a Google Messages-style look outside Car Mode: a home screen with large
+    round photos, RCS badges, "You:" previews with status checks, pin icons,
+    a search button, your Google account photo as the menu button, and a
+    floating "Start chat" button plus scroll-to-top; a pill composer with a
+    (+) sheet (Gallery, Camera, Files), emoji and gallery buttons, voice
+    typing and an always-visible Send button
+  - Google Messages-style read receipts: sending / sent / delivered / read /
+    failed icons under your latest message (tap a bubble for the time and
+    status), and in RCS groups "Read by Alice, Bob" with small photos until
+    everyone has read it
+  - long-press message menu (reactions, reply, forward, copy, star, delete,
+    select more, info); swipe right to reply, swipe left to show times
+  - per-message end-to-end encryption locks, health alerts, and the page
+    reloads itself after the server is updated
+  - Car Mode gets the same bubble colors, grouping, sender names and photos,
+    and read-receipt icons, with large touch targets and visible buttons
+    instead of gestures
   See [`app/GUIDE.md`](app/GUIDE.md) for details.
 - **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Messages Enhanced

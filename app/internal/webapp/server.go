@@ -45,6 +45,10 @@ type Deps struct {
 	Typing *TypingTracker
 	// Push sends Web Push notifications for incoming messages (nil = off).
 	Push *PushHub
+	// Profile serves the header's Google account photo (nil = none).
+	Profile ProfilePhotoSource
+	// NoHealthMonitor skips starting the background health watcher (tests).
+	NoHealthMonitor bool
 }
 
 type Server struct {
@@ -61,6 +65,10 @@ type Server struct {
 	admin    *template.Template
 	static   http.Handler
 	themes   *ThemeStore // nil if the data dir couldn't be prepared
+	health   *HealthMonitor
+	stars    *StarStore // nil if the data dir couldn't be prepared
+	version  string     // hash of the static files (version.go)
+	index    []byte     // index.html with versioned asset URLs
 }
 
 // NewHandler builds the public-facing handler: login + auth gate in front of
@@ -100,6 +108,17 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 		static:   http.StripPrefix("/app/", http.FileServer(http.FS(sub))),
 	}
 
+	s.version = staticVersion(sub)
+	s.index = versionedIndex(sub, s.version)
+
+	s.health = NewHealthMonitor(cfg, d.GoogleStatus, d.Push)
+	if s.health.Enabled() && !d.NoHealthMonitor {
+		go s.health.Run(context.Background())
+	}
+
+	if st, err := OpenStarStore(d.DataDir); err == nil {
+		s.stars = st
+	}
 	if ts, err := OpenThemeStore(d.DataDir); err != nil {
 		d.Logger.Warn().Err(err).Msg("Chat theme storage unavailable")
 	} else {
@@ -119,6 +138,9 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	s.registerCarRoutes(protected)
 	s.registerThemeRoutes(protected)
 	s.registerPushRoutes(protected)
+	protected.HandleFunc("/api/app/health", s.handleHealth)
+	protected.HandleFunc("/api/app/stars", s.handleStars)
+	protected.HandleFunc("/api/app/version", s.handleVersion)
 	protected.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// The bare domain, and any page address that isn't the web app's, go
 		// to the app's start path instead of a blank page. API and asset
@@ -179,6 +201,12 @@ func setPageSecurityHeaders(w http.ResponseWriter) {
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	setPageSecurityHeaders(w)
 	w.Header().Set("Cache-Control", "no-cache")
+	if (r.URL.Path == "/app/" || r.URL.Path == "/app/index.html") && len(s.index) > 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("X-App-Version", s.version)
+		_, _ = w.Write(s.index)
+		return
+	}
 	s.static.ServeHTTP(w, r)
 }
 
@@ -227,6 +255,10 @@ func (s *Server) serverSTTEnabled() bool {
 	return s.stt.Name() != "none" && s.sttMode() != STTModeBuiltin
 }
 
+func cloudSTT(name string) bool {
+	return strings.HasPrefix(name, "groq:") || strings.HasPrefix(name, "openai:")
+}
+
 // sttModel is the configured model name (label only for whisper.cpp).
 func (s *Server) sttModel() string {
 	if t, ok := s.stt.(*OpenAICompatTranscriber); ok {
@@ -237,14 +269,18 @@ func (s *Server) sttModel() string {
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
-		"stt_mode":          s.sttMode(),
-		"stt_provider":      s.stt.Name(),
-		"stt_label":         ProviderLabel(s.stt.Name()),
-		"stt_model":         s.sttModel(),
-		"stt_enabled":       s.serverSTTEnabled(), // server-side STT usable (kept for older clients)
+		"stt_mode":     s.sttMode(),
+		"stt_provider": s.stt.Name(),
+		"stt_label":    ProviderLabel(s.stt.Name()),
+		"stt_model":    s.sttModel(),
+		"stt_enabled":  s.serverSTTEnabled(), // server-side STT usable (kept for older clients)
+		// Auto mode with a cloud Whisper (Groq/OpenAI): record and send to the
+		// server first, the browser's own speech is the fallback.
+		"stt_prefer_server": s.sttMode() == STTModeAuto && s.serverSTTEnabled() && cloudSTT(s.stt.Name()),
 		"stt_language":      s.cfg.STTLanguage,
 		"stt_live":          s.liveSTTEnabled(), // /api/transcribe/partial (live typing) usable
 		"stt_live_max_secs": MaxPartialSecs,
+		"stt_live_step_ms":  s.liveStepMS(), // how often the page sends a live window
 		"max_record_secs":   s.cfg.MaxRecordSecs,
 		"max_audio_bytes":   s.cfg.MaxAudioBytes,
 		"fake_pairing":      s.cfg.FakePairing != "",

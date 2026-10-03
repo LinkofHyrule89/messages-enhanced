@@ -1,4 +1,8 @@
 <resources>
     <color name="brand">#3E6AE1</color>
     <color name="dark">#0D0F12</color>
+    <!-- Navigation bar: transparent so the web app can draw under the gesture
+         bar (edge-to-edge) where Chrome supports it; Chrome may still draw it
+         opaque. -->
+    <color name="nav_transparent">#00000000</color>
 </resources>

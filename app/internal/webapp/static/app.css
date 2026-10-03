@@ -44,7 +44,7 @@ a { color: var(--accent); }
 .inline-form { margin: 0; }
 
 /* ---------- layout ---------- */
-.app { display: flex; flex-direction: column; height: calc(100vh / var(--z)); }
+.app { display: flex; flex-direction: column; height: calc(var(--app-h, 100vh) / var(--z)); height: calc(var(--app-h, 100dvh) / var(--z)); }
 .topbar { flex: none; display: flex; align-items: center; gap: 18px; height: 104px; padding: 0 28px;
   background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { font-size: 34px; font-weight: 700; display: flex; gap: 12px; align-items: center; }
@@ -116,9 +116,9 @@ a { color: var(--accent); }
 .media-image + .body { margin-top: 10px; }
 /* full-size photo viewer (tap anywhere / Escape closes) */
 .image-viewer { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.94); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out; }
-.image-viewer-img { display: block; max-width: 100%; max-height: calc(100vh / var(--z) - 64px); object-fit: contain; border-radius: 12px; }
+.image-viewer-img { display: block; max-width: 100%; max-height: calc(var(--app-h, 100vh) / var(--z) - 64px); object-fit: contain; border-radius: 12px; }
 .image-viewer-caption { margin: 18px 0 0; max-width: calc(80vw / var(--z)); color: var(--text); font-size: 28px; text-align: center; }
-.image-viewer:has(.image-viewer-caption:not([hidden])) .image-viewer-img { max-height: calc(100vh / var(--z) - 160px); }
+.image-viewer:has(.image-viewer-caption:not([hidden])) .image-viewer-img { max-height: calc(var(--app-h, 100vh) / var(--z) - 160px); }
 .image-viewer-close { position: absolute; top: 24px; right: 24px; width: var(--touch); height: var(--touch); border-radius: 50%; border: 0;
   background: rgba(255,255,255,.14); color: #fff; font-size: 40px; line-height: 1; cursor: pointer; }
 .media-link { display: inline-block; min-height: 56px; padding: 8px 0; color: #cfe1ff; text-decoration: underline; overflow-wrap: anywhere; }
@@ -254,7 +254,7 @@ html.desk .attach-chip-x { width: 34px; height: 34px; font-size: 22px; }
 
 /* ---------- sheets ---------- */
 .sheet-backdrop { position: fixed; inset: 0; z-index: 25; background: rgba(8,9,11,.55); display: flex; align-items: flex-end; justify-content: flex-end; padding: 28px; }
-.sheet { width: min(1100px, 100%); max-height: calc(100vh / var(--z) - 56px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line);
+.sheet { width: min(1100px, 100%); max-height: calc(var(--app-h, 100vh) / var(--z) - 56px); overflow-y: auto; background: var(--panel); border: 1px solid var(--line);
   border-radius: 36px; padding: 32px 40px 36px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
 .sheet-head { display: flex; align-items: center; gap: 20px; margin-bottom: 8px; }
 .sheet-title { flex: 1; min-width: 0; margin: 0; font-size: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -264,7 +264,7 @@ html.desk .attach-chip-x { width: 34px; height: 34px; font-size: 22px; }
 /* ---------- settings sheet ---------- */
 .btn-gear { width: 72px; padding: 0; font-size: 36px; line-height: 1; }
 .sheet-backdrop.sheet-top { align-items: flex-start; padding-top: 120px; }
-.sheet-backdrop.sheet-top .sheet { max-height: calc(100vh / var(--z) - 148px); } /* fit under the top padding so the sheet scrolls */
+.sheet-backdrop.sheet-top .sheet { max-height: calc(var(--app-h, 100vh) / var(--z) - 148px); } /* fit under the top padding so the sheet scrolls */
 .sheet-narrow { width: min(900px, 100%); }
 .setting-row { display: flex; align-items: center; gap: 28px; width: 100%; min-height: 120px; padding: 18px 28px; border-radius: 28px;
   border: 2px solid var(--line); background: var(--bg); text-align: left; cursor: pointer; touch-action: manipulation; }
@@ -725,3 +725,419 @@ html.desk .details-name { font-size: 28px; }
 .debug-fold[open] .debug-summary-text::before { content: "▾ "; }
 .debug-fold .sheet-label:first-of-type { margin-top: 4px; }
 .cookies-hint { display: block; margin: 18px 4px 0; padding: 0; border: 0; background: none; color: #ffc557; font: inherit; font-size: 20px; text-align: left; cursor: pointer; }
+
+/* ---------- quick replies ---------- */
+.quick-replies { flex: none; display: flex; gap: 14px; overflow-x: auto; padding: 14px 24px 0; background: var(--panel);
+  border-top: 1px solid var(--line); scrollbar-width: none; }
+.quick-replies::-webkit-scrollbar { display: none; }
+.quick-replies:not([hidden]) + .compose { border-top: 0; }
+.quick-reply { flex: none; min-height: 72px; padding: 0 28px; border-radius: 36px; border: 2px solid var(--line); background: var(--bg);
+  color: var(--text); font-size: 26px; white-space: nowrap; cursor: pointer; }
+.quick-reply:active { background: var(--panel-2); transform: scale(.97); }
+html.desk .quick-reply { min-height: 44px; padding: 0 18px; font-size: 18px; border-radius: 22px; }
+html.desk .quick-replies { padding: 10px 24px 0; gap: 10px; }
+html:not(.desk) .thread-view.compose-float > .quick-replies { order: 2; }
+body.readonly-thread .quick-replies { display: none; }
+.setting-col { flex-direction: column; align-items: stretch; gap: 12px; }
+.setting-textarea { width: 100%; padding: 18px 22px; border-radius: 20px; border: 2px solid var(--line); background: var(--bg);
+  color: var(--text); font-size: 24px; line-height: 1.35; resize: vertical; }
+.setting-link { align-self: flex-start; }
+
+/* ---------- reactions ---------- */
+.msg-menu-react { display: flex; gap: 6px; padding: 4px 4px 10px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.react-pick { flex: none; width: 76px; height: 76px; border: 0; border-radius: 50%; background: transparent; font-size: 42px;
+  line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.react-pick:active, .react-pick:hover { background: var(--line); }
+.react-more { font-size: 34px; color: var(--muted); border: 2px solid var(--line); }
+html.desk .react-pick { width: 48px; height: 48px; font-size: 26px; }
+html.desk .react-more { font-size: 24px; }
+.reactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.reaction { display: inline-flex; align-items: center; gap: 4px; padding: 2px 12px; border-radius: 18px;
+  background: rgba(0, 0, 0, .28); font-size: 26px; line-height: 1.4; }
+.reaction-count { font-size: 18px; color: rgba(255, 255, 255, .8); }
+html.desk .reaction { font-size: 18px; padding: 1px 8px; }
+.bubble.longpress { transform: scale(.98); transition: transform .15s; }
+
+/* ---------- search ---------- */
+.conv-search { padding: 12px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.conv-search-input { width: 100%; min-height: 76px; padding: 0 28px; border-radius: 38px; border: 2px solid var(--line);
+  background: var(--bg); color: var(--text); font-size: 26px; outline: none; }
+.conv-search-input:focus { border-color: var(--accent); }
+html.desk .conv-search-input { min-height: 48px; font-size: 18px; padding: 0 20px; }
+body.searching .conv-items { display: none; }
+.search-section { padding: 18px 26px 8px; font-size: 20px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.search-hit .conv-preview { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.search-hit mark { background: rgba(255, 197, 87, .35); color: inherit; border-radius: 4px; }
+.msg-row.flash .bubble { box-shadow: 0 0 0 4px var(--accent); transition: box-shadow .3s; }
+
+/* ---------- health banner ---------- */
+.health-banner { flex: none; padding: 14px 28px; background: #6b2a1a; color: #fff; font-size: 24px; font-weight: 600; }
+html.desk .health-banner { font-size: 16px; padding: 8px 20px; }
+
+/* ---------- Google Messages-style long-press menu (non-car) ---------- */
+.msgx { position: fixed; inset: 0; z-index: 26; }
+.msgx-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.msgx-clone { position: absolute; pointer-events: none; overflow: hidden; }
+.msgx-clone.msg-row { display: block; background: none; }
+.msgx-clone .bubble { max-width: none; width: 100%; margin: 0; }
+.msgx-react { position: absolute; display: flex; align-items: center; gap: 3px; padding: 10px 13px; border-radius: 51px;
+  background: #2d2f33; box-shadow: 0 10px 38px rgba(0, 0, 0, .45); }
+.msgx-react button { width: 74px; height: 74px; border: 0; border-radius: 50%; background: transparent; font-size: 43px; line-height: 1;
+  display: grid; place-items: center; cursor: pointer; padding: 0; color: #e3e3e3; }
+.msgx-react button:hover, .msgx-react button:focus-visible { background: rgba(255, 255, 255, .1); outline: none; }
+.msgx-react button.mine { background: rgba(138, 180, 248, .25); }
+.msgx-react svg { width: 42px; height: 42px; fill: currentColor; }
+.msgx-menu { position: absolute; min-width: 320px; padding: 13px 0; border-radius: 26px; background: #1f2023; box-shadow: 0 13px 45px rgba(0, 0, 0, .5); }
+.msgx-item { display: flex; align-items: center; gap: 29px; width: 100%; min-height: 77px; padding: 0 35px 0 29px; border: 0; background: transparent;
+  color: #e3e3e3; font-size: 26px; text-align: left; cursor: pointer; }
+.msgx-item svg { width: 38px; height: 38px; flex: none; fill: currentColor; }
+.msgx-item:hover, .msgx-item:focus-visible { background: rgba(255, 255, 255, .08); outline: none; }
+.msgx-item[hidden] { display: none; }
+.bubble .star-mark { margin-right: 10px; color: #fdd663; }
+/* forward + info dialogs */
+.fwd-sheet, .info-sheet { width: min(896px, 100%); max-height: min(80vh, calc(var(--app-h, 100vh) / var(--z) - 90px)); display: flex; flex-direction: column; gap: 22px; }
+.fwd-head { display: flex; align-items: center; justify-content: space-between; }
+.fwd-title { margin: 0; font-size: 35px; }
+.fwd-head svg { width: 38px; height: 38px; fill: currentColor; }
+.fwd-list { overflow-y: auto; min-height: 192px; }
+.fwd-list .conv { min-height: 102px; padding: 16px 22px; }
+.fwd-list .conv-name { font-size: 27px; }
+.info-list { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 16px 29px; font-size: 26px; }
+.info-list dt { color: var(--muted); }
+.info-list dd { margin: 0; overflow-wrap: anywhere; }
+/* multi-select */
+.select-bar { flex: none; display: flex; align-items: center; gap: 16px; padding: 13px 26px; background: #1f2a3d; border-bottom: 1.6px solid var(--line); }
+.select-bar svg { width: 38px; height: 38px; fill: currentColor; }
+.sel-count { font-size: 29px; font-weight: 600; }
+.sel-danger { color: #f28b82; }
+body.selecting .msg-row { cursor: pointer; }
+body.selecting .msg-row .reply-btn, body.selecting .msg-row .msg-menu-btn { visibility: hidden; }
+.msg-row.selected .bubble { box-shadow: 0 0 0 5px var(--accent); }
+.msg-row.selected { background: rgba(138, 180, 248, .12); }
+
+/* ---------- swipe gestures (non-car) ---------- */
+html.desk .messages { touch-action: pan-y; overflow-x: hidden; }
+html.desk .msg-row { position: relative; }
+.swipe-time-label { display: none; }
+html.desk .swipe-time-label { display: flex; align-items: center; gap: 6px; position: absolute; left: calc(100% + 70px); top: 50%;
+  transform: translateY(-50%); font-size: 21px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.swipe-time-label svg { width: 21px; height: 21px; fill: currentColor; }
+html.desk .messages.swipe-time .msg-row { transform: translateX(calc(var(--swipe-x, 0.0px) * -1)); }
+html.desk .messages.swipe-spring .msg-row { transition: transform .22s ease; }
+.swipe-reply-icon { position: absolute; left: 10px; top: 50%; width: 61px; height: 61px; border-radius: 50%; background: var(--panel-2);
+  display: grid; place-items: center; opacity: 0; transform: translateY(-50%) scale(.6); pointer-events: none; z-index: 1; }
+.swipe-reply-icon svg { width: 35px; height: 35px; fill: var(--text); }
+.swipe-reply-icon.armed { background: var(--accent); }
+
+/* ---------- floating composer (non-car) ----------
+   The composer, quick replies, reply preview and dictation bar float over
+   the message list (no solid bar); the list runs underneath them and gets
+   bottom padding (--dock-h, measured in app.js) so the last message can
+   scroll fully above the composer. */
+html.desk .thread-view > .messages { margin-bottom: calc(-1 * var(--dock-h, 0.0px)); padding-bottom: calc(var(--dock-h, 0.0px) + 19px); }
+html.desk .thread-view > .compose, html.desk .thread-view > .quick-replies { position: relative; z-index: 3; background: transparent; border-top: 0;
+  pointer-events: none; }
+html.desk .thread-view > .compose > *, html.desk .thread-view > .quick-replies > * { pointer-events: auto; }
+html.desk .thread-view > .compose .compose-input { background: var(--panel); border-color: transparent; box-shadow: 0 3px 19px rgba(0, 0, 0, .4); }
+html.desk .thread-view > .compose .compose-input:focus { border-color: var(--accent); }
+html.desk .thread-view > .compose > .btn, html.desk .thread-view > .compose > button { box-shadow: 0 3px 16px rgba(0, 0, 0, .35); }
+html.desk .thread-view > .quick-replies .quick-reply { background: var(--panel); border-color: transparent; box-shadow: 0 3px 13px rgba(0, 0, 0, .35); }
+html.desk .thread-view > .reply-bar, html.desk .thread-view > .rec-bar { position: relative; z-index: 3; margin: 0 26px; border-radius: 29px; border-top: 0;
+  box-shadow: 0 3px 19px rgba(0, 0, 0, .4); }
+html.desk .thread-view > .emoji-panel { position: relative; z-index: 3; }
+html.desk .attach-tray { background: transparent; border-top: 0; }
+html.desk .attach-chip { box-shadow: 0 3px 16px rgba(0, 0, 0, .4); }
+
+/* ---------- Google Messages-style bubbles (non-car) ----------
+   (car px: the desk layout is scaled by 0.62, so 32px here ≈ 20px on screen) */
+html.desk { --me: #0b4f71; --them: #2b2b2b; }
+html.desk .bubble { border-radius: 32px; color: #fff; }
+html.desk .me .bubble { border-bottom-right-radius: 32px; }
+html.desk .them .bubble { border-bottom-left-radius: 32px; }
+html.desk .me.grp-first .bubble { border-bottom-right-radius: 7px; }
+html.desk .me.grp-mid .bubble { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+html.desk .me.grp-last .bubble { border-top-right-radius: 7px; }
+html.desk .them.grp-first .bubble { border-bottom-left-radius: 7px; }
+html.desk .them.grp-mid .bubble { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+html.desk .them.grp-last .bubble { border-top-left-radius: 7px; }
+html.desk .msg-row.grp-mid, html.desk .msg-row.grp-last { margin-top: -6px; }
+html.desk .bubble .reply-quote { border-left: 0; border-radius: 20px; background: rgba(0, 0, 0, .3); padding: 12px 18px; margin: 4px -8px 12px; }
+html.desk .bubble .link-card { border-radius: 0 0 0 0; margin-left: -26px; margin-right: -26px; background: rgba(0, 0, 0, .3); min-width: 0; }
+html.desk .day-sep { font-size: 19px; margin: 18px 0 6px; color: #9aa0a6; }
+html.desk .run-sender { display: block; font-size: 19px; font-weight: 500; color: #9bd3f5; margin: 10px 0 -4px; padding-left: calc(45px + 14px + 4px); }
+html.desk .msg-avatar { flex: none; width: 45px; height: 45px; border-radius: 50%; align-self: flex-start; display: grid; place-items: center;
+  font-size: 22px; font-weight: 600; color: #fff; overflow: hidden; position: relative; }
+html.desk .msg-avatar.spacer { visibility: hidden; }
+html.desk .msg-avatar .avatar-img { width: 100%; height: 100%; }
+.msg-avatar { display: none; }
+.run-sender { display: none; }
+
+/* ---------- Google Messages-style top bars + edge-to-edge (non-car) ----------
+   viewport-fit=cover: where the browser draws under the system bars, the
+   safe-area insets (divided by the page zoom) keep controls clear of them. */
+html.desk { --sat: calc(env(safe-area-inset-top, 0px) / var(--z, 1)); --sab: calc(env(safe-area-inset-bottom, 0px) / var(--z, 1)); }
+html.desk .btn-gear { display: none; }
+.app-menu-btn, .thread-avatar { display: none; }
+html.desk .app-menu-btn { display: inline-flex; }
+html.desk .topbar { border-bottom: 0; height: calc(96px + var(--sat)); padding-top: var(--sat); }
+html.desk.narrow .has-thread .topbar { display: none; }
+html.desk .thread-view { position: relative; }
+html.desk .thread-header { position: absolute; top: 0; left: 0; right: 0; z-index: 4; height: auto; min-height: 100px; gap: 12px;
+  padding: calc(8px + var(--sat)) 16px 14px; border-bottom: 0;
+  background: linear-gradient(to bottom, rgba(13, 15, 18, .85), rgba(13, 15, 18, .55) 65%, rgba(13, 15, 18, 0)); }
+html.desk:not(.narrow) .thread-header { padding-top: 8px; }
+html.desk .thread-header .conv-mute-btn { display: none; }
+html.desk .thread-header .btn, html.desk .thread-header .msg-menu-btn { background: transparent; border-color: transparent; box-shadow: none; }
+html.desk .thread-avatar { display: block; flex: none; }
+html.desk .avatar.thread-av { width: 64px; height: 64px; font-size: 26px; }
+html.desk .thread-av.avatar-duo .avatar-img { width: 44px; height: 44px; border-width: 2px; }
+html.desk .thread-title-box { flex: 1 1 auto; min-height: 64px; padding: 0 8px 0 6px; }
+html.desk .thread-title { font-size: 32px; font-weight: 500; }
+html.desk .thread-view > .messages { padding-top: calc(112px + var(--sat)); }
+html.desk:not(.narrow) .thread-view > .messages { padding-top: 112px; }
+html.desk .select-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 5; min-height: 100px; padding-top: calc(13px + var(--sat)); }
+html.desk:not(.narrow) .select-bar { padding-top: 13px; }
+/* the gap under the floating composer is doubled (18px -> 36px); --dock-h
+   (measured in app.js) grows with it, so the list padding follows. */
+html.desk .thread-view > .compose { padding-bottom: calc(36px + var(--sab)); }
+html.desk .conv-items { padding-bottom: var(--sab); }
+/* Per-bubble reply / ⋮ buttons: gone on touch (swipe + long-press do it),
+   shown on hover with a mouse. */
+@media (hover: none), (pointer: coarse) {
+  html.desk .msg-row .reply-btn, html.desk .msg-row > .msg-menu-btn { display: none; }
+}
+@media (hover: hover) and (pointer: fine) {
+  html.desk .msg-row .reply-btn, html.desk .msg-row > .msg-menu-btn { opacity: 0; transition: opacity .12s; }
+  html.desk .msg-row:hover .reply-btn, html.desk .msg-row:hover > .msg-menu-btn, html.desk .msg-row > .msg-menu-btn.open,
+  html.desk .msg-row .reply-btn:focus-visible, html.desk .msg-row > .msg-menu-btn:focus-visible { opacity: 1; }
+}
+/* Touch: no text selection / callout on bubbles, so a long-press opens our
+   menu instead of Android's selection handles (desktop keeps selection). */
+@media (hover: none), (pointer: coarse) {
+  html.desk .bubble, html.desk .msgx { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+}
+/* The menu's copy of the bubble keeps the original's exact width (beats the
+   html.desk bubble max-width, which made it rewrap taller and clip). */
+html.desk .msgx-clone .bubble, html.desk .msgx-clone .bubble.has-image { max-width: none; width: 100%; margin: 0; box-sizing: border-box; }
+/* The menu's floating message copy: text can be selected (native toolbar). */
+html.desk .msgx-clone { pointer-events: auto; }
+html.desk .msgx-clone .bubble, html.desk .msgx-clone .bubble * { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
+/* ---------- Google Messages look in Car Mode (html:not(.desk)) ----------
+   Same colors, corners, runs, names and photos as the compact layout, at car
+   sizes (unscaled px); the visible reply / ⋮ buttons and big targets stay. */
+html:not(.desk) { --me: #0b4f71; --them: #2b2b2b; }
+html:not(.desk) .bubble { color: #fff; border-radius: 34px; }
+html:not(.desk) .me .bubble { border-bottom-right-radius: 34px; }
+html:not(.desk) .them .bubble { border-bottom-left-radius: 34px; }
+html:not(.desk) .me.grp-first .bubble { border-bottom-right-radius: 10px; }
+html:not(.desk) .me.grp-mid .bubble { border-top-right-radius: 10px; border-bottom-right-radius: 10px; }
+html:not(.desk) .me.grp-last .bubble { border-top-right-radius: 10px; }
+html:not(.desk) .them.grp-first .bubble { border-bottom-left-radius: 10px; }
+html:not(.desk) .them.grp-mid .bubble { border-top-left-radius: 10px; border-bottom-left-radius: 10px; }
+html:not(.desk) .them.grp-last .bubble { border-top-left-radius: 10px; }
+html:not(.desk) .msg-row.grp-mid, html:not(.desk) .msg-row.grp-last { margin-top: -8px; }
+html:not(.desk) .bubble .reply-quote { border-left: 0; border-radius: 22px; background: rgba(0, 0, 0, .3); padding: 12px 20px; }
+html:not(.desk) .bubble .link-card { border-radius: 0; margin-left: -26px; margin-right: -26px; background: rgba(0, 0, 0, .3); }
+html:not(.desk) .day-sep { font-size: 22px; color: #9aa0a6; }
+html:not(.desk) .run-sender { display: block; font-size: 22px; font-weight: 500; color: #9bd3f5; margin: 12px 0 -6px; padding-left: calc(60px + 14px + 6px); }
+html:not(.desk) .msg-avatar { display: grid; flex: none; width: 60px; height: 60px; border-radius: 50%; align-self: flex-start; place-items: center;
+  font-size: 28px; font-weight: 600; color: #fff; overflow: hidden; position: relative; }
+html:not(.desk) .msg-avatar.spacer { visibility: hidden; }
+html:not(.desk) .msg-avatar .avatar-img { width: 100%; height: 100%; }
+/* cleaner bars: no rules, contact photo by the name */
+html:not(.desk) .topbar, html:not(.desk) .thread-header { border-bottom: 0; }
+html:not(.desk) .thread-avatar { display: block; flex: none; }
+html:not(.desk) .avatar.thread-av { width: 72px; height: 72px; font-size: 30px; }
+html:not(.desk) .thread-av.avatar-duo .avatar-img { width: 50px; height: 50px; }
+html:not(.desk) .thread-title { font-weight: 500; }
+/* floating-composer look (still in the layout flow: nothing goes under it) */
+html:not(.desk) .thread-view > .compose { background: transparent; border-top: 0; }
+html:not(.desk) .thread-view > .compose .compose-input { background: var(--panel); border-color: transparent; box-shadow: 0 2px 14px rgba(0, 0, 0, .45); }
+html:not(.desk) .thread-view > .compose .compose-input:focus { border-color: var(--accent); }
+html:not(.desk) .thread-view > .compose > .btn, html:not(.desk) .thread-view > .compose > button, html:not(.desk) .thread-view > .compose > .compose-pill > button { box-shadow: 0 2px 12px rgba(0, 0, 0, .4); }
+
+/* ---------- read receipts (Google Messages-style icons) ----------
+   --rc: one circle's size. Desk px are scaled by 0.62 (28px ≈ 17 real px,
+   as in Google Messages); Car Mode gets bigger ones. The back circle of a
+   pair is masked where the front one overlaps, leaving a thin gap on any
+   background or wallpaper. */
+.msg-status.rcpt-row { display: flex; align-items: center; gap: 10px; margin: -4px 14px 0 0; }
+.rcpt { --rc: 28px; display: inline-flex; align-items: center; color: var(--muted); line-height: 0; }
+html:not(.desk) .rcpt { --rc: 40px; }
+.rc { flex: none; box-sizing: border-box; width: var(--rc); height: var(--rc); border-radius: 50%; display: grid; place-items: center; }
+.rc svg { width: 78%; height: 78%; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.rc.ring { border: calc(var(--rc) * .085) solid currentColor; }
+.rc.ring svg { width: 70%; height: 70%; stroke-width: 2.8; }
+.rc.fill { background: #c4c7c5; color: #1f2124; }
+.rc.fill svg { stroke-width: 2.9; }
+.rc.bad { background: #e5484d; color: #fff; }
+.rc.bad svg { stroke-width: 3.2; }
+.rc + .rc { margin-left: calc(var(--rc) * -.36); }
+.rcpt .rc:first-child:not(:last-child) {
+  -webkit-mask: radial-gradient(circle at calc(var(--rc) * 1.14) 50%, transparent calc(var(--rc) * .59), #000 calc(var(--rc) * .59 + 1px));
+          mask: radial-gradient(circle at calc(var(--rc) * 1.14) 50%, transparent calc(var(--rc) * .59), #000 calc(var(--rc) * .59 + 1px));
+}
+.thread-view.has-wallpaper .rcpt { color: rgba(255,255,255,.85); }
+/* Groups: "Read by" photos + names until everyone has read it. */
+.read-by { --rb: 30px; font-size: 22px; font-weight: 500; color: var(--muted); max-width: 80%; }
+html:not(.desk) .read-by { --rb: 44px; font-size: 26px; }
+.rb-avs { display: inline-flex; flex: none; }
+.rb-av { width: var(--rb); height: var(--rb); border-radius: 50%; overflow: hidden; display: grid; place-items: center; flex: none;
+  font-size: calc(var(--rb) * .45); font-weight: 700; color: #fff; box-shadow: 0 0 0 2px var(--bg); }
+.rb-av + .rb-av { margin-left: calc(var(--rb) * -.28); }
+.rb-av .avatar-img { width: 100%; height: 100%; }
+.rb-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.thread-view.has-wallpaper .read-by { color: rgba(255,255,255,.85); }
+/* Tap details (non-car): status in words and time, under the bubble. */
+.msg-detail { display: flex; align-items: center; gap: 6px; margin: -4px 14px 0; font-size: 21px; color: var(--muted); }
+.msg-detail.me { align-self: flex-end; }
+.msg-detail.them { align-self: flex-start; margin-left: 76px; }
+.msg-detail svg { width: 20px; height: 20px; fill: currentColor; }
+.thread-view.has-wallpaper .msg-detail { color: rgba(255,255,255,.85); }
+
+/* ---------- Google Messages-style home screen (non-car list) ----------
+   Header on #171a1f; the list is a darker (#0d0e12) sheet with rounded top
+   corners. Title in Google Sans; search behind the magnifier; your photo
+   (ringed) opens the menu; "Start chat" FAB + scroll-to-top arrow. Car Mode
+   keeps its own list (none of this shows there). */
+.brand-desk, .top-ico-btn, .profile-btn, .list-fabs, .rcs-badge, .conv-pin-under { display: none; }
+html:not(.desk) .conv-preview .rcpt { display: none; }
+.conv-av { position: relative; flex: none; display: grid; }
+html.desk .brand-car, html.desk .brand-ico, html.desk .app-menu-btn { display: none; }
+html.desk .brand-desk { display: inline; }
+html.desk .brand { font-family: "Google Sans", system-ui, sans-serif; font-weight: 400; font-size: 38px; letter-spacing: -.2px; gap: 6px; }
+html.desk .topbar { background: #171a1f; gap: 10px; padding-left: calc(26px + env(safe-area-inset-left, 0px)); padding-right: 22px; }
+html.desk .topbar .conn-dot { margin-left: 0; }
+html.desk .top-ico-btn { display: grid; place-items: center; flex: none; width: 76px; height: 76px; border: 0; border-radius: 50%;
+  background: transparent; color: var(--text); cursor: pointer; touch-action: manipulation; }
+html.desk .top-ico-btn svg { width: 40px; height: 40px; fill: currentColor; }
+html.desk .top-ico-btn:active { background: rgba(255, 255, 255, .08); }
+html.desk .profile-btn { display: grid; place-items: center; flex: none; width: 80px; height: 80px; margin-left: 4px; padding: 0; border: 0;
+  border-radius: 50%; background: transparent; cursor: pointer; touch-action: manipulation; }
+html.desk .profile-av { display: grid; place-items: center; width: 62px; height: 62px; border-radius: 50%;
+  box-shadow: 0 0 0 3px #171a1f, 0 0 0 7px #4a8fe7; }
+html.desk .avatar.profile-avatar { width: 62px; height: 62px; font-size: 28px; }
+html.desk .panes { background: #171a1f; }
+html.desk .convlist { background: #0d0e12; border-right: 0; border-radius: 40px 40px 0 0; }
+html.desk:not(.narrow) .convlist { margin-right: 2px; }
+/* the old list header (title + Start chat) only for folder banners */
+html.desk .convlist-head { background: #0d0e12; border-bottom: 0; }
+html.desk .convlist-title, html.desk .new-chat-btn { display: none; }
+html.desk .convlist-head:not(:has(#folderBanner:not([hidden]))) { display: none; }
+html.desk .conv-search { display: none; position: sticky; top: 0; z-index: 3; background: #0d0e12; border-bottom: 0; padding: 18px 24px 10px; }
+html.desk body.search-open .conv-search, html.desk body.searching .conv-search { display: block; }
+html.desk .conv-search-input { background: #1e2228; border-color: transparent; min-height: 64px; font-size: 22px; }
+/* rows */
+html.desk .conv-items { padding-top: 14px; }
+html.desk .conv { background: transparent; min-height: 122px; padding: 14px 30px 14px 26px; gap: 26px; }
+html.desk .conv-av > .avatar { width: 84px; height: 84px; }
+html.desk .rcs-badge { display: block; position: absolute; right: -6px; bottom: -4px; width: 34px; height: 34px;
+  fill: #b7c6ef; stroke: #0d0e12; stroke-width: 2.6px; paint-order: stroke; stroke-linejoin: round; }
+html.desk .conv-name { font-size: 27px; font-weight: 400; color: #e3e3e8; }
+html.desk .conv-preview { margin-top: 6px; font-size: 22px; color: #a8a8b0; }
+html.desk .conv.unread .conv-name, html.desk .conv.unread .conv-preview { color: #fff; font-weight: 700; }
+html.desk .conv-preview .rcpt { --rc: 22px; vertical-align: -4px; margin-right: 8px; color: #a8a8b0; }
+html.desk .conv-right { align-self: flex-start; padding-top: 6px; gap: 12px; }
+html.desk .conv-time { font-size: 19px; color: #a8a8b0; }
+html.desk .conv.unread .conv-time { color: #fff; font-weight: 700; }
+html.desk .conv-right .badge { display: none; }
+html.desk .conv-pin-under { display: block; width: 28px; height: 28px; fill: #c4c7c5; margin-right: 2px; }
+html.desk .conv-section { display: none; }
+html.desk .conv.active { background: #1c2533; box-shadow: none; }
+/* floating buttons: a zero-height sticky footer in the scrolling list */
+html.desk .list-fabs { display: block; position: sticky; bottom: 0; height: 0; z-index: 4; pointer-events: none; }
+html.desk .fab-start { position: absolute; right: 30px; bottom: calc(36px + var(--sab)); pointer-events: auto; display: flex; align-items: center;
+  gap: 16px; height: 96px; padding: 0 34px 0 28px; border: 0; border-radius: 28px; background: #435271; color: #dbe2f9;
+  font: 500 25px "Google Sans", system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); cursor: pointer; touch-action: manipulation;
+  transition: padding .2s ease, gap .2s ease; }
+html.desk .fab-start svg { flex: none; width: 40px; height: 40px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round; }
+html.desk .fab-start span { display: inline-block; max-width: 220px; overflow: hidden; white-space: nowrap; transition: max-width .2s ease, opacity .15s ease; }
+html.desk .fab-start.shrunk { padding: 0 28px; gap: 0; }
+html.desk .fab-start.shrunk span { max-width: 0; opacity: 0; }
+html.desk .fab-start:active { filter: brightness(1.15); }
+html.desk .fab-top { position: absolute; left: 50%; bottom: calc(40px + var(--sab)); transform: translateX(-50%); pointer-events: auto;
+  display: grid; place-items: center; width: 80px; height: 80px; border: 0; border-radius: 50%; background: #292c35; color: #e3e3e8;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .35); cursor: pointer; touch-action: manipulation; }
+html.desk .fab-top[hidden] { display: none; }
+html.desk .fab-top svg { width: 38px; height: 38px; fill: currentColor; }
+html.desk .conv-items { padding-bottom: calc(150px + var(--sab)); }
+
+/* Receipt icons have no box behind them in any mode (incl. wallpapers and
+   list previews): the status row drops the wallpaper pill, and the filled
+   circles' check is a see-through cut-out (mask), not a dark stroke. */
+.thread-view.has-wallpaper .msg-status.rcpt-row { background: transparent; padding: 0; border-radius: 0; }
+.thread-view.has-wallpaper .rcpt { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .55)); }
+.thread-view.has-wallpaper .read-by .rb-text { text-shadow: 0 1px 3px rgba(0, 0, 0, .85); }
+.rc.fill {
+  --chk: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cmask id='m'%3E%3Ccircle cx='12' cy='12' r='12' fill='white'/%3E%3Cpath d='M7 12.4l3.4 3.4 6.6-6.9' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/mask%3E%3Ccircle cx='12' cy='12' r='12' fill='white' mask='url(%23m)'/%3E%3C/svg%3E");
+  -webkit-mask: var(--chk) center / 100% 100% no-repeat;
+          mask: var(--chk) center / 100% 100% no-repeat;
+}
+.rc.fill svg { display: none; }
+.rcpt .rc.fill:first-child:not(:last-child) {
+  -webkit-mask: var(--chk) center / 100% 100% no-repeat,
+    radial-gradient(circle at calc(var(--rc) * 1.14) 50%, transparent calc(var(--rc) * .59), #000 calc(var(--rc) * .59 + 1px));
+          mask: var(--chk) center / 100% 100% no-repeat,
+    radial-gradient(circle at calc(var(--rc) * 1.14) 50%, transparent calc(var(--rc) * .59), #000 calc(var(--rc) * .59 + 1px));
+  -webkit-mask-composite: source-in;
+          mask-composite: intersect;
+}
+html.desk .conv { border-bottom: 0; }
+
+/* ---------- Google Messages-style composer (non-car) ----------
+   One pill: (+) [turns into (x) while the attach sheet is open], the box,
+   emoji and a photo button; our dictation mic and an always-visible Send
+   (tinted) sit outside it. Car Mode: the pill wrapper vanishes
+   (display: contents), so its layout and buttons stay as they were. */
+.compose-pill { display: contents; }
+.pill-btn, .plus-sheet { display: none; }
+html.desk .thread-view > .compose > .compose-pill { flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 2px; padding: 6px 10px;
+  border-radius: 48px; background: var(--panel); box-shadow: 0 3px 19px rgba(0, 0, 0, .4); }
+html.desk .thread-view > .compose .compose-pill .compose-input { flex: 1; min-height: 72px; padding: 18px 8px; border: 0; border-radius: 0;
+  background: transparent; box-shadow: none; }
+html.desk .thread-view > .compose .compose-pill .compose-input:focus { border: 0; }
+html.desk .compose-pill .compose-input.empty::before { top: 18px; left: 8px; right: 8px; }
+html.desk .compose-pill:focus-within { box-shadow: 0 3px 19px rgba(0, 0, 0, .4), 0 0 0 2px var(--accent); }
+html.desk .thread-view > .compose > .compose-pill > button { box-shadow: none; }
+html.desk .pill-btn, html.desk .compose-pill .btn-emoji { flex: none; display: grid; place-items: center; width: 72px; height: 72px; padding: 0; border: 0;
+  border-radius: 50%; background: transparent; color: #c9cdd3; cursor: pointer; touch-action: manipulation; }
+html.desk .pill-btn svg { width: 42px; height: 42px; fill: currentColor; }
+html.desk .compose-pill .btn-emoji .ico-svg { width: 42px; height: 42px; fill: #c9cdd3; }
+html.desk .compose-pill .btn-emoji.on { background: rgba(255, 255, 255, .1); }
+html.desk .pill-btn:active, html.desk .compose-pill .btn-emoji:active { background: rgba(255, 255, 255, .1); transform: none; }
+html.desk .plus-btn .x-ico, html.desk .plus-btn.open .plus-ico { display: none; }
+html.desk .plus-btn.open .x-ico { display: block; }
+html.desk #attachBtn { display: none; }
+html.desk .thread-view > .compose > .btn-send { background: #2c4d6e; color: #d3e3ff; }
+html.desk .thread-view > .compose > .btn-send:disabled { background: #233a52; color: #8ea4bf; }
+html.desk .thread-view > .compose > .btn-send:not(:disabled):active { background: #36608a; }
+/* the (+) sheet: under the composer, part of the floating dock */
+html.desk .plus-sheet:not([hidden]) { display: block; position: relative; z-index: 3; margin: 0; padding: 14px 24px calc(30px + var(--sab));
+  background: #1f2126; border-radius: 40px 40px 0 0; box-shadow: 0 -4px 24px rgba(0, 0, 0, .35); }
+html.desk .thread-view.plus-open > .compose { padding-bottom: 18px; }
+html.desk .plus-handle { width: 56px; height: 6px; margin: 4px auto 22px; border-radius: 3px; background: #5f636b; }
+html.desk .plus-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 26px; max-width: 900px; margin: 0 auto; }
+html.desk .plus-item { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0; border: 0; background: transparent;
+  color: #d8dbe0; font-size: 21px; cursor: pointer; touch-action: manipulation; }
+html.desk .plus-circle { display: grid; place-items: center; width: 112px; height: 112px; border-radius: 50%; background: #2c2f36; }
+html.desk .plus-circle svg { width: 44px; height: 44px; fill: currentColor; }
+html.desk .plus-item:active .plus-circle { background: #383c45; }
+
+/* Non-car header: no connection dot while connected (or briefly connecting
+   at load); it only appears for a problem: red disconnected, amber phone
+   offline / not paired. */
+html.desk .topbar .conn-dot.conn-ok, html.desk .topbar .conn-dot.conn-muted,
+html.desk .topbar .conn-dot[data-state="Connecting"] { display: none; }
+
+/* The message box never draws its own focus ring/box: no browser outline in
+   any mode. Non-car: the box is plain text inside the pill (no border,
+   shadow or background, focused or not). Car Mode: the rounded field itself
+   is the pill, so it keeps its fill and shadow but gets no outline or blue
+   focus border either. */
+.compose-input, .compose-input:focus, .compose-input:focus-visible { outline: none; -webkit-tap-highlight-color: transparent; }
+html.desk .thread-view > .compose .compose-pill .compose-input,
+html.desk .thread-view > .compose .compose-pill .compose-input:focus,
+html.desk .thread-view > .compose .compose-pill .compose-input:focus-visible { border: 0; box-shadow: none; background: transparent; outline: none; }
+html:not(.desk) .thread-view > .compose .compose-input:focus,
+html:not(.desk) .thread-view > .compose .compose-input:focus-visible { border-color: transparent; }

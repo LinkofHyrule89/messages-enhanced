@@ -379,6 +379,14 @@ func (s *Server) handleTranscribePartial(w http.ResponseWriter, r *http.Request)
 	start := time.Now()
 	res, err := pt.TranscribePartial(ctx, PCM16ToWAV(pcm, PartialSampleRate))
 	elapsed := time.Since(start)
+	if errors.Is(err, errPartialThrottled) {
+		retry := 1000
+		if g, ok := pt.(*GroqPartial); ok {
+			retry = int(g.PartialRetryAfter() / time.Millisecond)
+		}
+		writeJSON(w, 429, map[string]any{"error": err.Error(), "seq": seq, "retry_after_ms": retry})
+		return
+	}
 	if err != nil {
 		s.deps.Logger.Warn().Int("bytes", len(pcm)).Dur("took", elapsed).Err(err).Msg("Live transcription pass failed")
 		writeJSON(w, 502, map[string]string{"error": "live pass failed: " + err.Error()})
@@ -389,4 +397,13 @@ func (s *Server) handleTranscribePartial(w http.ResponseWriter, r *http.Request)
 		"text": res.Text, "words": res.Words, "seq": seq, "ms": elapsed.Milliseconds(),
 		"audio_ms": len(pcm) * 1000 / (PartialSampleRate * 2), "stale": !s.liveGate.latest(stream, seq),
 	})
+}
+
+// liveStepMS: the page's live-window interval (rate-limited providers ask
+// for a slower one).
+func (s *Server) liveStepMS() int {
+	if p, ok := s.partialTranscriber().(interface{ PartialStepMS() int }); ok {
+		return p.PartialStepMS()
+	}
+	return 700
 }

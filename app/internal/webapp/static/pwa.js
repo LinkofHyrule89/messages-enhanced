@@ -13,9 +13,9 @@
   var pushOK = swOK && "PushManager" in window && "Notification" in window && "showNotification" in (window.ServiceWorkerRegistration ? ServiceWorkerRegistration.prototype : {});
   var HIDE_KEY = "tm.notifHideText";
   var st = { reg: null, cfg: null, sub: null, busy: false, prompt: null, msg: "" };
-  window.TMPWA = { refresh: refresh, state: st };
+  window.TMPWA = { refresh: refresh, state: st, updateSW: function () { return st.reg ? st.reg.update().catch(function () {}) : Promise.resolve(); } };
 
-  var regReady = swOK ? navigator.serviceWorker.register("/app/sw.js", { scope: "/app/" }).then(function (r) { st.reg = r; return r; })
+  var regReady = swOK ? navigator.serviceWorker.register("/app/sw.js" + (window.TM_VERSION ? "?v=" + encodeURIComponent(window.TM_VERSION) : ""), { scope: "/app/" }).then(function (r) { st.reg = r; return r; })
     .catch(function (e) { st.swError = String(e && e.message || e); return null; }) : Promise.resolve(null);
 
   if (swOK) {

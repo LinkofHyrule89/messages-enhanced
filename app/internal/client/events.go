@@ -148,6 +148,8 @@ func (h *EventHandler) handleClientReady(evt *events.ClientReady) {
 
 func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 	msg := evt.Message
+	RecordMessageEncryption(h.Store, msg)
+	RecordMessageStatusText(h.Store, msg)
 	// A message deleted on the phone (or through DeleteMessage) comes back as
 	// an update with status MESSAGE_DELETED: drop the local row instead of
 	// re-storing it.
@@ -305,6 +307,8 @@ func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
 			IsMe      bool   `json:"is_me,omitempty"`
 			ID        string `json:"id,omitempty"` // participant ID, used to resolve reaction actors to names
 			ContactID string `json:"contact_id,omitempty"`
+			// As Google writes names in "Read by …" status text.
+			FirstName string `json:"first_name,omitempty"`
 		}
 		var infos []pInfo
 		for _, p := range ps {
@@ -312,6 +316,7 @@ func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
 				Name:      p.GetFullName(),
 				IsMe:      p.GetIsMe(),
 				ContactID: p.GetContactID(),
+				FirstName: p.GetFirstName(),
 			}
 			if id := p.GetID(); id != nil {
 				info.Number = id.GetNumber()

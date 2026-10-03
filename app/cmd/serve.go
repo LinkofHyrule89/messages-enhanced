@@ -760,12 +760,22 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 				Car:            webCarBackend{a: a},
 				Typing:         webTyping,
 				Push:           webPush,
+				Profile:        a,
 			})
 			if err != nil {
 				return fmt.Errorf("initialize web app UI: %w", err)
 			}
 			controlAuth.SetEnforce(true)
 			httpHandler = webHandler
+			// Keep the header's Google account photo fresh (AccountPhoto
+			// refreshes in the background when the cache is stale).
+			go func() {
+				time.Sleep(45 * time.Second)
+				for {
+					a.AccountPhoto()
+					time.Sleep(time.Hour)
+				}
+			}()
 			logger.Info().Str("stt", webCfg.STTProvider).Str("stt_mode", webCfg.STTMode).Bool("fake_pairing", webCfg.FakePairing != "").Msg("Messages Enhanced UI enabled at " + baseURL + "/app/ (login required)")
 		}
 

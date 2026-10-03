@@ -29,6 +29,7 @@ type Config struct {
 	OpenAIBaseURL  string        // MESSAGES_OPENAI_BASE_URL (default https://api.openai.com/v1)
 	GroqKey        string        // GROQ_API_KEY
 	GroqModel      string        // MESSAGES_GROQ_MODEL (default whisper-large-v3-turbo)
+	GroqBaseURL    string        // MESSAGES_GROQ_BASE_URL (default https://api.groq.com/openai/v1; e.g. a loopback stt-proxy)
 	WhisperURL     string        // MESSAGES_WHISPER_URL: whisper.cpp whisper-server inference URL (default http://127.0.0.1:8178/inference)
 	WhisperModel   string        // MESSAGES_WHISPER_MODEL: label only, e.g. base.en-q8_0 (the server picks the model)
 	WhisperLiveURL string        // MESSAGES_WHISPER_LIVE_URL: whisper-server for live-typing passes (WAV in, no --convert needed; default MESSAGES_WHISPER_URL)
@@ -36,6 +37,13 @@ type Config struct {
 	FakeTranscript string        // MESSAGES_FAKE_TRANSCRIPT: canned text for the fake provider
 	FakePairing    string        // MESSAGES_DEV_FAKE_PAIRING: dev only; emoji to show instead of contacting Google
 	NtfyURL        string        // MESSAGES_NTFY_URL: optional, e.g. https://ntfy.sh/<private-topic>
+	// Health alerts (Web Push + in-app banner) when Google or the VPN is down
+	// for HealthAfter; see health.go.
+	HealthOff      bool          // MESSAGES_HEALTH=0 turns the monitor off
+	HealthAfter    time.Duration // MESSAGES_HEALTH_AFTER_SECS (default 180)
+	HealthVPNIface string        // MESSAGES_HEALTH_VPN_IFACE: e.g. wg0; down if the interface is gone
+	HealthExitIP   string        // MESSAGES_HEALTH_EXIT_IP: expected public IP (VPN exit); down if it differs or can't be fetched
+	HealthIPURL    string        // MESSAGES_HEALTH_IP_URL: IP echo service (default https://ifconfig.me/ip)
 }
 
 func Enabled() bool { return strings.TrimSpace(Getenv("MESSAGES_SECRET")) != "" }
@@ -56,6 +64,7 @@ func ConfigFromEnv() (Config, error) {
 		OpenAIBaseURL:  strings.TrimRight(strings.TrimSpace(Getenv("MESSAGES_OPENAI_BASE_URL")), "/"),
 		GroqKey:        strings.TrimSpace(os.Getenv("GROQ_API_KEY")),
 		GroqModel:      strings.TrimSpace(Getenv("MESSAGES_GROQ_MODEL")),
+		GroqBaseURL:    strings.TrimRight(strings.TrimSpace(Getenv("MESSAGES_GROQ_BASE_URL")), "/"),
 		WhisperURL:     strings.TrimSpace(Getenv("MESSAGES_WHISPER_URL")),
 		WhisperModel:   strings.TrimSpace(Getenv("MESSAGES_WHISPER_MODEL")),
 		WhisperLiveURL: strings.TrimSpace(Getenv("MESSAGES_WHISPER_LIVE_URL")),
@@ -63,6 +72,15 @@ func ConfigFromEnv() (Config, error) {
 		FakeTranscript: Getenv("MESSAGES_FAKE_TRANSCRIPT"),
 		FakePairing:    strings.TrimSpace(Getenv("MESSAGES_DEV_FAKE_PAIRING")),
 		NtfyURL:        strings.TrimSpace(Getenv("MESSAGES_NTFY_URL")),
+		HealthOff:      envOff("MESSAGES_HEALTH"),
+		HealthAfter:    time.Duration(envInt("MESSAGES_HEALTH_AFTER_SECS", 180)) * time.Second,
+		HealthVPNIface: strings.TrimSpace(Getenv("MESSAGES_HEALTH_VPN_IFACE")),
+		HealthExitIP:   strings.TrimSpace(Getenv("MESSAGES_HEALTH_EXIT_IP")),
+		HealthIPURL:    firstNonEmpty(strings.TrimSpace(Getenv("MESSAGES_HEALTH_IP_URL")), "https://ifconfig.me/ip"),
+	}
+	// A Groq key alone picks Groq Whisper as the server speech-to-text.
+	if c.STTProvider == "" && c.GroqKey != "" {
+		c.STTProvider = "groq"
 	}
 	if len(c.Secret) < 16 {
 		return c, errors.New("MESSAGES_SECRET must be at least 16 characters (use a long random string)")
@@ -77,6 +95,9 @@ func ConfigFromEnv() (Config, error) {
 	}
 	if c.MaxAudioBytes <= 0 {
 		c.MaxAudioBytes = 10 << 20
+	}
+	if c.HealthAfter <= 0 {
+		c.HealthAfter = 3 * time.Minute
 	}
 	if c.MaxRecordSecs <= 0 {
 		c.MaxRecordSecs = 60

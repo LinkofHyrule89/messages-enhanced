@@ -530,6 +530,7 @@
     });
   }
   function renderConversations() {
+    if (!state.folder) renderProfile();
     var box = $("convItems");
     box.textContent = "";
     if (!state.convs.length) {
@@ -562,22 +563,98 @@
       if (row && fresh) { f.btn = row; f.conv = fresh; row.classList.add("open"); } else closeConvMenu();
     }
   }
+  // List status icon for "You: …" previews (same icons as under your last
+  // message). Groups: read by everyone (by Google's "Read by" names vs the
+  // members) = filled checks; read by only some = delivered.
+  function listStatusKind(c) {
+    if (!c.last_from_me || !c.last_status || state.folder) return "";
+    var kind = statusKind({ Status: c.last_status, MessageID: "" });
+    if (kind === "read" && c.IsGroup) {
+      var names = readByNames({ status_text: c.last_status_text });
+      var others = conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).length;
+      if (names && names.length && others && names.length < others) kind = "delivered";
+    }
+    return kind;
+  }
+  function rcsBadge() {
+    var svg = svgEl("svg", { viewBox: "0 0 24 24", class: "rcs-badge", "aria-hidden": "true" });
+    svg.appendChild(svgEl("path", { d: "M5 3.5h14A2.5 2.5 0 0 1 21.5 6v8a2.5 2.5 0 0 1-2.5 2.5h-8.5L5.6 20.3c-.4.3-.9 0-.9-.4v-3.4H5A2.5 2.5 0 0 1 2.5 14V6A2.5 2.5 0 0 1 5 3.5z" }));
+    return svg;
+  }
+  // Header profile button (non-car): your Google account photo (fetched,
+  // cached and proxied by the server: GET /api/app/profile gives its hash,
+  // used as ?h= cache-buster), else your contact photo from Google Messages,
+  // else your initial. The account photo is re-checked every 30 minutes and
+  // when the page comes back to the foreground.
+  var profileKey = "", profilePhoto = { hash: "", at: 0, busy: false };
+  function refreshProfilePhoto(force) {
+    if (profilePhoto.busy || (!force && Date.now() - profilePhoto.at < 30 * 60 * 1000)) return;
+    profilePhoto.busy = true;
+    api("/api/app/profile").then(function (r) {
+      profilePhoto.at = Date.now();
+      var h = (r && r.photo_hash) || "";
+      if (h !== profilePhoto.hash) { profilePhoto.hash = h; profileKey = ""; renderProfile(); }
+      // First check after a restart: the server fetches in the background.
+      if (!h && !profilePhoto.retried) { profilePhoto.retried = true; setTimeout(function () { refreshProfilePhoto(true); }, 15000); }
+    }).catch(function () {}).then(function () { profilePhoto.busy = false; });
+  }
+  function renderProfile() {
+    refreshProfilePhoto(false);
+    var me = null;
+    state.convs.some(function (c) {
+      return conversationParticipants(c).some(function (p) { if (p && isMe(p) && (p.id || p.number)) { me = p; return true; } return false; });
+    });
+    var key = (me ? (me.id || "") + "|" + (me.number || "") + "|" + (me.name || "") : "none") + "|" + profilePhoto.hash;
+    if (key === profileKey) return;
+    profileKey = key;
+    var slot = $("profileAv");
+    slot.textContent = "";
+    var name = (me && (me.first_name || me.name)) || "Me";
+    var av = el("div", "avatar profile-avatar");
+    var r = me ? refsFor([me]) : null;
+    if (r) r.key = avatarLookupKey(r);
+    var lookups = r && r.key ? [r] : [];
+    var bg = "hsl(" + hue((me && me.number) || name) + " 45% 38%)";
+    if (profilePhoto.hash) {
+      av.classList.add("has-photo");
+      var img = el("img", "avatar-img");
+      img.alt = "";
+      img.src = "/api/app/profile-photo?h=" + encodeURIComponent(profilePhoto.hash);
+      img.addEventListener("error", function () { profilePhoto.hash = ""; profileKey = ""; renderProfile(); });
+      av.appendChild(img);
+    } else {
+      paintAvatar(av, lookups, initials(name).charAt(0), bg);
+      lookups.forEach(function (x) { avatarRequest(x, function () { if (av.isConnected && !profilePhoto.hash) paintAvatar(av, lookups, initials(name).charAt(0), bg); }); });
+    }
+    slot.appendChild(av);
+    $("profileBtn").title = name + " · Menu";
+  }
   function buildConvRow(c) {
     var pins = convPins(c);
     var b = el("button", "conv" + (c.ConversationID === state.current ? " active" : "") + (c.UnreadCount > 0 ? " unread" : "") + (pins.phone || pins.local ? " is-pinned" : ""));
     b.type = "button";
     b.dataset.id = c.ConversationID;
-    var av = buildAvatar(c, "avatar");
+    var av = el("span", "conv-av");
+    av.appendChild(buildAvatar(c, "avatar"));
+    // Non-car: Google Messages' small chat-bubble badge on RCS chats.
+    if (String(c.display_protocol || "").toUpperCase() === "RCS") av.appendChild(rcsBadge());
     var mid = el("div", "conv-mid");
     var nameRow = el("div", "conv-name", convName(c));
     if (PLATFORM[c.source_platform]) nameRow.appendChild(el("span", "tag", PLATFORM[c.source_platform]));
     mid.appendChild(nameRow);
     var typers = typingNames(c.ConversationID);
     if (typers.length) mid.appendChild(el("div", "conv-preview typing", typingLabel(typers, c.IsGroup)));
-    else mid.appendChild(el("div", "conv-preview", c.last_message_preview || ""));
+    else {
+      var pv = el("div", "conv-preview");
+      var lk = listStatusKind(c);
+      if (lk) pv.appendChild(statusIcon(lk));
+      pv.appendChild(document.createTextNode(c.last_message_preview || ""));
+      mid.appendChild(pv);
+    }
     var right = el("div", "conv-right");
     var time = el("div", "conv-time");
-    if (pins.phone || pins.local) {
+    var deskRow = isDesk();
+    if ((pins.phone || pins.local) && !deskRow) {
       var icon = svgIcon(PIN_ICON, "conv-pin" + (pins.phone ? " conv-pin-phone" : ""));
       var t = document.createElementNS("http://www.w3.org/2000/svg", "title");
       t.textContent = pins.phone ? "Pinned on your phone" : "Pinned";
@@ -589,6 +666,14 @@
     // so the pins line up whatever the time text ("6:21 PM", "Mon").
     time.appendChild(el("span", "conv-time-text", fmtTime(c.LastMessageTS)));
     right.appendChild(time);
+    // Non-car (Google Messages): the pin sits under the time.
+    if ((pins.phone || pins.local) && deskRow) {
+      var pin2 = svgIcon(PIN_ICON, "conv-pin conv-pin-under");
+      var t2 = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      t2.textContent = pins.phone ? "Pinned on your phone" : "Pinned";
+      pin2.appendChild(t2);
+      right.appendChild(pin2);
+    }
     if (c.UnreadCount > 0) right.appendChild(el("div", "badge", String(c.UnreadCount)));
     b.appendChild(av); b.appendChild(mid); b.appendChild(right);
     if (pins.phone || pins.local) b.setAttribute("aria-label", convName(c) + (pins.phone ? ", pinned on your phone" : ", pinned"));
@@ -663,9 +748,19 @@
     $("convMenuArchiveLabel").textContent = archived ? "Unarchive" : "Archive";
     arch.dataset.archived = archived ? "1" : "";
     $("convMenuTrash").hidden = !google;
+    // Non-car: the header's mute bell and the Settings gear live in this menu.
+    var inHeader = btn.id === "convMenuBtn" && isDesk();
+    $("convMenuMute").hidden = !inHeader;
+    $("convMenuMuteLabel").textContent = $("muteBtn").classList.contains("muted") ? "Unmute notifications" : "Mute notifications";
+    $("convMenuSettings").hidden = !inHeader;
     var menu = $("convMenu");
     menu.hidden = false;
     placePopover(menu, anchor);
+  }
+  function closeAppMenu() {
+    if ($("appMenu").hidden) return false;
+    $("appMenu").hidden = true; $("appMenuBtn").setAttribute("aria-expanded", "false"); $("profileBtn").setAttribute("aria-expanded", "false");
+    return true;
   }
   function closeConvMenu() {
     var f = state.convMenuFor;
@@ -1134,12 +1229,15 @@
   function openConversation(id, nameHint) {
     if (state.rec) cancelRecording();
     showEmoji(false);
+    showPlusSheet(false);
     closeMsgMenu();
     closeConvMenu();
     closeImageViewer();
-    if (state.current !== id) clearPending();
+    if (state.current !== id) { clearPending(); if (!(state.jump && state.jump.conv === id)) state.msgLimit = null; }
     state.current = id;
     loadConvMeta(id);
+    stopSelect(); closeMsgSheet();
+    loadStars(id);
     var readOnly = !!state.folder;
     document.body.classList.toggle("readonly-thread", readOnly);
     $("readonlyNote").hidden = !readOnly;
@@ -1149,6 +1247,9 @@
     $("threadView").hidden = false;
     var c = state.convs.find(function (x) { return x.ConversationID === id; });
     $("threadTitle").textContent = c ? convName(c) : (nameHint || id);
+    var tav = $("threadAvatar"); tav.textContent = "";
+    if (c) tav.appendChild(buildAvatar(c, "avatar thread-av"));
+    renderQuickReplies();
     if (ct) closeChatTheme();
     applyTheme(id);
     refreshTheme(id);
@@ -1156,6 +1257,7 @@
     clearReply();
     $("messages").textContent = "";
     renderConversations();
+    relayoutSoon();
     loadMessages(true);
     fetchTyping();
     // Folders are view only: opening one must not change it (no mark-read).
@@ -1171,6 +1273,9 @@
     setComposerFloat(false);
     clearPending();
     state.current = null; document.body.classList.remove("has-thread", "readonly-thread");
+    state.msgLimit = null; state.jump = null;
+    stopSelect(); closeMsgSheet();
+    renderQuickReplies();
     $("threadView").hidden = true; $("threadEmpty").hidden = false;
   }
   // quiet: a background refresh (live event, poll, send follow-up) that
@@ -1179,7 +1284,9 @@
   function loadMessages(scroll, quiet) {
     var id = state.current;
     if (!id) return Promise.resolve();
-    var path = "/api/conversations/" + encodeURIComponent(id) + "/messages?limit=80";
+    var lim = state.jump && state.jump.conv === id ? state.jump.limit : (state.msgLimit && state.msgLimit.id === id ? state.msgLimit.n : 80);
+    if (lim > 80) state.msgLimit = { id: id, n: lim }; // keep the jump's history on live refreshes
+    var path = "/api/conversations/" + encodeURIComponent(id) + "/messages?limit=" + lim;
     if (state.folder) {
       var fc = state.convs.find(function (x) { return x.ConversationID === id; });
       if (fc && !fc.local) {
@@ -1191,13 +1298,17 @@
       return Promise.resolve().then(function () {
         if (id !== state.current) return;
         state.serverMsgs = { id: id, msgs: (msgs || []).slice().reverse() };
+        if (state.jump && state.jump.conv === id) state.jump.loaded = true;
         if (!state.folder) chime.noteMessages(id, msgs || []);
         if (!state.folder && msgs && msgs.length) patchConv(id, msgs.filter(function (m) { return !/^TOMBSTONE/i.test(m.Status || ""); })[0]);
         var merged = mergeLocal(id, state.serverMsgs.msgs);
         var sig = JSON.stringify(msgs || []) + "|" + localSig(id);
         if (quiet && !scroll && lastRender.id === id && lastRender.sig === sig) return;
+        var changed = lastRender.id === id;
         lastRender.id = id; lastRender.sig = sig;
+        state.lastMsgs = merged;
         renderMessages(merged, scroll);
+        if (changed && !state.folder) refreshConvMeta(); // new messages: fresh lock / E2EE state
       });
     }).catch(function (e) { if (!quiet && e.message !== "login required") toast("Couldn't load messages: " + e.message, "error"); });
   }
@@ -1566,7 +1677,33 @@
     return drop.length ? msgs.filter(function (m) { return drop.indexOf(m) < 0; }) : msgs;
   }
 
+  var RUN_GAP_MS = 15 * 60 * 1000;
+  function runKey(m) { return m.IsFromMe ? "me" : String(m.SenderNumber || m.SenderName || "them"); }
+  function sameRun(a, b) {
+    return !!a && !!b && runKey(a) === runKey(b) && Math.abs((b.TimestampMS || 0) - (a.TimestampMS || 0)) < RUN_GAP_MS &&
+      new Date(a.TimestampMS).toDateString() === new Date(b.TimestampMS).toDateString();
+  }
+  // Small round photo of a group message's sender (initial-letter fallback).
+  function senderAvatar(m, c) {
+    var name = m.SenderName || m.SenderNumber || "?";
+    var av = el("div", "msg-avatar");
+    var bg = "hsl(" + hue(m.SenderNumber || name) + " 45% 38%)";
+    var num = normalizeParticipantIdentifier(m.SenderNumber);
+    var p = conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).find(function (x) {
+      return (num && (normalizeParticipantIdentifier(x.number) === num || normalizeParticipantIdentifier(x.phone) === num)) ||
+        (m.SenderName && (x.name || x.full_name || x.display_name) === m.SenderName);
+    });
+    var r = p ? refsFor([p]) : { source: "sms", participantIDs: [], contactIDs: [], numbers: m.SenderNumber ? [m.SenderNumber] : [] };
+    r.key = avatarLookupKey(r);
+    var letter = (String(name).replace(/[^\p{L}\p{N}]/gu, "").charAt(0) || "#").toUpperCase();
+    var lookups = r.key && sourcePlatformOf(c) === "sms" ? [r] : [];
+    paintAvatar(av, lookups, letter, bg);
+    if (lookups.length) avatarRequest(r, function () { if (av.isConnected) paintAvatar(av, lookups, letter, bg); });
+    av.title = name;
+    return av;
+  }
   function renderMessages(msgs, forceScroll) {
+    if (swipe.active && swipe.mode) { lastRender.sig = ""; return; } // mid-swipe: the next refresh renders
     msgs = dropEchoedPlaceholders(msgs);
     var box = $("messages");
     var nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 200;
@@ -1575,18 +1712,27 @@
     var lastDay = "";
     var byID = {};
     msgs.forEach(function (m) { if (m && m.MessageID) byID[String(m.MessageID)] = m; });
+    state.byID = byID;
     var lastMine = -1;
     msgs.forEach(function (m, i) { if (m.IsFromMe && !/^TOMBSTONE/i.test(m.Status || "")) lastMine = i; });
     state.mineSending = false;
     var menuOpenFor = state.menuFor && state.menuFor.msg.MessageID, menuStillThere = false;
+    var desk = isDesk(), groupChat = !!(c && c.IsGroup);
     msgs.forEach(function (m, idx) {
       var day = new Date(m.TimestampMS).toDateString();
       if (day !== lastDay) { box.appendChild(el("div", "day-sep", dayLabel(m.TimestampMS))); lastDay = day; }
       var row = el("div", "msg-row " + (m.IsFromMe ? "me" : "them"));
+      // Non-car: Google Messages-style runs (grouped corners, sender name
+      // and photo on the first received bubble of a run in group chats).
+      // (Car Mode too, at car sizes.)
+      var prevSame = idx > 0 && sameRun(msgs[idx - 1], m);
+      var nextSame = idx < msgs.length - 1 && sameRun(m, msgs[idx + 1]);
+      row.classList.add(prevSame ? (nextSame ? "grp-mid" : "grp-last") : (nextSame ? "grp-first" : "grp-solo"));
+      if (groupChat && !m.IsFromMe && !prevSame) box.appendChild(el("div", "run-sender", m.SenderName || m.SenderNumber || "Unknown"));
       row.dataset.id = m.MessageID;
       var bubble = el("div", "bubble");
       if (m.ReplyToID) bubble.appendChild(replyQuote(m, byID));
-      if (!m.IsFromMe && c && c.IsGroup && m.SenderName) bubble.appendChild(el("div", "sender", m.SenderName));
+
       if (isVideoMessage(m)) {
         bubble.classList.add("has-media");
         bubble.appendChild(videoNode(m));
@@ -1602,7 +1748,12 @@
         bubble.appendChild(m.MediaID ? iconEl("div", "body media-label", "attach", m.MimeType || "attachment") : el("div", "body", ""));
       }
       var meta = el("div", "meta", clockTime(m.TimestampMS) + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
+      if (state.stars[m.MessageID]) { var sm = el("span", "star-mark", "\u2605"); sm.setAttribute("aria-label", "Starred"); meta.insertBefore(sm, meta.firstChild); }
+      if (state.selecting && state.selected[m.MessageID]) row.classList.add("selected");
+      if (isDesk()) row.appendChild(timeLabel(m));
       bubble.appendChild(meta);
+      var rx = reactionsNode(m);
+      if (rx) bubble.appendChild(rx);
       var mb = el("button", "msg-menu-btn");
       mb.appendChild(icon("more"));
       mb.type = "button";
@@ -1617,6 +1768,7 @@
         mb.classList.add("open"); mb.setAttribute("aria-expanded", "true");
         state.menuFor.btn = mb;
       }
+      if (!state.folder) bindLongPress(bubble, m, mb);
       // Sent messages get the ⋮ menu too (left of the bubble).
       if (m.IsFromMe && !isSendPlaceholder(m) && !m.local) row.appendChild(mb);
       row.appendChild(bubble);
@@ -1630,7 +1782,12 @@
         row.appendChild(rb);
         row.appendChild(mb);
       }
+      if (groupChat && !m.IsFromMe) {
+        var av = prevSame ? el("div", "msg-avatar spacer") : senderAvatar(m, c);
+        row.insertBefore(av, row.firstChild);
+      }
       box.appendChild(row);
+      if (state.detailFor === m.MessageID && isDesk()) box.appendChild(msgDetail(m, c, groupChat));
       var ls = localStatus(m);
       if (m.local && !/FAIL/.test(m.Status)) state.mineSending = true;
       if (ls) {
@@ -1639,15 +1796,137 @@
         box.appendChild(lsn);
       } else if (idx === lastMine) {
         if (isSendPlaceholder(m) || /SENDING|YET_TO_SEND|VALIDATING|PROCESSING|AWAITING_RETRY/.test(String(m.Status || "").toUpperCase())) state.mineSending = true;
-        var st = sentStatus(m.Status);
-        // Google accepted our POST but hasn't echoed its copy yet: "Sent".
-        if (st && st.text === "Sending…" && state.posted[m.MessageID]) st = { text: "Sent" };
-        if (st) box.appendChild(el("div", "msg-status" + (st.cls ? " " + st.cls : ""), st.text));
+        var sn = statusNode(m, c, groupChat);
+        if (sn) box.appendChild(sn);
       }
     });
     if (menuOpenFor && !menuStillThere) closeMsgMenu();
     renderTypingRow(false);
     if (forceScroll || nearBottom) box.scrollTop = box.scrollHeight;
+    if (state.jump) finishJump();
+  }
+  // ---------- read receipts (Google Messages-style) ----------
+  // Under your latest sent message only, as in Google Messages: a clock
+  // while sending, one check in a ring once sent, two overlapping ringed
+  // checks once delivered, two filled check circles once read, and a red
+  // "!" if it failed. In RCS groups Google's status text names who has
+  // read it ("Read by Alice, Bob"): until everyone has, the line shows
+  // their photos and names instead of the read icon. A tap on a bubble
+  // (non-car) shows its status and time in words.
+  var RC_KINDS = { sending: "Sending…", sent: "Sent", delivered: "Delivered", read: "Read", failed: "Not sent" };
+  function statusKind(m) {
+    var s = String(m.Status || "").toUpperCase();
+    if (s === "OUTGOING_DISPLAYED") return "read";
+    if (s === "OUTGOING_DELIVERED") return "delivered";
+    if (s === "OUTGOING_COMPLETE" || s === "OUTGOING_NOT_DELIVERED_YET") return "sent";
+    if (/FAIL|CANCELED/.test(s)) return "failed";
+    if (/SENDING|YET_TO_SEND|VALIDATING|PROCESSING|AWAITING_RETRY|REVOCATION/.test(s) || isSendPlaceholder(m)) {
+      // Google accepted our POST but hasn't echoed its copy yet: sent.
+      return state.posted[m.MessageID] ? "sent" : "sending";
+    }
+    return "";
+  }
+  function svgEl(tag, attrs) {
+    var e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    Object.keys(attrs).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    return e;
+  }
+  function rcCircle(kind) {
+    var c = el("span", "rc " + kind);
+    var svg = svgEl("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+    svg.appendChild(svgEl("path", { d: "M6.5 12.5l3.6 3.6L17.6 8.4" }));
+    c.appendChild(svg);
+    return c;
+  }
+  function statusIcon(kind) {
+    var w = el("span", "rcpt rcpt-" + kind);
+    w.setAttribute("role", "img");
+    w.setAttribute("aria-label", RC_KINDS[kind]);
+    w.title = RC_KINDS[kind];
+    if (kind === "sending" || kind === "failed") {
+      var c = el("span", "rc " + (kind === "failed" ? "bad" : "ring"));
+      var svg = svgEl("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+      svg.appendChild(svgEl("path", { d: kind === "failed" ? "M12 6.5v7M12 17.3v.2" : "M12 7.5V12l3 2" }));
+      c.appendChild(svg);
+      w.appendChild(c);
+    } else {
+      var fill = kind === "read" ? "fill" : "ring";
+      w.appendChild(rcCircle(fill));
+      if (kind !== "sent") w.appendChild(rcCircle(fill));
+    }
+    return w;
+  }
+  // Names from Google's "Read by Alice, Bob" / "Seen by Alice" (null: not
+  // that kind of text). Real data: first names exactly as in the group's
+  // participants (first_name).
+  function readByNames(m) {
+    var r = /^(?:read|seen) by\s+(.+)$/i.exec(String(m.status_text || "").trim());
+    if (!r) return null;
+    return r[1].split(/\s*,\s*|\s+and\s+|\s*&\s*/).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  // The group member Google means by a "Read by" name: its first name (as
+  // on the phone), else the first word of the full name, else the number.
+  function memberByName(c, name) {
+    var others = conversationParticipants(c).filter(function (x) { return x && !isMe(x); });
+    var lo = name.toLowerCase(), num = normalizeParticipantIdentifier(name);
+    var tests = [
+      function (p) { return String(p.first_name || "").toLowerCase() === lo; },
+      function (p) { return String(p.name || "").toLowerCase() === lo; },
+      function (p) { return String(p.name || "").split(/\s+/)[0].toLowerCase() === lo; },
+      function (p) { return num.length >= 7 && normalizeParticipantIdentifier(p.number) === num; }
+    ];
+    for (var i = 0; i < tests.length; i++) { var hit = others.find(tests[i]); if (hit) return hit; }
+    return null;
+  }
+  function statusNode(m, c, groupChat) {
+    var s = String(m.Status || "").toUpperCase();
+    if (s === "OUTGOING_SCHEDULED") return el("div", "msg-status", "Scheduled");
+    var kind = statusKind(m);
+    if (!kind) return null;
+    var box = el("div", "msg-status rcpt-row");
+    var names = groupChat && kind !== "failed" && kind !== "sending" ? readByNames(m) : null;
+    var others = groupChat ? conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).length : 0;
+    if (names && names.length && !(others && names.length >= others)) {
+      box.classList.add("read-by");
+      var avs = el("span", "rb-avs");
+      names.slice(0, 4).forEach(function (n) {
+        var p = memberByName(c, n);
+        var av = senderAvatar({ SenderName: p ? (p.name || n) : n, SenderNumber: p ? p.number : "" }, c);
+        av.className = "rb-av";
+        av.title = n;
+        avs.appendChild(av);
+      });
+      box.appendChild(avs);
+      box.appendChild(el("span", "rb-text", String(m.status_text).trim()));
+      return box;
+    }
+    box.appendChild(statusIcon(names && names.length ? "read" : kind));
+    return box;
+  }
+  // Tap details (non-car): status in words + time (+ lock), under the bubble.
+  function msgDetail(m, c, groupChat) {
+    var d = el("div", "msg-detail " + (m.IsFromMe ? "me" : "them"));
+    var parts = [];
+    if (m.IsFromMe) {
+      var kind = statusKind(m);
+      var label = String(m.status_text || "").trim() || RC_KINDS[kind] || "";
+      if (label) parts.push(label);
+    }
+    var t = new Date(m.TimestampMS);
+    parts.push((t.toDateString() === new Date().toDateString() ? "" : dayLabel(m.TimestampMS) + ", ") + clockTime(m.TimestampMS));
+    d.appendChild(el("span", "", parts.join(" · ")));
+    if (msgEncrypted(m)) d.appendChild(lockIcon());
+    return d;
+  }
+  function toggleMsgDetail(row, m) {
+    var box = $("messages"), old = box.querySelector(".msg-detail");
+    if (old) old.remove();
+    if (state.detailFor === m.MessageID) { state.detailFor = null; return; }
+    state.detailFor = m.MessageID;
+    var c = state.convs.find(function (x) { return x.ConversationID === state.current; });
+    var d = msgDetail(m, c, !!(c && c.IsGroup));
+    box.insertBefore(d, row.nextSibling);
+    if (box.scrollHeight - box.scrollTop - box.clientHeight < d.offsetHeight + 80) box.scrollTop = box.scrollHeight;
   }
   // Status under your latest sent message, from Google's MessageStatusType
   // (stored per message and updated live when Google pushes the change).
@@ -1821,11 +2100,886 @@
     f.value = "";
     f.click();
   }
+  // ---------- (+) attach sheet + gallery button (non-car composer) ----------
+  // Google Messages-style: (+) in the pill opens a bottom sheet (Gallery,
+  // Camera, Files: the options this app can really send); the pill's photo
+  // button opens the photo/video picker directly. Picked files land in the
+  // attachment tray above the box and go out with Send. The sheet closes on
+  // a tap outside, on (x), or once an option is picked.
+  function showPlusSheet(on) {
+    var sh = $("plusSheet"), b = $("plusBtn");
+    if (on && (!state.current || document.body.classList.contains("readonly-thread"))) return;
+    sh.hidden = !on;
+    b.classList.toggle("open", !!on);
+    b.setAttribute("aria-expanded", on ? "true" : "false");
+    b.setAttribute("aria-label", on ? "Close attachment options" : "More attachment options");
+    $("threadView").classList.toggle("plus-open", !!on);
+    if (on) showEmoji(false);
+  }
+  function pickInto(id) {
+    showPlusSheet(false);
+    if (!state.current) return;
+    var f = $(id);
+    f.value = "";
+    f.click();
+  }
+  function initPlusSheet() {
+    $("plusBtn").addEventListener("click", function () { showPlusSheet($("plusSheet").hidden); });
+    $("galleryBtn").addEventListener("click", function () { pickInto("galleryInput"); });
+    $("plusGallery").addEventListener("click", function () { pickInto("galleryInput"); });
+    $("plusCamera").addEventListener("click", function () { pickInto("cameraInput"); });
+    $("plusFiles").addEventListener("click", function () { pickInto("filesInput"); });
+    ["galleryInput", "cameraInput", "filesInput"].forEach(function (id) {
+      $(id).addEventListener("change", function () {
+        var files = Array.prototype.slice.call(this.files || []);
+        this.value = "";
+        if (files.length && takeFiles(files)) $("input").focus();
+      });
+    });
+    document.addEventListener("pointerdown", function (e) {
+      if ($("plusSheet").hidden || $("plusSheet").contains(e.target) || $("plusBtn").contains(e.target)) return;
+      showPlusSheet(false);
+    }, true);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("plusSheet").hidden) showPlusSheet(false); });
+  }
   function onFilePicked() {
     var f = $("fileInput"), file = f.files && f.files[0];
     f.value = "";
     if (file) sendMedia(file);
   }
+
+  // ---------- quick replies ----------
+  // One-tap canned replies above the message box (per device: on/off and
+  // the texts, in Settings). A tap sends right away through the normal
+  // optimistic path (as a reply when one is selected); typed text stays.
+  var QUICK_DEFAULTS = ["Driving, will text soon", "On my way", "OK", "Call you later"];
+  function quickList(s) {
+    s = s || loadSettings();
+    var l = Array.isArray(s.quickReplies) ? s.quickReplies.filter(function (x) { return typeof x === "string" && x.trim(); }) : null;
+    return l && l.length ? l : QUICK_DEFAULTS.slice();
+  }
+  function quickOn(s) { return (s || loadSettings()).quickRepliesOn !== false; }
+  function renderQuickReplies() {
+    var box = $("quickReplies"), s = loadSettings();
+    box.textContent = "";
+    var show = quickOn(s) && !!state.current && !state.folder;
+    if (show) quickList(s).forEach(function (txt) {
+      var b = el("button", "quick-reply", txt);
+      b.type = "button";
+      b.addEventListener("mousedown", function (e) { e.preventDefault(); }); // keep the keyboard / caret
+      b.addEventListener("click", function () { sendQuick(txt); });
+      box.appendChild(b);
+    });
+    box.hidden = !show;
+  }
+  function sendQuick(text) {
+    text = String(text || "").trim();
+    if (!text || !state.current || state.rec || state.transcribing) return;
+    var reply = state.replyTo;
+    var l = newLocal(state.current, text, reply ? reply.MessageID : "", null, "");
+    if (reply) clearReply();
+    renderCurrent(true);
+    postLocal(l);
+  }
+  function initQuickReplies() {
+    $("setQuickReplies").addEventListener("click", function () {
+      var st = loadSettings();
+      st.quickRepliesOn = !quickOn(st);
+      saveSettings(st);
+      applySettings();
+    });
+    var ed = $("quickRepliesEdit"), t = null;
+    var save = function () {
+      var lines = ed.value.split("\n").map(function (x) { return x.trim().slice(0, 160); }).filter(Boolean).slice(0, 12);
+      var st = loadSettings();
+      st.quickReplies = lines.length ? lines : null;
+      saveSettings(st);
+      renderQuickReplies();
+    };
+    ed.addEventListener("input", function () { clearTimeout(t); t = setTimeout(save, 400); });
+    ed.addEventListener("blur", function () { clearTimeout(t); save(); });
+    $("quickRepliesReset").addEventListener("click", function () {
+      var st = loadSettings();
+      st.quickReplies = null;
+      saveSettings(st);
+      ed.value = QUICK_DEFAULTS.join("\n");
+      renderQuickReplies();
+    });
+  }
+
+  // ---------- reactions ----------
+  // Long-press (touch), right-click or the ⋮ button opens the message menu,
+  // whose top row reacts (POST /api/react: Google Messages via libgm, or
+  // WhatsApp/Signal). "+" opens the emoji panel to pick any emoji.
+  // Reactions show as pills on bubbles and update with the live refresh.
+  var QUICK_REACTIONS = ["\ud83d\udc4d", "\u2764\ufe0f", "\ud83d\ude02", "\ud83d\ude2e", "\ud83d\ude22", "\ud83d\ude4f"];
+  function parseReactions(m) {
+    var r = m && m.Reactions;
+    if (!r) return [];
+    if (typeof r === "string") { try { r = JSON.parse(r); } catch (e) { return []; } }
+    return Array.isArray(r) ? r.filter(function (x) { return x && x.emoji; }) : [];
+  }
+  function reactionsNode(m) {
+    var list = parseReactions(m);
+    if (!list.length) return null;
+    var box = el("div", "reactions");
+    list.forEach(function (r) {
+      var n = Number(r.count) || 1;
+      var p = el("span", "reaction", String(r.emoji));
+      if (n > 1) p.appendChild(el("span", "reaction-count", String(n)));
+      p.title = (Array.isArray(r.actors) && r.actors.length ? r.actors.join(", ") : n + " reaction" + (n > 1 ? "s" : ""));
+      box.appendChild(p);
+    });
+    return box;
+  }
+  function sendReaction(m, emoji) {
+    if (!m || !emoji) return;
+    var convID = m.ConversationID || state.current;
+    postJSON("/api/react", { conversation_id: convID, message_id: m.MessageID, emoji: emoji, action: "add" }).then(function () {
+      if (state.current === convID) loadMessages(false, true);
+    }).catch(function (e) { if (e.message !== "login required") toast("Couldn't react: " + e.message, "error"); });
+  }
+  function initReactions() {
+    var row = $("msgMenuReact");
+    QUICK_REACTIONS.forEach(function (e) {
+      var b = el("button", "react-pick", e);
+      b.type = "button";
+      b.setAttribute("role", "menuitem");
+      b.setAttribute("aria-label", "React " + e);
+      b.addEventListener("click", function () {
+        var f = state.menuFor;
+        closeMsgMenu();
+        if (f) sendReaction(f.msg, e);
+      });
+      row.appendChild(b);
+    });
+    var more = el("button", "react-pick react-more", "+");
+    more.type = "button";
+    more.setAttribute("role", "menuitem");
+    more.setAttribute("aria-label", "More reactions");
+    more.addEventListener("click", function () {
+      var f = state.menuFor;
+      closeMsgMenu();
+      if (!f) return;
+      state.reactFor = f.msg;
+      showEmoji(true);
+    });
+    row.appendChild(more);
+  }
+  // Long-press / right-click on a bubble opens its menu.
+  function bindLongPress(bubble, m, btn) {
+    var timer = null, x0 = 0, y0 = 0, fired = false;
+    var cancel = function () { clearTimeout(timer); timer = null; bubble.classList.remove("longpress"); };
+    bubble.addEventListener("pointerdown", function (e) {
+      if (e.pointerType === "mouse" || isSendPlaceholder(m) || m.local || state.selecting) return;
+      fired = false; x0 = e.clientX; y0 = e.clientY;
+      bubble.classList.add("longpress");
+      timer = setTimeout(function () {
+        timer = null; fired = true; bubble.classList.remove("longpress");
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch (er) {} }
+        openMsgMenu(btn, m);
+      }, 480);
+    });
+    bubble.addEventListener("pointermove", function (e) { if (timer && (Math.abs(e.clientX - x0) > 12 || Math.abs(e.clientY - y0) > 12)) cancel(); });
+    bubble.addEventListener("pointerup", cancel);
+    bubble.addEventListener("pointercancel", cancel);
+    bubble.addEventListener("pointerleave", cancel);
+    // The tap that ends a long-press must not also open a photo or link.
+    bubble.addEventListener("click", function (e) { if (fired) { fired = false; e.preventDefault(); e.stopPropagation(); } }, true);
+    // A plain tap (non-car) shows the message's status and time in words.
+    bubble.addEventListener("click", function (e) {
+      if (!isDesk() || state.selecting || e.defaultPrevented || m.local || isSendPlaceholder(m)) return;
+      if (e.target.closest("a, button, img, video, audio, input, .reply-quote, .reactions")) return;
+      if (window.getSelection && String(window.getSelection()).length) return;
+      var row = bubble.closest(".msg-row");
+      if (row) toggleMsgDetail(row, m);
+    });
+    bubble.addEventListener("contextmenu", function (e) {
+      // Android fires contextmenu after our long-press timer already opened
+      // the menu: swallow it instead of reopening / toggling.
+      if (fired || (sheetOpen() && Date.now() - (state.sheetOpenedAt || 0) < 1500)) { e.preventDefault(); return; }
+      if (isSendPlaceholder(m) || m.local || state.selecting) return;
+      if (window.getSelection && String(window.getSelection()).length) return; // let text copy work
+      e.preventDefault();
+      cancel();
+      openMsgMenu(btn, m);
+    });
+  }
+
+  // ---------- search ----------
+  // Searches conversation names/participants and message text in the local
+  // database (GET /api/search and /api/search/messages). A message result
+  // opens its conversation scrolled to that message.
+  var search = { q: "", timer: null, seq: 0 };
+  function highlight(text, q) {
+    var frag = document.createDocumentFragment();
+    text = String(text || "");
+    var lo = text.toLowerCase(), ql = q.toLowerCase(), i = 0, j;
+    if (!ql) { frag.appendChild(document.createTextNode(text)); return frag; }
+    // Show the part around the first hit for long messages.
+    var first = lo.indexOf(ql);
+    if (first > 60) { text = "…" + text.slice(first - 40); lo = text.toLowerCase(); }
+    while ((j = lo.indexOf(ql, i)) >= 0) {
+      if (j > i) frag.appendChild(document.createTextNode(text.slice(i, j)));
+      frag.appendChild(el("mark", "", text.slice(j, j + ql.length)));
+      i = j + ql.length;
+    }
+    if (i < text.length) frag.appendChild(document.createTextNode(text.slice(i)));
+    return frag;
+  }
+  function runSearch(q) {
+    var seq = ++search.seq, box = $("searchResults");
+    q = q.trim();
+    search.q = q;
+    document.body.classList.toggle("searching", !!q);
+    box.hidden = !q;
+    if (!q) { box.textContent = ""; return; }
+    if (q.length < 2) { box.textContent = ""; box.appendChild(el("div", "conv-empty", "Keep typing…")); return; }
+    var enc = encodeURIComponent(q);
+    Promise.all([
+      api("/api/search?q=" + enc + "&limit=20").catch(function () { return []; }),
+      api("/api/search/messages?q=" + enc + "&limit=60").catch(function (e) { return { error: e.message }; }),
+    ]).then(function (res) {
+      if (seq !== search.seq) return;
+      var convs = Array.isArray(res[0]) ? res[0] : [], msgs = Array.isArray(res[1]) ? res[1] : [];
+      var ql = q.toLowerCase();
+      // Name matches (server + the loaded list), then message hits.
+      var byID = {}, named = [];
+      state.convs.forEach(function (c) { byID[c.ConversationID] = c; if (convName(c).toLowerCase().indexOf(ql) >= 0) named.push(c); });
+      convs.forEach(function (c) {
+        if (named.some(function (x) { return x.ConversationID === c.ConversationID; })) return;
+        if (String(c.Name || c.unified_name || "").toLowerCase().indexOf(ql) >= 0 || String(c.Participants || "").toLowerCase().indexOf(ql) >= 0) named.push(c);
+        if (!byID[c.ConversationID]) byID[c.ConversationID] = c;
+      });
+      box.textContent = "";
+      if (named.length) {
+        box.appendChild(el("div", "search-section", "Conversations"));
+        named.slice(0, 12).forEach(function (c) {
+          var b = el("button", "conv search-hit");
+          b.type = "button";
+          var mid = el("div", "conv-mid");
+          var nm = el("div", "conv-name"); nm.appendChild(highlight(convName(c), q)); mid.appendChild(nm);
+          b.appendChild(mid);
+          b.addEventListener("click", function () { clearSearch(); openConversation(c.ConversationID, convName(c)); });
+          box.appendChild(b);
+        });
+      }
+      if (msgs.length) {
+        box.appendChild(el("div", "search-section", "Messages"));
+        msgs.forEach(function (m) {
+          var c = byID[m.ConversationID];
+          var b = el("button", "conv search-hit");
+          b.type = "button";
+          var mid = el("div", "conv-mid");
+          mid.appendChild(el("div", "conv-name", c ? convName(c) : (m.SenderName || "Conversation")));
+          var pv = el("div", "conv-preview");
+          if (m.IsFromMe) pv.appendChild(document.createTextNode("You: "));
+          else if (c && c.IsGroup && m.SenderName) pv.appendChild(document.createTextNode(m.SenderName + ": "));
+          pv.appendChild(highlight(m.Body || "", q));
+          mid.appendChild(pv);
+          b.appendChild(mid);
+          var right = el("div", "conv-right");
+          right.appendChild(el("div", "conv-time", dayLabel(m.TimestampMS)));
+          b.appendChild(right);
+          b.addEventListener("click", function () { jumpToMessage(m, c ? convName(c) : ""); });
+          box.appendChild(b);
+        });
+      }
+      if (!named.length && !msgs.length) box.appendChild(el("div", "conv-empty", res[1] && res[1].error ? "Search failed: " + res[1].error : "No results for “" + q + "”"));
+    });
+  }
+  function clearSearch() {
+    var i = $("convSearch");
+    if (i.value) i.value = "";
+    runSearch("");
+  }
+  // Open a conversation with enough history loaded to show message m, then
+  // scroll to it and flash it.
+  function jumpToMessage(m, name) {
+    var convID = m.ConversationID;
+    var go = function (limit) {
+      state.jump = { conv: convID, id: m.MessageID, limit: limit };
+      if (state.current === convID) loadMessages(false); else openConversation(convID, name);
+      if (isNarrow()) clearSearch();
+    };
+    api("/api/conversations/" + encodeURIComponent(convID) + "/messages?limit=1000&after=" + Math.max(1, (m.TimestampMS || 0) - 1))
+      .then(function (after) { go(Math.min(1000, Math.max(80, (after || []).length + 20))); }, function () { go(200); });
+  }
+  function isNarrow() { return !document.documentElement.classList.contains("desk") || window.innerWidth < 900; }
+  function finishJump() {
+    var j = state.jump;
+    if (!j || j.conv !== state.current || !j.loaded) return;
+    state.jump = null;
+    var rows = $("messages").querySelectorAll(".msg-row");
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].dataset.id === String(j.id)) {
+        var r = rows[i];
+        r.scrollIntoView({ block: "center" });
+        r.classList.add("flash");
+        setTimeout(function () { r.classList.remove("flash"); }, 1600);
+        return;
+      }
+    }
+    toast("That message isn't loaded here.");
+  }
+  function initSearch() {
+    var i = $("convSearch");
+    i.addEventListener("input", function () {
+      clearTimeout(search.timer);
+      search.timer = setTimeout(function () { runSearch(i.value); }, 250);
+    });
+    i.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") { clearSearch(); i.blur(); }
+      if (e.key === "Enter") { clearTimeout(search.timer); runSearch(i.value); }
+    });
+    i.addEventListener("search", function () { if (!i.value) clearSearch(); });
+  }
+
+  // ---------- health banner ----------
+  // GET /api/app/health: Google connection / VPN checks from the server's
+  // monitor (which also sends the Web Push alerts). Shown once a check has
+  // been failing for 30 s.
+  function pollHealth() {
+    api("/api/app/health").then(function (h) {
+      var now = Date.now(), lines = [];
+      ((h && h.checks) || []).forEach(function (c) {
+        if (c.ok || !c.down_since_ms || now - c.down_since_ms < 30000) return;
+        var what = c.name === "vpn" ? "VPN is down" : "Google Messages is disconnected";
+        lines.push(what + (c.detail ? " (" + c.detail + ")" : "") + " since " + clockTime(c.down_since_ms) + ". New messages may be delayed.");
+      });
+      var b = $("healthBanner");
+      b.textContent = lines.join(" ");
+      b.hidden = !lines.length;
+    }).catch(function () {});
+  }
+  function initHealth() {
+    pollHealth();
+    setInterval(function () { if (!document.hidden) pollHealth(); }, 60000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) pollHealth(); });
+  }
+
+
+  // ---------- long-press menu, Google Messages style (non-car) ----------
+  // Long-press / right-click / ⋮ in the compact (non-car) layout: the chat
+  // blurs, a copy of the message sits on top with a reaction pill above it
+  // and the actions below (or beside, when tall). Car Mode keeps msgMenu.
+  var SHEET_REACTIONS = ["\ud83d\udc4d", "\u2764\ufe0f", "\ud83d\ude02", "\ud83d\ude2e", "\ud83d\ude22"];
+  var ADD_REACTION_ICON = "M7 9.5C7 8.67 7.67 8 8.5 8s1.5.67 1.5 1.5S9.33 11 8.5 11 7 10.33 7 9.5zm5 8c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5zm3.5-6.5c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zM22 1h-2v2h-2v2h2v2h2V5h2V3h-2V1zm-2 11c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8c1.46 0 2.82.4 4 1.08V2.84C14.77 2.3 13.42 2 11.99 2 6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12c0-1.05-.17-2.05-.47-3h-2.13c.38.93.6 1.94.6 3z";
+  var STAR_OUTLINE = "M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z";
+  var STAR_FILLED = "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z";
+  state.stars = {};
+  function isDesk() { return document.documentElement.classList.contains("desk"); }
+  function sheetOpen() { return !$("msgSheet").hidden; }
+  function msgHasMedia(m) { return !!(m && m.MediaID && m.MediaID !== "local"); }
+  function openMsgSheet(btn, m) {
+    var row = btn && btn.closest ? btn.closest(".msg-row") : null;
+    if (!row) {
+      var rows = $("messages").querySelectorAll(".msg-row");
+      for (var i = 0; i < rows.length; i++) if (rows[i].dataset.id === String(m.MessageID)) row = rows[i];
+    }
+    var bubble = row && row.querySelector(".bubble");
+    if (!bubble) return;
+    closeConvMenu();
+    state.sheetFor = m;
+    // The finger that long-pressed is still down: its release (pointerup,
+    // click, Android's contextmenu) must not hit the backdrop or a menu item
+    // that just appeared under it. Only a touch that starts now counts.
+    state.sheetArmed = false;
+    state.sheetOpenedAt = Date.now();
+    var ro = document.body.classList.contains("readonly-thread") || !!state.folder;
+    var body = String(m.Body || "").trim();
+    $("msgxReact").hidden = ro;
+    $("msgxReply").hidden = ro;
+    $("msgxDelete").hidden = ro;
+    $("msgxSelect").hidden = ro;
+    $("msgxForward").hidden = !body && !msgHasMedia(m);
+    $("msgxCopy").hidden = !body;
+    $("msgxCopyUrl").hidden = !firstURL(body);
+    var starred = !!state.stars[m.MessageID], st = $("msgxStar");
+    st.querySelector("span").textContent = starred ? "Unstar" : "Star";
+    st.querySelector("path").setAttribute("d", starred ? STAR_FILLED : STAR_OUTLINE);
+    var clone = $("msgxClone");
+    clone.textContent = "";
+    clone.className = "msgx-clone msg-row " + (row.classList.contains("me") ? "me" : "them");
+    clone.appendChild(bubble.cloneNode(true));
+    var sheet = $("msgSheet");
+    sheet.hidden = false;
+    placeMsgSheet(bubble, row.classList.contains("me"));
+    var first = sheet.querySelector(".msgx-item:not([hidden])");
+    if (first && isDesk()) try { first.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function placeMsgSheet(bubble, mine) {
+    var vp = viewportProbe(), pr = vp.getBoundingClientRect();
+    var k = pr.width ? vp.offsetWidth / pr.width : 1, vw = vp.offsetWidth, vh = vp.offsetHeight;
+    var br = bubble.getBoundingClientRect();
+    var r = { left: (br.left - pr.left) * k, top: (br.top - pr.top) * k, width: br.width * k, height: br.height * k };
+    var react = $("msgxReact"), menu = $("msgxMenu"), clone = $("msgxClone");
+    var pad = 20, gap = 16;
+    var rh = react.hidden ? 0 : react.offsetHeight, rw = react.offsetWidth, mw = menu.offsetWidth, mh = menu.offsetHeight;
+    var rgap = react.hidden ? 0 : gap;
+    var hx = function (w, x0, wid) { var x = mine ? x0 + wid - w : x0; return Math.max(pad, Math.min(vw - pad - w, x)); };
+    // Menu beside the message when stacking wouldn't fit and there's room.
+    var stackH = rh + rgap + r.height + gap + mh;
+    var besideX = mine ? r.left - gap - mw : r.left + r.width + gap;
+    var beside = stackH > vh - 2 * pad && besideX >= pad && besideX + mw <= vw - pad;
+    var bh = beside ? Math.min(r.height, vh - 2 * pad - rh - rgap) : Math.min(r.height, Math.max(60, vh - 2 * pad - rh - rgap - gap - mh));
+    var gh = beside ? rh + rgap + Math.max(bh, mh) : rh + rgap + bh + gap + mh;
+    var top = Math.max(pad, Math.min(vh - pad - gh, r.top - rh - rgap));
+    react.style.left = hx(rw, r.left, r.width) + "px";
+    react.style.top = top + "px";
+    var bt = top + rh + rgap;
+    clone.style.left = r.left + "px";
+    clone.style.top = bt + "px";
+    clone.style.width = r.width + "px";
+    clone.style.height = bh + "px";
+    if (beside) {
+      menu.style.left = besideX + "px";
+      menu.style.top = Math.max(pad, Math.min(vh - pad - mh, bt)) + "px";
+    } else {
+      menu.style.left = hx(mw, r.left, r.width) + "px";
+      menu.style.top = (bt + bh + gap) + "px";
+    }
+  }
+  function closeMsgSheet() {
+    var s = $("msgSheet");
+    if (s.hidden) return false;
+    s.hidden = true;
+    try { var sel = window.getSelection(); if (sel && $("msgxClone").contains(sel.anchorNode)) sel.removeAllRanges(); } catch (e) {}
+    $("msgxClone").textContent = "";
+    state.sheetFor = null;
+    return true;
+  }
+  function sheetAction(fn) {
+    return function () {
+      var m = state.sheetFor;
+      closeMsgSheet();
+      if (m) fn(m);
+    };
+  }
+  function copyText(t) {
+    t = String(t || "");
+    var fallback = function () {
+      var ta = el("textarea");
+      ta.value = t; ta.setAttribute("readonly", ""); ta.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(ta); ta.select();
+      var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+      toast(ok ? "Copied" : "Couldn't copy", ok ? "" : "error");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { toast("Copied"); }, fallback);
+    else fallback();
+  }
+  // Stars: kept on this server (Google Messages for Web has no star API).
+  function loadStars(convID) {
+    state.stars = {};
+    api("/api/app/stars?conversation_id=" + encodeURIComponent(convID)).then(function (r) {
+      if (state.current !== convID) return;
+      state.stars = (r && r.stars) || {};
+      if (Object.keys(state.stars).length) renderCurrent(false);
+    }).catch(function () {});
+  }
+  function toggleStar(m) {
+    var on = !state.stars[m.MessageID];
+    var convID = m.ConversationID || state.current;
+    if (on) state.stars[m.MessageID] = { conversation_id: convID }; else delete state.stars[m.MessageID];
+    renderCurrent(false);
+    postJSON("/api/app/stars", { message_id: m.MessageID, conversation_id: convID, starred: on }).then(function () {
+      toast(on ? "Starred (on this server)" : "Unstarred");
+    }).catch(function (e) {
+      if (on) delete state.stars[m.MessageID]; else state.stars[m.MessageID] = { conversation_id: convID };
+      renderCurrent(false);
+      toast("Couldn't star: " + e.message, "error");
+    });
+  }
+  // Info
+  function protocolText(m) {
+    var c = state.convs.find(function (x) { return x.ConversationID === (m.ConversationID || state.current); });
+    var p = sourcePlatformOf(c);
+    if (p !== "sms") return p.charAt(0).toUpperCase() + p.slice(1);
+    var meta = state.convMeta || {};
+    var proto = meta.protocol === "RCS" ? "RCS" : meta.protocol === "SMS" ? (msgHasMedia(m) ? "MMS" : "SMS") : "SMS/RCS (unknown)";
+    return proto + (meta.e2ee ? " · end-to-end encrypted" : "");
+  }
+  function showInfo(m) {
+    var dl = $("infoList");
+    dl.textContent = "";
+    var add = function (k, v) { if (!v) return; dl.appendChild(el("dt", "", k)); dl.appendChild(el("dd", "", v)); };
+    var when = new Date(m.TimestampMS);
+    var full = when.toLocaleString([], { weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+    var c = state.convs.find(function (x) { return x.ConversationID === (m.ConversationID || state.current); });
+    add("Type", isVideoMessage(m) ? "Video" : isImageMessage(m) ? "Photo" : msgHasMedia(m) ? (m.MimeType || "Attachment") : "Text");
+    if (m.IsFromMe) {
+      add("From", "You");
+      add("To", c ? convName(c) : "");
+      add("Sent", full);
+      var st = sentStatus(m.Status);
+      add("Status", String(m.status_text || "").trim() || (st && st.text) || String(m.Status || "").replace(/^OUTGOING_/, "").replace(/_/g, " ").toLowerCase() || "unknown");
+    } else {
+      add("From", (m.SenderName || (c ? convName(c) : "")) + (m.SenderNumber && m.SenderNumber !== m.SenderName ? " (" + m.SenderNumber + ")" : ""));
+      add("Received", full);
+      add("Status", /READ|DISPLAYED/i.test(m.Status || "") ? "Read" : "Received");
+    }
+    add("Sent via", protocolText(m));
+    if (state.stars[m.MessageID]) add("Starred", "Yes (on this server)");
+    $("infoView").hidden = false;
+    $("infoClose").focus();
+  }
+  // Forward: pick a conversation, then each message is sent there through
+  // the normal optimistic path (media is re-uploaded from the server copy).
+  function openForward(msgs) {
+    state.fwd = msgs.filter(function (m) { return String(m.Body || "").trim() || msgHasMedia(m); });
+    if (!state.fwd.length) { toast("Nothing to forward"); return; }
+    $("fwdTitle").textContent = state.fwd.length > 1 ? "Forward " + state.fwd.length + " messages to" : "Forward to";
+    $("fwdSearch").value = "";
+    renderFwdList();
+    $("fwdView").hidden = false;
+    if (isDesk() && window.matchMedia && window.matchMedia("(pointer: fine)").matches) $("fwdSearch").focus();
+  }
+  function closeForward() { $("fwdView").hidden = true; state.fwd = null; }
+  function renderFwdList() {
+    var box = $("fwdList"), q = $("fwdSearch").value.trim().toLowerCase();
+    box.textContent = "";
+    var list = state.convs.filter(function (c) { return !q || convName(c).toLowerCase().indexOf(q) >= 0; }).slice(0, 80);
+    if (!list.length) { box.appendChild(el("div", "conv-empty", "No matching conversations")); return; }
+    list.forEach(function (c) {
+      var b = el("button", "conv");
+      b.type = "button";
+      var mid = el("div", "conv-mid");
+      mid.appendChild(el("div", "conv-name", convName(c)));
+      b.appendChild(mid);
+      b.addEventListener("click", function () { doForward(c); });
+      box.appendChild(b);
+    });
+  }
+  function doForward(c) {
+    var msgs = (state.fwd || []).slice(), convID = c.ConversationID;
+    closeForward();
+    if (!msgs.length) return;
+    msgs.sort(function (a, b) { return (a.TimestampMS || 0) - (b.TimestampMS || 0); });
+    var chain = Promise.resolve(), sent = 0;
+    msgs.forEach(function (m) {
+      chain = chain.then(function () {
+        if (msgHasMedia(m)) {
+          return fetch(mediaURL(m), { credentials: "same-origin" }).then(function (r) {
+            if (!r.ok) throw new Error("couldn't load the attachment");
+            return r.blob();
+          }).then(function (blob) {
+            if (blob.size > MAX_MEDIA_BYTES) throw new Error("attachment too large");
+            var type = blob.type || m.MimeType || "application/octet-stream";
+            var ext = (type.split("/")[1] || "bin").replace(/[^a-z0-9].*$/i, "");
+            postLocal(newLocal(convID, "", "", new File([blob], "forwarded." + ext, { type: type }), ""));
+            sent++;
+            var cap = String(m.Body || "").trim();
+            if (cap && isImageMessage(m) && imageCaption(m)) postLocal(newLocal(convID, cap, "", null, ""));
+          });
+        }
+        postLocal(newLocal(convID, String(m.Body).trim(), "", null, ""));
+        sent++;
+      });
+    });
+    chain.then(function () {
+      toast(sent ? "Forwarded to " + convName(c) : "Nothing forwarded");
+    }, function (e) { toast("Forward failed: " + e.message, "error"); })
+      .then(function () { if (state.current === convID) renderCurrent(true); loadConversations(); });
+  }
+  // Select more: tap messages to pick them; copy / forward / delete.
+  function startSelect(m) {
+    state.selecting = true;
+    state.selected = {};
+    if (m) state.selected[m.MessageID] = true;
+    document.body.classList.add("selecting");
+    $("selectBar").hidden = false;
+    syncSelection();
+  }
+  function stopSelect() {
+    if (!state.selecting) return false;
+    state.selecting = false;
+    state.selected = {};
+    document.body.classList.remove("selecting");
+    $("selectBar").hidden = true;
+    syncSelection();
+    return true;
+  }
+  function selectedMsgs() {
+    var by = state.byID || {};
+    return Object.keys(state.selected || {}).map(function (id) { return by[id]; }).filter(Boolean)
+      .sort(function (a, b) { return (a.TimestampMS || 0) - (b.TimestampMS || 0); });
+  }
+  function syncSelection() {
+    var rows = $("messages").querySelectorAll(".msg-row");
+    for (var i = 0; i < rows.length; i++) rows[i].classList.toggle("selected", !!(state.selecting && state.selected[rows[i].dataset.id]));
+    var n = Object.keys(state.selected || {}).length;
+    $("selCount").textContent = n + " selected";
+    ["selCopy", "selForward", "selDelete"].forEach(function (id) { $(id).disabled = !n; });
+  }
+  function initMsgSheet() {
+    var rx = $("msgxReact");
+    SHEET_REACTIONS.forEach(function (e) {
+      var b = el("button", "", e);
+      b.type = "button";
+      b.setAttribute("aria-label", "React " + e);
+      b.addEventListener("click", sheetAction(function (m) { sendReaction(m, e); }));
+      rx.appendChild(b);
+    });
+    var more = el("button");
+    more.type = "button";
+    more.setAttribute("aria-label", "More reactions");
+    more.appendChild(svgIcon(ADD_REACTION_ICON));
+    more.addEventListener("click", sheetAction(function (m) { state.reactFor = m; showEmoji(true); }));
+    rx.appendChild(more);
+    var sheetEl = $("msgSheet");
+    sheetEl.addEventListener("pointerdown", function () { if (Date.now() - (state.sheetOpenedAt || 0) > 60) state.sheetArmed = true; }, true);
+    sheetEl.addEventListener("click", function (e) {
+      // e.detail 0: keyboard activation, always allowed.
+      if (!state.sheetArmed && e.detail !== 0) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+    // The floating copy of the message is selectable (long-press it for
+    // Android's Copy / Select all toolbar); elsewhere no native menu.
+    sheetEl.addEventListener("contextmenu", function (e) { if (!$("msgxClone").contains(e.target)) e.preventDefault(); }, true);
+    $("msgxBackdrop").addEventListener("click", closeMsgSheet);
+    $("msgxBackdrop").addEventListener("contextmenu", function () {
+      if (state.sheetArmed && Date.now() - (state.sheetOpenedAt || 0) > 800) closeMsgSheet();
+    });
+    $("msgxReply").addEventListener("click", sheetAction(setReplyTo));
+    $("msgxForward").addEventListener("click", sheetAction(function (m) { openForward([m]); }));
+    $("msgxCopyUrl").addEventListener("click", sheetAction(function (m) { copyText(firstURL(m.Body || "")); }));
+    $("msgxCopy").addEventListener("click", sheetAction(function (m) { copyText(String(m.Body || "").trim()); }));
+    $("msgxStar").addEventListener("click", sheetAction(toggleStar));
+    $("msgxDelete").addEventListener("click", sheetAction(showConfirm));
+    $("msgxSelect").addEventListener("click", sheetAction(startSelect));
+    $("msgxInfo").addEventListener("click", sheetAction(showInfo));
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && sheetOpen()) { e.preventDefault(); closeMsgSheet(); }
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && sheetOpen()) {
+        var items = Array.prototype.filter.call($("msgxMenu").querySelectorAll(".msgx-item"), function (b) { return !b.hidden; });
+        var i = items.indexOf(document.activeElement);
+        i = e.key === "ArrowDown" ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+        if (items[i]) { e.preventDefault(); items[i].focus(); }
+      }
+    });
+    window.addEventListener("resize", closeMsgSheet);
+    $("infoClose").addEventListener("click", function () { $("infoView").hidden = true; });
+    $("infoView").addEventListener("click", function (e) { if (e.target === $("infoView")) $("infoView").hidden = true; });
+    $("fwdClose").addEventListener("click", closeForward);
+    $("fwdView").addEventListener("click", function (e) { if (e.target === $("fwdView")) closeForward(); });
+    $("fwdSearch").addEventListener("input", renderFwdList);
+    $("selCancel").addEventListener("click", stopSelect);
+    $("selCopy").addEventListener("click", function () {
+      var list = selectedMsgs(), multi = list.length > 1;
+      var txt = list.map(function (m) {
+        var b = String(m.Body || "").trim() || (msgHasMedia(m) ? "[attachment]" : "");
+        return multi ? "[" + clockTime(m.TimestampMS) + "] " + msgAuthor(m) + ": " + b : b;
+      }).join("\n");
+      copyText(txt);
+      stopSelect();
+    });
+    $("selForward").addEventListener("click", function () { var l = selectedMsgs(); stopSelect(); openForward(l); });
+    $("selDelete").addEventListener("click", function () {
+      var l = selectedMsgs().filter(function (m) { return !m.local && !isSendPlaceholder(m); });
+      if (l.length) showConfirm(l);
+    });
+    // In select mode a tap toggles the message instead of its normal action.
+    $("messages").addEventListener("click", function (e) {
+      if (!state.selecting) return;
+      var row = e.target.closest(".msg-row");
+      if (!row || !row.dataset.id) return;
+      e.preventDefault(); e.stopPropagation();
+      var id = row.dataset.id;
+      if (state.selected[id]) delete state.selected[id]; else state.selected[id] = true;
+      syncSelection();
+    }, true);
+  }
+
+
+  // ---------- swipe gestures (non-car, touch) ----------
+  // Left-to-right on a bubble: drag it right, a reply arrow appears; past
+  // the threshold, release starts a quoted reply. Right-to-left anywhere:
+  // every row shifts left and shows its time (+ lock when the chat is
+  // end-to-end encrypted). Both spring back. The swipe only locks after
+  // clear horizontal movement (vertical scrolling stays native via
+  // touch-action: pan-y), never starts at the screen edges (Android back
+  // gesture), and any movement cancels the long-press.
+  var SWIPE_LOCK = 18, SWIPE_EDGE = 28, REPLY_AT = 96, REPLY_MAX = 170, TIME_MAX = 200;
+  var swipe = { active: false };
+  function swipeReset(animate) {
+    var s = swipe, box = $("messages");
+    swipe = { active: false };
+    if (s.row) {
+      var kids = Array.prototype.slice.call(s.row.children);
+      kids.forEach(function (k) { if (k !== s.icon) { k.style.transition = animate ? "transform .22s ease" : ""; k.style.transform = ""; } });
+      if (s.icon) { s.icon.style.transition = "opacity .15s"; s.icon.style.opacity = "0"; var ic = s.icon; setTimeout(function () { ic.remove(); }, 220); }
+      setTimeout(function () { kids.forEach(function (k) { k.style.transition = ""; }); }, 240);
+    }
+    if (s.mode === "time") {
+      box.classList.add("swipe-spring");
+      box.style.setProperty("--swipe-x", "0px");
+      setTimeout(function () { box.classList.remove("swipe-time", "swipe-spring"); }, 240);
+    }
+  }
+  function timeLabel(m) {
+    var lab = el("span", "swipe-time-label", clockTime(m.TimestampMS));
+    if (msgEncrypted(m)) lab.appendChild(lockIcon());
+    return lab;
+  }
+  function lockIcon() {
+    var lock = svgIcon("M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z");
+    lock.setAttribute("aria-label", "End-to-end encrypted");
+    return lock;
+  }
+  // Per-message lock: Google's per-message encryption flag (meta.e2ee_ids,
+  // see client.MessageEncryption). Messages newer than the last meta load
+  // follow the conversation until the next refresh; with only the
+  // conversation-level "now encrypted" notice to go on, all messages do.
+  function msgEncrypted(m) {
+    var meta = state.convMeta;
+    if (!meta || /^(tm-|tmp_)/.test(String(m.MessageID || "")) || m.local) return false;
+    if (!state.encIDs || state.encIDsFor !== meta) {
+      state.encIDs = {}; state.encIDsFor = meta;
+      (meta.e2ee_ids || []).forEach(function (id) { state.encIDs[id] = 1; });
+    }
+    if (state.encIDs[m.MessageID]) return true;
+    if (meta.e2ee_source === "messages") return !!meta.e2ee && (m.TimestampMS || 0) > (meta.loadedAt || 0) - 5000;
+    return !!meta.e2ee;
+  }
+  function refreshLocks() {
+    var box = $("messages");
+    (state.lastMsgs || []).forEach(function (m) {
+      var row = box.querySelector('.msg-row[data-id="' + String(m.MessageID).replace(/["\\]/g, "") + '"]');
+      var lab = row && row.querySelector(".swipe-time-label");
+      if (!lab) return;
+      var has = !!lab.querySelector("svg"), want = msgEncrypted(m);
+      if (want && !has) lab.appendChild(lockIcon());
+      else if (!want && has) lab.querySelector("svg").remove();
+    });
+  }
+  // Re-fetch the meta (locks, mute) without blanking it first.
+  var metaRefreshT = null;
+  function refreshConvMeta() {
+    clearTimeout(metaRefreshT);
+    metaRefreshT = setTimeout(function () {
+      var id = state.current;
+      if (!id) return;
+      fetch("/api/app/conversations/meta?conversation_id=" + encodeURIComponent(id), { credentials: "same-origin" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (m) { if (m && state.current === id) setConvMeta(m); })
+        .catch(function () {});
+    }, 1500);
+  }
+  function initSwipe() {
+    var box = $("messages");
+    box.addEventListener("pointerdown", function (e) {
+      if (!isDesk() || e.pointerType === "mouse" || state.selecting || sheetOpen() || !e.isPrimary) return;
+      var vw = window.innerWidth;
+      if (e.clientX < SWIPE_EDGE || e.clientX > vw - SWIPE_EDGE) return; // Android back gesture zone
+      var row = e.target.closest(".msg-row");
+      swipe = { active: true, x0: e.clientX, y0: e.clientY, row: null, rowAt: row, mode: "", id: e.pointerId };
+    });
+    box.addEventListener("pointermove", function (e) {
+      var s = swipe;
+      if (!s.active || e.pointerId !== s.id) return;
+      var k = (function () { var vp = viewportProbe(), pr = vp.getBoundingClientRect(); return pr.width ? vp.offsetWidth / pr.width : 1; })();
+      var dx = (e.clientX - s.x0) * k, dy = (e.clientY - s.y0) * k;
+      if (!s.mode) {
+        if (Math.abs(dy) > SWIPE_LOCK && Math.abs(dy) > Math.abs(dx)) { swipe = { active: false }; return; } // vertical scroll
+        if (Math.abs(dx) < SWIPE_LOCK || Math.abs(dx) < 1.6 * Math.abs(dy)) return;
+        if (dx > 0) {
+          var row = s.rowAt, m = row && state.byID && state.byID[row.dataset.id];
+          var ro = document.body.classList.contains("readonly-thread") || !!state.folder;
+          if (!row || !m || ro || m.local || isSendPlaceholder(m)) { swipe = { active: false }; return; }
+          s.mode = "reply"; s.row = row; s.msg = m;
+          s.icon = el("span", "swipe-reply-icon");
+          s.icon.appendChild(svgIcon(REPLY_ICON));
+          row.appendChild(s.icon);
+        } else {
+          s.mode = "time";
+          box.classList.add("swipe-time");
+        }
+        s.x0 = e.clientX; dx = 0; // start from the lock point: no jump
+      }
+      if (s.mode === "reply") {
+        var d = Math.max(0, Math.min(REPLY_MAX, dx < REPLY_AT ? dx : REPLY_AT + (dx - REPLY_AT) * 0.35));
+        Array.prototype.forEach.call(s.row.children, function (c) { if (c !== s.icon) c.style.transform = "translateX(" + d + "px)"; });
+        var p = Math.min(1, d / REPLY_AT);
+        s.icon.style.opacity = String(p);
+        s.icon.style.transform = "translateY(-50%) scale(" + (0.6 + 0.4 * p) + ")";
+        var armed = d >= REPLY_AT;
+        if (armed && !s.armed && navigator.vibrate) { try { navigator.vibrate(10); } catch (er) {} }
+        s.armed = armed;
+        s.icon.classList.toggle("armed", armed);
+      } else if (s.mode === "time") {
+        var t = Math.max(0, Math.min(TIME_MAX, -dx < TIME_MAX * 0.8 ? -dx : TIME_MAX * 0.8 + (-dx - TIME_MAX * 0.8) * 0.3));
+        box.style.setProperty("--swipe-x", t + "px");
+      }
+      if (e.cancelable) e.preventDefault();
+    });
+    var end = function (e) {
+      var s = swipe;
+      if (!s.active || (e && e.pointerId !== s.id)) return;
+      if (s.mode) {
+        // Swallow the click that ends a swipe (photo viewer, links).
+        var swallow = function (ev) { ev.preventDefault(); ev.stopPropagation(); };
+        box.addEventListener("click", swallow, true);
+        setTimeout(function () { box.removeEventListener("click", swallow, true); }, 0);
+      }
+      var reply = s.mode === "reply" && s.armed && e && e.type === "pointerup" ? s.msg : null;
+      swipeReset(true);
+      if (reply) setReplyTo(reply);
+    };
+    box.addEventListener("pointerup", end);
+    box.addEventListener("pointercancel", end);
+  }
+
+
+  // ---------- floating composer (non-car) ----------
+  // Measures everything stacked below the message list (reply preview,
+  // dictation bar, emoji panel, quick replies, composer) into --dock-h, so
+  // the list can run underneath them (see app.css) and still scroll its
+  // last message clear of the composer. Keeps the list pinned to the
+  // bottom when the dock grows (reply preview, keyboard).
+  function initDock() {
+    var tv = $("threadView"), box = $("messages"), last = -1;
+    var measure = function () {
+      var h = 0;
+      if (isDesk()) {
+        for (var n = box.nextElementSibling; n; n = n.nextElementSibling) {
+          if (n.hidden || n.offsetParent === null) continue;
+          var cs = getComputedStyle(n);
+          h += n.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+        }
+      }
+      if (h === last) return;
+      // "At the bottom" as of the last scroll: when the dock grows (e.g. the
+      // attach sheet opens) the list has already shrunk by now.
+      var atBottom = wasBottom || box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+      last = h;
+      tv.style.setProperty("--dock-h", h + "px");
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    };
+    var wasBottom = true;
+    box.addEventListener("scroll", function () { wasBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40; }, { passive: true });
+    if (window.ResizeObserver) {
+      var ro = new ResizeObserver(measure);
+      for (var n = box.nextElementSibling; n; n = n.nextElementSibling) ro.observe(n);
+      ro.observe(tv);
+    }
+    new MutationObserver(measure).observe(tv, { attributes: true, subtree: true, attributeFilter: ["hidden"] });
+    window.addEventListener("resize", measure);
+    state.measureDock = measure;
+    measure();
+  }
+  // Layout pass after opening a conversation (a normal tap and the
+  // auto-reload's ?c= reopen alike): now, next frame and twice more while a
+  // freshly loaded page settles (viewport / insets may still change).
+  function relayoutSoon() {
+    if (PREFS.settle) PREFS.settle();
+    if (state.measureDock) {
+      state.measureDock();
+      requestAnimationFrame(function () { state.measureDock(); });
+      setTimeout(function () { state.measureDock(); }, 300);
+      setTimeout(function () { state.measureDock(); }, 1200);
+    }
+  }
+
   // ---------- pasted / dropped attachments ----------
   // Images, stickers and GIFs from the keyboard (Gboard commitContent, which
   // Chrome only delivers to contenteditable: see composer.js), the clipboard
@@ -2030,10 +3184,13 @@
   // zoom.js re-applies Auto on resize; refresh the controls and drop popovers
   // placed for the old size.
   PREFS.onchange = function () { renderZoom(); closeMsgMenu(); closeConvMenu(); };
+  PREFS.onlayout = function () { if (state.measureDock) state.measureDock(); };
   // Per-conversation meta: protocol (RCS/SMS) for the composer placeholder,
   // E2EE lock badge on send, and the header bell (mute) state.
   function setConvMeta(m) {
     m = m || {};
+    m.loadedAt = Date.now();
+    state.convMeta = m;
     var proto = m.protocol || "";
     $("input").placeholder = proto === "RCS" ? "RCS message" : proto === "SMS" ? "Text message" : "Message";
     $("input").setAttribute("aria-label", $("input").placeholder);
@@ -2041,6 +3198,7 @@
     $("sendLock").hidden = !m.e2ee;
     $("sendBtn").classList.toggle("e2ee", !!m.e2ee);
     setMuteUI(!!m.muted);
+    refreshLocks();
   }
   function setMuteUI(muted) {
     var b = $("muteBtn");
@@ -2083,6 +3241,12 @@
     var snd = s.sound !== false, ss = $("setSound");
     ss.setAttribute("aria-checked", snd ? "true" : "false");
     ss.classList.toggle("on", snd);
+    var qr = quickOn(s), qs = $("setQuickReplies");
+    qs.setAttribute("aria-checked", qr ? "true" : "false");
+    qs.classList.toggle("on", qr);
+    $("quickRepliesEditRow").hidden = !qr;
+    if (document.activeElement !== $("quickRepliesEdit")) $("quickRepliesEdit").value = quickList(s).join("\n");
+    renderQuickReplies();
     var showVo = s.showVoice !== false, vs = $("setVoice");
     $("micBtn").hidden = !showVo;
     vs.setAttribute("aria-checked", showVo ? "true" : "false");
@@ -2105,7 +3269,7 @@
     ls.setAttribute("aria-checked", lt ? "true" : "false");
     ls.classList.toggle("on", lt);
     $("liveTypingDesc").textContent = lt
-      ? "Words appear in the box as you speak (server transcription), then get a final clean-up when you tap Done"
+      ? "Words appear in the box as you speak (browser speech, or the server's live passes), then the server's transcript replaces them when you tap Done"
       : "Off: the text appears after you tap Done";
   }
   // Car Mode (per device, default on): off switches to the denser
@@ -2304,6 +3468,7 @@
     var p = $("emojiPanel");
     if (open === emojiOpen()) return;
     if (open) {
+      showPlusSheet(false);
       rememberSelection();
       renderEmojiTabs();
       $("emojiSearch").value = "";
@@ -2311,7 +3476,7 @@
       renderEmojiGrid();
       $("emojiGrid").scrollTop = 0;
       markEmojiTab();
-    } else { p.hidden = true; scheduleUnfloat(); }
+    } else { p.hidden = true; state.reactFor = null; scheduleUnfloat(); }
     $("emojiBtn").classList.toggle("on", open);
     $("emojiBtn").setAttribute("aria-expanded", open ? "true" : "false");
     document.body.classList.toggle("emoji-open", open);
@@ -2324,6 +3489,14 @@
     $("emojiGrid").addEventListener("click", function (e) {
       var b = e.target.closest(".emoji-cell");
       if (!b) return;
+      if (state.reactFor) {
+        var rm = state.reactFor;
+        state.reactFor = null;
+        pushEmojiRecent(b.dataset.e);
+        showEmoji(false);
+        sendReaction(rm, b.dataset.e);
+        return;
+      }
       insertAtCursor(b.dataset.e);
       pushEmojiRecent(b.dataset.e);
     });
@@ -2529,6 +3702,7 @@
     var m = sttMode();
     if (m === "server") return "server (always the server's transcription)";
     if (m === "builtin") return "builtin (browser speech only)";
+    if (state.config.stt_prefer_server) return "auto (" + serverLabel() + " first, browser speech as backup)";
     return "auto (browser speech first, server as backup)";
   }
   function agoText(at) {
@@ -2546,9 +3720,10 @@
     }
     set("sttInfoModel", c.stt_model || "-");
     set("sttInfoMode", mic.configOK ? sttModeText() : "-");
-    set("sttInfoLive", !c.stt_live ? "not available on the server"
-      : !liveTypingOn() ? "off on this device"
-      : "on (" + serverLabel() + ", while dictating)");
+    set("sttInfoLive", !liveTypingOn() ? "off on this device"
+      : speechLiveOK() && serverSTTEnabled() ? "on (" + builtinLabel() + " while you speak, " + serverLabel() + " for the final text)"
+      : !c.stt_live ? "not available on the server"
+      : "on (" + serverLabel() + ", every " + ((c.stt_live_step_ms || 700) / 1000) + " s while dictating)");
     var b;
     var broken = builtinBroken();
     if (!speechCtor()) b = "not available in this browser";
@@ -2615,6 +3790,10 @@
     if (!st.ok && (st.reason === "insecure" || st.reason === "denied")) { toast(st.detail, "error"); return; }
     var mode = sttMode();
     if (mode === "server") { startServer(null); return; }
+    // Auto with a cloud Whisper (Groq): server first; after a failed
+    // transcription the browser's speech is used for the next 10 minutes.
+    if (mode === "auto" && state.config.stt_prefer_server && serverSTTEnabled() && micSupported() &&
+      !(state.serverSTTFailedAt && Date.now() - state.serverSTTFailedAt < 600000)) { startServer(null); return; }
     if (skipBuiltin()) { startServer(null, "built-in skipped: " + builtinBroken().reason); return; }
     if (!speechCtor()) {
       if (mode === "builtin") { toast("Speech isn't available on this browser (no built-in speech recognition). Use the keyboard's mic instead.", "error"); return; }
@@ -2788,7 +3967,12 @@
       rec.onerror = function (e) { toast("Recording error: " + ((e.error && e.error.name) || "unknown"), "error"); cancelRecording(); };
       rec.start(250);
       setMicState("recording");
-      if (live) startLive(r, live);
+      // Live words: the browser's own speech recognition when it has one
+      // (non-car; free, instant), alongside the recording that the server
+      // transcribes at the end; otherwise (Car Mode: no browser speech) the
+      // server's live passes (Groq, throttled).
+      if (speechLiveOK()) startSpeechLive(r, live);
+      else if (live) startLive(r, live);
       showEngine(serverLabel(), engineNote(r));
       startTimer(r);
     }).catch(function (e) {
@@ -2807,6 +3991,7 @@
   function releaseMic(r) {
     clearInterval(r.timer);
     if (r.live) stopLive(r.live);
+    if (r.speech) stopSpeechLive(r.speech);
     try { r.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
   }
   function stopRecording() {
@@ -2839,6 +4024,7 @@
     releaseMic(r);
     try { if (r.recorder.state !== "inactive") r.recorder.stop(); } catch (e) {}
     if (r.live && r.live.shown) { $("input").value = r.live.original; autosize(); }
+    else if (r.speech && r.speech.shown) { $("input").value = r.speech.original; autosize(); }
     setMicState(null);
   }
   function finishRecording(r) {
@@ -2847,7 +4033,16 @@
     if (r.cancelled) return;
     var type = (r.recorder.mimeType || (r.chunks[0] && r.chunks[0].type) || "audio/webm");
     var blob = new Blob(r.chunks, { type: type });
-    var L = r.live && r.live.shown ? r.live : null; // live text is in the box
+    var L = r.live && r.live.shown ? r.live : r.speech && r.speech.shown ? r.speech : null; // live text is in the box
+    if (r.speech && r.speech.shown && r.speech.meterOK && r.speech.peak < 0.0005 && r.speech.agree.text()) {
+      // The recording came out silent (the phone gave the mic to the browser's
+      // speech recognizer): keep its text instead of transcribing silence.
+      placeLiveText(r.speech, r.speech.agree.text());
+      sttDbg.latency = { finalMs: null, audioSecs: (Date.now() - r.started) / 1000, note: "recording silent; kept " + builtinLabel() + " text" };
+      setMicState(null); renderSttInfo();
+      toast("Check the text, then tap Send");
+      return;
+    }
     if (Date.now() - r.started < 400 || blob.size < 200) {
       if (L) { $("input").value = L.original; autosize(); }
       setMicState(null); toast("That was too short. Hold on a moment longer."); return;
@@ -2885,7 +4080,9 @@
         return;
       }
       if (L) placeLiveText(L, "");
-      toast("Transcription failed: " + e.message, "error");
+      var fb = sttMode() === "auto" && state.config.stt_prefer_server && speechCtor();
+      if (fb) state.serverSTTFailedAt = Date.now();
+      toast("Transcription failed: " + e.message + (fb ? ". Tap the mic again to use " + builtinLabel() + "." : ""), "error");
     }).finally(function () {
       state.transcribing = false;
       var act = state.afterRec;
@@ -3028,7 +4225,9 @@
   }
   function liveTick(r, L) {
     if (L.dead || L.inflight || state.rec !== r) return;
-    if (L.total - L.sentAt < LIVE_STEP_SAMPLES) return;
+    if (L.holdUntil && Date.now() < L.holdUntil) return;
+    var step = state.config.stt_live_step_ms ? state.config.stt_live_step_ms / 1000 * 16000 : LIVE_STEP_SAMPLES;
+    if (L.total - L.sentAt < step) return;
     if (L.total - L.winStart > L.maxSamples) {
       // Passes are falling behind and no cut point came back: keep what's
       // shown and restart the window near the newest audio.
@@ -3050,7 +4249,8 @@
       L.inflight = false;
       if (L.dead || seq <= L.applied || winStart !== L.winStart) return; // stale
       if (!x.ok) {
-        if (x.status === 409 || x.status === 429) return; // stale / busy: try again next tick
+        if (x.status === 429 && x.body && x.body.retry_after_ms) L.holdUntil = Date.now() + Math.min(60000, x.body.retry_after_ms);
+        if (x.status === 409 || x.status === 429) return; // stale / busy / rate limit: try again later
         if (x.status === 401 || x.status === 404 || x.status === 503 || x.status === 400 || x.status === 413 || x.status === 415 || ++L.fails >= 3) {
           liveFailed(L, (x.body && x.body.error) || "HTTP " + x.status);
         }
@@ -3083,6 +4283,98 @@
   }
   // Puts the final text where the live text was (keeping what was already
   // in the box before/after it) and leaves the cursor after it.
+  // --- live typing with the browser's speech recognition ---
+  // Runs next to MediaRecorder: interim words go into the box as you speak;
+  // on Done the server's transcript of the recording replaces them (kept if
+  // the server fails). If the recognizer can't get the mic (some phones give
+  // it to only one of the two), the server's live passes take over when
+  // available. A level meter on the recorded stream notices a silent
+  // recording (the recognizer won the mic) so silence isn't transcribed.
+  function speechLiveOK() {
+    return !!(speechCtor() && liveTypingOn() && !builtinBroken() && isDesk());
+  }
+  function startSpeechLive(r, live) {
+    var t = $("input"), cur = t.value, sel = composeSelection();
+    var before = cur.slice(0, sel.start);
+    var S = { kind: "speech", original: cur, before: before + (before && !/\s$/.test(before) ? " " : ""), after: cur.slice(sel.end),
+      committed: "", finals: "", interim: "", shown: false, dead: false, restarts: 0, heard: false, peak: 0, meterOK: false, sr: null, meter: null };
+    S.agree = { text: function () { return (S.committed + S.finals + S.interim).replace(/\s+/g, " ").trim(); } };
+    r.speech = S;
+    var Ctor = speechCtor();
+    function render() {
+      var tx = S.agree.text();
+      if (!tx && !S.shown) return;
+      t.value = S.before + tx + (tx && S.after && !/^\s/.test(S.after) ? " " : "") + S.after;
+      S.shown = true;
+      autosize(); t.scrollTop = t.scrollHeight;
+    }
+    function fail(err) {
+      S.failed = err;
+      stopSpeechLive(S);
+      // Fall back to the server's live passes (Groq) if nothing was heard yet.
+      if (!S.heard && live && state.rec === r && !r.live) { startLive(r, live); live = null; }
+    }
+    function newRec() {
+      var sr = new Ctor();
+      sr.lang = speechLang(); sr.continuous = true; sr.interimResults = true; sr.maxAlternatives = 1;
+      sr.onresult = function (e) {
+        if (S.dead) return;
+        var finals = "", interim = "";
+        for (var i = 0; i < e.results.length; i++) {
+          var res = e.results[i], tr = res[0] ? res[0].transcript : "";
+          if (res.isFinal) finals += tr + " "; else interim += tr + " ";
+        }
+        S.finals = finals; S.interim = interim; S.restarts = 0;
+        if (S.agree.text()) S.heard = true;
+        render();
+      };
+      sr.onerror = function (e) {
+        var err = (e && e.error) || "unknown";
+        if (S.dead || err === "aborted" || err === "no-speech") return;
+        S.fatal = err;
+      };
+      sr.onend = function () {
+        if (S.dead) return;
+        S.committed += S.finals + S.interim; S.finals = ""; S.interim = "";
+        if (S.fatal) { fail(S.fatal); return; }
+        if (++S.restarts > 5) { fail("stopped"); return; }
+        try { S.sr = newRec(); S.sr.start(); } catch (x) { fail("restart failed"); }
+      };
+      return sr;
+    }
+    try { S.sr = newRec(); S.sr.start(); } catch (e) { fail("start failed"); return; }
+    showEngine(builtinLabel() + " (live) + " + serverLabel(), engineNote(r));
+    // Level meter on the recorded stream (uses the AudioContext made during
+    // the tap, so it isn't left suspended).
+    var ctx = live && live.ctx;
+    if (ctx) {
+      try {
+        var src = ctx.createMediaStreamSource(r.stream), an = ctx.createAnalyser();
+        an.fftSize = 2048; src.connect(an);
+        var buf = new Float32Array(an.fftSize);
+        S.meter = { src: src, an: an, timer: setInterval(function () {
+          if (ctx.state !== "running") return;
+          an.getFloatTimeDomainData(buf);
+          var sum = 0;
+          for (var i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          var rms = Math.sqrt(sum / buf.length);
+          S.meterOK = true;
+          if (rms > S.peak) S.peak = rms;
+        }, 120) };
+      } catch (e) { S.meter = null; }
+    }
+    // The tap's AudioContext stays for the meter / a Groq fallback; closed in stopSpeechLive.
+    S.ctxOwner = live;
+  }
+  function stopSpeechLive(S) {
+    if (S.dead) return;
+    S.dead = true;
+    try { S.sr && S.sr.abort(); } catch (e) {}
+    if (S.meter) { clearInterval(S.meter.timer); try { S.meter.src.disconnect(); } catch (e) {} }
+    var r = state.rec;
+    // Close the tap's AudioContext unless the server live fallback took it.
+    if (S.ctxOwner && !(r && r.live === S.ctxOwner)) closeLiveAudio(S.ctxOwner);
+  }
   function placeLiveText(L, text) {
     var t = $("input");
     if (!text) { t.value = L.original; autosize(); return; }
@@ -3234,10 +4526,41 @@
       var reconnect = sse.openedAt > 0;
       sse.openedAt = Date.now(); fetchTyping();
       // Events sent while the stream was down are lost: catch up.
-      if (reconnect) { loadConversations(); if (state.current) loadMessages(false, true); }
+      if (reconnect) { loadConversations(); if (state.current) loadMessages(false, true); checkVersion(true); }
     };
     es.onerror = function () { /* browser retries automatically */ };
   }
+  // ---------- auto refresh after a deploy ----------
+  // The page carries the build version it was served with (window.TM_VERSION,
+  // from <meta name="app-version">). Ask the server for the running one on
+  // load, on resume, on stream reconnect and every few minutes; when it
+  // differs, update the service worker and reload, but only while nothing is
+  // in progress (empty composer, no dictation, no sheet or menu open). The
+  // open conversation is reopened after the reload.
+  var upd = { want: false, last: 0, reloading: false };
+  function checkVersion(force) {
+    if (!window.TM_VERSION || upd.want || (!force && Date.now() - upd.last < 20000)) return;
+    upd.last = Date.now();
+    fetch("/api/app/version", { credentials: "same-origin", cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (j && j.version && j.version !== window.TM_VERSION) { upd.want = true; maybeReload(); }
+    }).catch(function () {});
+  }
+  function busyForReload() {
+    var t = $("input");
+    return !!state.rec || !!state.transcribing || !!(t && t.value && t.value.trim()) || state.pending.length > 0 ||
+      sheetOpen() || !!state.selecting || !!state.menuFor || !!state.convMenuFor || emojiOpen() || !!ct ||
+      ["imageViewer", "trashView", "detailsView", "confirmView", "signOutView", "settingsView", "fwdView", "infoView", "newChatView", "pairView", "appMenu"].some(function (id) { var e = $(id); return e && !e.hidden; });
+  }
+  function maybeReload() {
+    if (!upd.want || upd.reloading || busyForReload()) return;
+    upd.reloading = true;
+    var url = location.pathname + (state.current && !state.folder ? "?c=" + encodeURIComponent(state.current) : "");
+    var go = function () { location.replace(url); };
+    var p = window.TMPWA && window.TMPWA.updateSW ? window.TMPWA.updateSW() : Promise.resolve();
+    Promise.race([p, new Promise(function (r) { setTimeout(r, 3000); })]).then(go, go);
+  }
+  setInterval(function () { if (upd.want) maybeReload(); }, 3000);
+  setInterval(function () { checkVersion(true); }, 4 * 60 * 1000);
   // Live = connected, and an event arrived since this connection opened and recently.
   function streamLive() {
     // (the server sends a heartbeat every 25 s, so 60 s of silence = stalled)
@@ -3282,6 +4605,7 @@
     return p;
   }
   function openMsgMenu(btn, m) {
+    if (isDesk()) { closeMsgMenu(); openMsgSheet(btn, m); return; }
     closeMsgMenu();
     closeConvMenu();
     state.menuFor = { msg: m, btn: btn };
@@ -3313,7 +4637,10 @@
   }
   function showConfirm(m) {
     state.confirmFor = m;
-    var c = state.convs.find(function (x) { return x.ConversationID === m.ConversationID; }) || {};
+    var many = Array.isArray(m) && m.length > 1;
+    if (Array.isArray(m)) m = m[0];
+    $("confirmTitle").textContent = many ? "Delete " + state.confirmFor.length + " messages?" : "Delete this message?";
+    var c = state.convs.find(function (x) { return x.ConversationID === (m.ConversationID || state.current); }) || {};
     var google = sourcePlatformOf(c) === "sms";
     $("confirmDesc").textContent = google
       ? "It's removed from your phone and Messages on the web. The other person still has it."
@@ -3332,11 +4659,20 @@
     if (!m) return;
     var ok = $("confirmOk");
     ok.disabled = true; ok.textContent = "Deleting…";
-    postJSON("/api/app/messages/delete", { message_id: m.MessageID }).then(function (res) {
+    var list = Array.isArray(m) ? m : [m], res = null, chain = Promise.resolve();
+    list.forEach(function (x) {
+      chain = chain.then(function () {
+        return postJSON("/api/app/messages/delete", { message_id: x.MessageID }).then(function (r) {
+          res = r;
+          var rows = $("messages").querySelectorAll(".msg-row");
+          for (var i = 0; i < rows.length; i++) if (rows[i].dataset.id === String(x.MessageID)) rows[i].remove();
+        });
+      });
+    });
+    chain.then(function () {
       hideConfirm();
-      var rows = $("messages").querySelectorAll(".msg-row");
-      for (var i = 0; i < rows.length; i++) if (rows[i].dataset.id === String(m.MessageID)) rows[i].remove();
-      toast(res && res.scope === "local" ? "Deleted from this server" : "Deleted");
+      stopSelect();
+      toast((res && res.scope === "local" ? "Deleted from this server" : "Deleted") + (list.length > 1 ? " (" + list.length + ")" : ""));
       loadMessages(false); loadConversations();
     }).catch(function (e) {
       hideConfirm();
@@ -3665,7 +5001,7 @@
   function layerOpen() {
     return !$("imageViewer").hidden || !$("trashView").hidden || !$("detailsView").hidden ||
       emojiOpen() || !$("confirmView").hidden || !$("signOutView").hidden || !$("settingsView").hidden ||
-      !!state.menuFor || !!state.convMenuFor || !$("newChatView").hidden || !!ct || !$("pairView").hidden ||
+      !!state.menuFor || !!state.convMenuFor || !$("appMenu").hidden || sheetOpen() || !$("fwdView").hidden || !$("infoView").hidden || !!state.selecting || !$("newChatView").hidden || !!ct || !$("pairView").hidden ||
       !!state.rec || !!state.current || !!state.folder;
   }
   // Close the topmost layer; false when nothing was open.
@@ -3677,12 +5013,17 @@
     if (!$("confirmView").hidden) { if (!$("confirmOk").disabled) hideConfirm(); return true; }
     if (!$("signOutView").hidden) { $("signOutView").hidden = true; return true; }
     if (!$("settingsView").hidden) { showSettings(false); return true; }
+    if (!$("infoView").hidden) { $("infoView").hidden = true; return true; }
+    if (!$("fwdView").hidden) { closeForward(); return true; }
+    if (closeMsgSheet()) return true;
     if (state.menuFor) { closeMsgMenu(); return true; }
+    if (closeAppMenu()) return true;
     if (state.convMenuFor) { closeConvMenu(); return true; }
     if (!$("newChatView").hidden) { closeNewChat(); return true; }
     if (ct) { ctBack(); return true; }
     if (!$("pairView").hidden) { closePair(); return true; }
     if (state.rec) { cancelRecording(); return true; }
+    if (stopSelect()) return true;
     if (state.current) { closeThread(); renderConversations(); return true; }
     if (state.folder) { exitFolder(); return true; }
     return false;
@@ -3721,6 +5062,13 @@
   function init() {
     window.TMTextbox($("input"), { onImage: addPendingFromURL });
     initPaste();
+    initQuickReplies();
+    initReactions();
+    initSearch();
+    initHealth();
+    initMsgSheet();
+    initSwipe();
+    initDock();
     hydrateIcons();
     $("conn").addEventListener("click", function () { toast(connStatusText()); });
     $("compose").addEventListener("submit", sendMessage);
@@ -3732,6 +5080,7 @@
     $("micBtn").addEventListener("click", onMicTap);
     $("attachBtn").addEventListener("click", onAttachTap);
     $("fileInput").addEventListener("change", onFilePicked);
+    initPlusSheet();
     $("settingsBtn").addEventListener("click", function () { showSettings(true); });
     $("settingsClose").addEventListener("click", function () { showSettings(false); });
     $("settingsView").addEventListener("click", function (e) { if (e.target === $("settingsView")) showSettings(false); });
@@ -3832,6 +5181,49 @@
       var c = state.convs.find(function (x) { return x.ConversationID === id; });
       openConvMenu(c, this.getBoundingClientRect(), this);
     });
+    $("convMenuMute").addEventListener("click", function () { closeConvMenu(); toggleMute(); });
+    $("convMenuSettings").addEventListener("click", function () { closeConvMenu(); showSettings(true); });
+    // Non-car conversation list: Settings sits under the top bar's ⋮.
+    // The app menu opens from ⋮ (Car Mode) or the profile photo (non-car).
+    ["appMenuBtn", "profileBtn"].forEach(function (id) {
+      $(id).addEventListener("click", function () {
+        var m = $("appMenu");
+        if (!m.hidden) { closeAppMenu(); return; }
+        closeConvMenu(); closeMsgMenu();
+        m.hidden = false; this.setAttribute("aria-expanded", "true");
+        placePopover(m, this.getBoundingClientRect());
+      });
+    });
+    // Non-car list: the search box hides behind the magnifier.
+    $("searchBtn").addEventListener("click", function () {
+      if (document.body.classList.contains("search-open") && !$("convSearch").value) { document.body.classList.remove("search-open"); return; }
+      document.body.classList.add("search-open");
+      $("convSearch").focus();
+    });
+    $("convSearch").addEventListener("blur", function () {
+      setTimeout(function () { if (!$("convSearch").value && document.activeElement !== $("convSearch")) document.body.classList.remove("search-open"); }, 150);
+    });
+    // Start chat FAB: shrinks to its icon while scrolling down, grows back
+    // on scrolling up or when scrolling stops; a scroll-to-top arrow shows
+    // once the list is scrolled.
+    (function () {
+      var list = document.querySelector(".convlist"), fab = $("fabStart"), top = $("scrollTopBtn"), lastY = 0, idle = null;
+      list.addEventListener("scroll", function () {
+        var y = list.scrollTop;
+        if (y > lastY + 3) fab.classList.add("shrunk"); else if (y < lastY - 3) fab.classList.remove("shrunk");
+        lastY = y;
+        clearTimeout(idle);
+        idle = setTimeout(function () { fab.classList.remove("shrunk"); }, 700);
+        top.hidden = y < 320;
+      }, { passive: true });
+      top.addEventListener("click", function () { list.scrollTo({ top: 0, behavior: "smooth" }); });
+      fab.addEventListener("click", function () { openNewChat(); });
+    })();
+    $("appMenuSettings").addEventListener("click", function () { closeAppMenu(); showSettings(true); });
+    document.addEventListener("pointerdown", function (e) {
+      if ($("appMenu").hidden || $("appMenu").contains(e.target) || $("appMenuBtn").contains(e.target) || $("profileBtn").contains(e.target)) return;
+      closeAppMenu();
+    }, true);
     $("convMenuPin").addEventListener("click", function () {
       var f = state.convMenuFor;
       closeConvMenu();
@@ -3922,11 +5314,15 @@
     });
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) return;
+      refreshProfilePhoto(false);
+      checkVersion();
       loadThemes(); onPageResume();
       loadConversations();
       if (state.current) loadMessages(false, true);
     });
     window.addEventListener("focus", onPageResume);
+    window.addEventListener("focus", function () { checkVersion(); });
+    setTimeout(function () { checkVersion(true); }, 4000);
     window.addEventListener("pageshow", onPageResume);
 
     checkMic(true);

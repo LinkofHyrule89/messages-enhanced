@@ -858,6 +858,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			httpError(w, "conversation previews: "+err.Error(), 500)
 			return
 		}
+		enrichConversationLastStatus(store, convos)
 		writeJSON(w, convos)
 	})
 
@@ -1004,6 +1005,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			if msgs == nil {
 				msgs = []*db.Message{}
 			}
+			store.FillStatusText(msgs)
 			writeJSON(w, msgs)
 			return
 		}
@@ -1044,6 +1046,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 		if msgs == nil {
 			msgs = []*db.Message{}
 		}
+		store.FillStatusText(msgs)
 		writeJSON(w, msgs)
 	})
 
@@ -3231,6 +3234,26 @@ type conversationParticipant struct {
 	ID        string `json:"id"`
 	IsMe      bool   `json:"is_me"`
 	IsMeCamel bool   `json:"isMe"`
+}
+
+// enrichConversationLastStatus adds the latest message's sender (you or
+// not), status and status text, for the list's "You: …" status icon.
+func enrichConversationLastStatus(store *db.Store, convos []*db.Conversation) {
+	ids := make([]string, 0, len(convos))
+	for _, conv := range convos {
+		if conv != nil {
+			ids = append(ids, conv.ConversationID)
+		}
+	}
+	statuses := store.LatestConversationStatuses(ids)
+	for _, conv := range convos {
+		if conv == nil {
+			continue
+		}
+		if ls, ok := statuses[conv.ConversationID]; ok && ls.FromMe {
+			conv.LastFromMe, conv.LastStatus, conv.LastStatusText = true, ls.Status, ls.Text
+		}
+	}
 }
 
 func enrichConversationPreviews(reads readsource.ReadSource, convos []*db.Conversation) error {

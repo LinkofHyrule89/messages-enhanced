@@ -47,6 +47,7 @@ func (s *Server) registerCarRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/app/conversations/mute", s.handleCarConversationMute)
 	mux.HandleFunc("/api/app/conversations/read", s.handleCarConversationRead)
 	mux.HandleFunc("/api/app/conversations/meta", s.handleCarConversationMeta)
+	s.registerProfileRoutes(mux)
 }
 
 // POST /api/app/conversations/mute {"conversation_id": "...", "muted": true|false}

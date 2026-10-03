@@ -36,6 +36,11 @@ type Conversation struct {
 	// GooglePinnedSnapshot carries the pinned flag from a Google conversation
 	// snapshot into an upsert; nil leaves the stored flag unchanged.
 	GooglePinnedSnapshot *bool `json:"-"`
+	// Latest message (filled by the conversations API for the list's
+	// "You: …" status icon; not stored).
+	LastFromMe     bool   `json:"last_from_me,omitempty"`
+	LastStatus     string `json:"last_status,omitempty"`
+	LastStatusText string `json:"last_status_text,omitempty"`
 }
 
 type Message struct {
@@ -58,6 +63,9 @@ type Message struct {
 	Transcript      string `json:"transcript,omitempty"`
 	TranscribedAtMS int64  `json:"transcribed_at_ms,omitempty"`
 	TranscriptModel string `json:"transcript_model,omitempty"`
+	// Google's status text for an outgoing message ("Read by Alice, Bob"
+	// in RCS groups). Not a messages column: see FillStatusText.
+	StatusText string `json:"status_text,omitempty"`
 }
 
 type Contact struct {

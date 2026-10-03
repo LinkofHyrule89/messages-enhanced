@@ -49,7 +49,7 @@ func NewTranscriber(cfg Config) (Transcriber, error) {
 		}
 		return &OpenAICompatTranscriber{
 			ProviderName: "groq",
-			Endpoint:     "https://api.groq.com/openai/v1/audio/transcriptions",
+			Endpoint:     firstNonEmpty(cfg.GroqBaseURL, "https://api.groq.com/openai/v1") + "/audio/transcriptions",
 			APIKey:       cfg.GroqKey,
 			Model:        firstNonEmpty(cfg.GroqModel, "whisper-large-v3-turbo"),
 			Language:     cfg.STTLanguage,
@@ -84,6 +84,17 @@ func NewPartialTranscriber(cfg Config) PartialTranscriber {
 		}
 	case "fake":
 		return FakeTranscriber{Text: cfg.FakeTranscript}
+	case "groq":
+		if cfg.GroqKey == "" {
+			return nil
+		}
+		return &GroqPartial{
+			Endpoint: firstNonEmpty(cfg.GroqBaseURL, "https://api.groq.com/openai/v1") + "/audio/transcriptions",
+			APIKey:   cfg.GroqKey,
+			Model:    firstNonEmpty(cfg.GroqModel, "whisper-large-v3-turbo"),
+			Language: cfg.STTLanguage,
+			Prompt:   cfg.STTPrompt,
+		}
 	}
 	return nil
 }

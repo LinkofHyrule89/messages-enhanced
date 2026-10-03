@@ -534,6 +534,25 @@ func (h *PushHub) deliver(sub *PushSubscription, n notification) (int, error) {
 	return status, err
 }
 
+// SendAlert pushes a server notice (health alerts) to every device.
+func (h *PushHub) SendAlert(title, body, tag string) {
+	h.mu.Lock()
+	targets := make([]PushSubscription, 0, len(h.subs))
+	for _, s := range h.subs {
+		targets = append(targets, *s)
+	}
+	h.mu.Unlock()
+	n := notification{Title: title, Body: body, Tag: tag, URL: "/app/", TS: h.now().UnixMilli()}
+	for i := range targets {
+		sub := targets[i]
+		h.wg.Add(1)
+		go func() {
+			defer h.wg.Done()
+			_, _ = h.deliver(&sub, n)
+		}()
+	}
+}
+
 // SendTest pushes a test notification to one device, synchronously.
 func (h *PushHub) SendTest(endpoint string) (int, error) {
 	sub, ok := h.Get(endpoint)

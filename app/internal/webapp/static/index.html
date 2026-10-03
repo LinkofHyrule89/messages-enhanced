@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0d0f12">
 <title>Messages Enhanced</title>
@@ -15,19 +15,24 @@
 <meta name="apple-mobile-web-app-title" content="Messages">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="stylesheet" href="/app/fonts/noto-emoji.css">
+<link rel="stylesheet" href="/app/fonts/google-sans.css">
 <link rel="stylesheet" href="/app/app.css">
 <script src="/app/zoom.js"></script>
 </head>
 <body>
 <div id="app" class="app">
   <header class="topbar">
-    <div class="brand"><span class="brand-ico" data-icon="chat"></span> <span>Messages</span></div>
+    <div class="brand"><span class="brand-ico" data-icon="chat"></span> <span class="brand-car">Messages</span><span class="brand-desk">Messages Enhanced</span></div>
     <button id="conn" class="conn-dot conn-muted" type="button" aria-label="Connection: loading" title="Loading…"><span class="conn-dot-core" aria-hidden="true"></span><span id="connText" class="conn-text" role="status">Loading…</span></button>
     <div class="topbar-spacer"></div>
     <button id="pairBtn" class="btn btn-ghost" type="button" hidden>Pair phone</button>
     <button id="settingsBtn" class="btn btn-ghost btn-gear" type="button" aria-label="Settings" title="Settings"><span data-icon="gear"></span></button>
+    <button id="searchBtn" class="top-ico-btn" type="button" aria-label="Search" title="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></button>
+    <button id="profileBtn" class="profile-btn" type="button" aria-label="Menu" aria-haspopup="menu" aria-expanded="false" title="Menu"><span id="profileAv" class="profile-av"></span></button>
+    <button id="appMenuBtn" class="btn btn-ghost app-menu-btn" type="button" aria-label="More options" aria-haspopup="menu" aria-expanded="false" title="More"><span data-icon="more"></span></button>
   </header>
 
+  <div id="healthBanner" class="health-banner" role="status" hidden></div>
   <main class="panes">
     <nav class="convlist" aria-label="Conversations">
       <div class="convlist-head">
@@ -42,7 +47,15 @@
           <span>Start chat</span>
         </button>
       </div>
+      <div class="conv-search">
+        <input id="convSearch" class="conv-search-input" type="search" placeholder="Search conversations and messages" autocomplete="off" spellcheck="false" enterkeyhint="search" aria-label="Search conversations and messages">
+      </div>
+      <div id="searchResults" class="search-results" hidden aria-live="polite"></div>
       <div id="convItems" class="conv-items"></div>
+      <div class="list-fabs">
+        <button id="scrollTopBtn" class="fab-top" type="button" aria-label="Scroll to top" title="Scroll to top" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l1.41 1.41L11 7.83V20h2V7.83l5.58 5.59L20 12l-8-8-8 8z"/></svg></button>
+        <button id="fabStart" class="fab-start" type="button" aria-label="Start chat" title="Start chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.2 3.4c-.33.27-.8.03-.8-.39V17A2.5 2.5 0 0 1 4 14.5v-8A2.5 2.5 0 0 1 6.5 4z"/></svg><span>Start chat</span></button>
+      </div>
     </nav>
 
     <section class="thread" aria-label="Conversation">
@@ -53,9 +66,18 @@
       <div id="threadView" class="thread-view" hidden>
         <div id="threadHeader" class="thread-header">
           <button id="backBtn" class="btn btn-icon back-btn" type="button" aria-label="Back"><span data-icon="chevLeft"></span></button>
+          <div id="threadAvatar" class="thread-avatar" aria-hidden="true"></div>
           <div class="thread-title-box"><span id="threadTitle" class="thread-title"></span></div>
           <button id="muteBtn" class="msg-menu-btn conv-mute-btn" type="button" aria-label="Mute conversation" aria-pressed="false" title="Mute notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="bell-on" d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/><path class="bell-off" d="M20 18.69 7.84 6.14 5.27 3.49 4 4.76l2.8 2.8v.01c-.52.99-.8 2.16-.8 3.42v5l-2 2v1h13.73l2 2L21 19.72l-1-1.03zM12 22c1.11 0 2-.89 2-2h-4c0 1.11.89 2 2 2zm6-7.32V11c0-3.08-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68c-.15.03-.29.08-.42.12-.1.03-.2.07-.3.11h-.01c-.01 0-.01 0-.02.01-.23.09-.46.2-.68.31 0 0-.01 0-.01.01L18 14.68z"/></svg></button>
           <button id="convMenuBtn" class="msg-menu-btn conv-menu-btn" type="button" aria-label="Conversation options" aria-haspopup="menu" aria-expanded="false" title="More"><span data-icon="more"></span></button>
+        </div>
+        <div id="selectBar" class="select-bar" role="toolbar" aria-label="Selected messages" hidden>
+          <button id="selCancel" class="btn btn-icon" type="button" aria-label="Cancel selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+          <span id="selCount" class="sel-count">0 selected</span>
+          <div class="topbar-spacer"></div>
+          <button id="selCopy" class="btn btn-ghost" type="button">Copy</button>
+          <button id="selForward" class="btn btn-ghost" type="button">Forward</button>
+          <button id="selDelete" class="btn btn-ghost sel-danger" type="button">Delete</button>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
         <div id="readonlyNote" class="readonly-note" hidden></div>
@@ -85,15 +107,23 @@
           <div id="emojiTabs" class="emoji-tabs" role="tablist" aria-label="Emoji categories"></div>
           <div id="emojiGrid" class="emoji-grid"></div>
         </div>
+        <div id="quickReplies" class="quick-replies" role="toolbar" aria-label="Quick replies" hidden></div>
         <form id="compose" class="compose" autocomplete="off">
           <div id="attachTray" class="attach-tray" role="group" aria-label="Attachments to send" hidden></div>
-          <div id="input" class="compose-input empty" contenteditable="true" role="textbox" aria-multiline="true" tabindex="0" data-placeholder="Message" enterkeyhint="send" autocapitalize="sentences" spellcheck="true" aria-label="Message"></div>
-          <button id="emojiBtn" class="btn-attach btn-emoji" type="button" aria-label="Emoji" title="Emoji" aria-expanded="false" aria-controls="emojiPanel"><span data-icon="emoji"></span></button>
+          <div class="compose-pill">
+            <button id="plusBtn" class="pill-btn plus-btn" type="button" aria-label="More attachment options" title="Attach" aria-expanded="false" aria-controls="plusSheet"><svg viewBox="0 0 24 24" class="plus-ico" aria-hidden="true"><path d="M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><svg viewBox="0 0 24 24" class="x-ico" aria-hidden="true"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/></svg></button>
+            <div id="input" class="compose-input empty" contenteditable="true" role="textbox" aria-multiline="true" tabindex="0" data-placeholder="Message" enterkeyhint="send" autocapitalize="sentences" spellcheck="true" aria-label="Message"></div>
+            <button id="emojiBtn" class="btn-attach btn-emoji" type="button" aria-label="Emoji" title="Emoji" aria-expanded="false" aria-controls="emojiPanel"><span data-icon="emoji"></span></button>
+            <button id="galleryBtn" class="pill-btn gallery-btn" type="button" aria-label="Photos and videos" title="Photos and videos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V5h14v14zm-5.04-6.71-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"/></svg></button>
+          </div>
           <button id="attachBtn" class="btn-attach" type="button" aria-label="Attach photo or video" title="Attach">
             <svg viewBox="0 0 24 24" class="attach-icon" aria-hidden="true"><path d="M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v10.5a1.5 1.5 0 0 1-3 0V6.5H9v9a3 3 0 0 0 6 0V5a4.5 4.5 0 0 0-9 0v11.5a6 6 0 0 0 12 0v-10h-1.5z"/></svg>
             <span class="spinner" aria-hidden="true"></span>
           </button>
           <input id="fileInput" type="file" accept="image/*,video/*,audio/*" hidden>
+          <input id="galleryInput" type="file" accept="image/*,video/*" multiple hidden>
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+          <input id="filesInput" type="file" multiple hidden>
           <button id="micBtn" class="btn-mic" type="button" aria-label="Dictate message" title="Dictate">
             <svg viewBox="0 0 24 24" class="mic-icon" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
             <svg viewBox="0 0 24 24" class="stop-icon" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -104,6 +134,14 @@
             <span class="send-proto" id="sendProto" hidden>SMS</span>
           </button>
         </form>
+        <div id="plusSheet" class="plus-sheet" role="dialog" aria-label="Attach" hidden>
+          <div class="plus-handle" aria-hidden="true"></div>
+          <div class="plus-grid">
+            <button id="plusGallery" class="plus-item" type="button"><span class="plus-circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V5h14v14zm-5.04-6.71-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"/></svg></span><span>Gallery</span></button>
+            <button id="plusCamera" class="plus-item" type="button"><span class="plus-circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 14H4V7h4.05l1.83-2h4.24l1.83 2H20v12zM12 8a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 8a3 3 0 1 1 0-6 3 3 0 0 1 0 6z"/></svg></span><span>Camera</span></button>
+            <button id="plusFiles" class="plus-item" type="button"><span class="plus-circle"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6.5v10a4.5 4.5 0 0 1-9 0V5a3 3 0 0 1 6 0v10.5a1.5 1.5 0 0 1-3 0V6.5H9v9a3 3 0 0 0 6 0V5a4.5 4.5 0 0 0-9 0v11.5a6 6 0 0 0 12 0v-10h-1.5z"/></svg></span><span>Files</span></button>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -213,6 +251,19 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
+      <button id="setQuickReplies" class="setting-row" type="button" role="switch" aria-checked="true">
+        <span class="setting-text">
+          <span class="setting-name">Quick replies</span>
+          <span class="setting-desc">One-tap replies above the message box on this device</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
+      <div id="quickRepliesEditRow" class="setting-row setting-col">
+        <label for="quickRepliesEdit" class="setting-name">Quick reply texts</label>
+        <textarea id="quickRepliesEdit" class="setting-textarea" rows="4" spellcheck="true" aria-describedby="quickRepliesHint"></textarea>
+        <span id="quickRepliesHint" class="setting-desc">One per line. Tapping one sends it right away.</span>
+        <button id="quickRepliesReset" class="btn btn-ghost setting-link" type="button">Reset to defaults</button>
+      </div>
       <div class="setting-row zoom-row" role="group" aria-labelledby="zoomName">
         <span class="setting-text">
           <span id="zoomName" class="setting-name">UI zoom</span>
@@ -375,18 +426,66 @@
     </div>
   </section>
 
+  <!-- Non-car long-press menu (Google Messages style): blurred chat, the
+       message on top, reactions above, actions below. -->
+  <div id="msgSheet" class="msgx" hidden>
+    <div id="msgxBackdrop" class="msgx-backdrop"></div>
+    <div id="msgxReact" class="msgx-react" role="group" aria-label="React"></div>
+    <div id="msgxClone" class="msgx-clone" aria-hidden="true"></div>
+    <div id="msgxMenu" class="msgx-menu" role="menu" aria-label="Message actions">
+      <button id="msgxReply" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg><span>Reply</span></button>
+      <button id="msgxForward" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg><span>Forward</span></button>
+      <button id="msgxCopyUrl" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg><span>Copy URL</span></button>
+      <button id="msgxCopy" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg><span>Copy</span></button>
+      <button id="msgxStar" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.63-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/></svg><span>Star</span></button>
+      <button id="msgxDelete" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5l-1-1h-5l-1 1H5v2h14V4z"/></svg><span>Delete</span></button>
+      <button id="msgxSelect" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 7h-9v2h9V7zm0 8h-9v2h9v-2zM5.54 11L2 7.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 11zm0 8L2 15.46l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41L5.54 19z"/></svg><span>Select more</span></button>
+      <button id="msgxInfo" class="msgx-item" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg><span>Info</span></button>
+    </div>
+  </div>
+
+  <section id="fwdView" class="sheet-backdrop confirm-backdrop" hidden>
+    <div class="sheet fwd-sheet" role="dialog" aria-modal="true" aria-labelledby="fwdTitle">
+      <div class="fwd-head">
+        <h2 id="fwdTitle" class="fwd-title">Forward to</h2>
+        <button id="fwdClose" class="btn btn-icon" type="button" aria-label="Cancel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
+      </div>
+      <input id="fwdSearch" class="conv-search-input" type="search" placeholder="Search conversations" autocomplete="off" spellcheck="false" aria-label="Search conversations">
+      <div id="fwdList" class="fwd-list"></div>
+    </div>
+  </section>
+
+  <section id="infoView" class="sheet-backdrop confirm-backdrop" hidden>
+    <div class="sheet info-sheet" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+      <h2 id="infoTitle" class="fwd-title">Message details</h2>
+      <dl id="infoList" class="info-list"></dl>
+      <div class="confirm-actions"><button id="infoClose" class="btn btn-ghost btn-xl" type="button">Close</button></div>
+    </div>
+  </section>
+
   <div id="msgMenu" class="msg-menu" role="menu" hidden>
+    <div id="msgMenuReact" class="msg-menu-react" role="group" aria-label="React"></div>
     <button id="msgMenuDelete" class="msg-menu-item msg-menu-danger" type="button" role="menuitem">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
       <span>Delete</span>
     </button>
   </div>
 
+  <div id="appMenu" class="msg-menu conv-menu" role="menu" hidden>
+    <button id="appMenuSettings" class="msg-menu-item conv-menu-item" type="button" role="menuitem">
+      <span class="conv-menu-ico" aria-hidden="true" data-icon="gear"></span>
+      <span class="conv-menu-copy"><span>Settings</span></span>
+    </button>
+  </div>
   <div id="convMenu" class="msg-menu conv-menu" role="menu" hidden>
     <div id="convMenuTitle" class="conv-menu-title"></div>
     <button id="convMenuTheme" class="msg-menu-item conv-menu-item" type="button" role="menuitem" hidden>
       <span class="conv-menu-ico" aria-hidden="true" data-icon="palette"></span>
       <span class="conv-menu-copy"><span>Chat theme</span></span>
+    </button>
+    <button id="convMenuMute" class="msg-menu-item conv-menu-item" type="button" role="menuitem" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+      <span class="conv-menu-copy"><span id="convMenuMuteLabel">Mute notifications</span></span>
     </button>
     <button id="convMenuDetails" class="msg-menu-item conv-menu-item" type="button" role="menuitem">
       <span class="conv-menu-ico" aria-hidden="true" data-icon="info"></span>
@@ -406,6 +505,10 @@
     <button id="convMenuTrash" class="msg-menu-item conv-menu-item msg-menu-danger" type="button" role="menuitem">
       <span class="conv-menu-ico" aria-hidden="true" data-icon="trash"></span>
       <span class="conv-menu-copy"><span>Move to trash</span></span>
+    </button>
+    <button id="convMenuSettings" class="msg-menu-item conv-menu-item" type="button" role="menuitem" hidden>
+      <span class="conv-menu-ico" aria-hidden="true" data-icon="gear"></span>
+      <span class="conv-menu-copy"><span>Settings</span></span>
     </button>
   </div>
 

@@ -656,6 +656,8 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 			IsMe      bool   `json:"is_me,omitempty"`
 			ID        string `json:"id,omitempty"` // participant ID, used to resolve reaction actors to names
 			ContactID string `json:"contact_id,omitempty"`
+			// As Google writes names in "Read by …" status text.
+			FirstName string `json:"first_name,omitempty"`
 		}
 		var infos []pInfo
 		for _, p := range ps {
@@ -663,6 +665,7 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 				Name:      p.GetFullName(),
 				IsMe:      p.GetIsMe(),
 				ContactID: p.GetContactID(),
+				FirstName: p.GetFirstName(),
 			}
 			if id := p.GetID(); id != nil {
 				info.Number = id.GetNumber()
@@ -671,7 +674,8 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 			if info.Number == "" {
 				info.Number = p.GetFormattedNumber()
 			}
-			if !info.IsMe {
+			// You too (rarely): the list header shows your own photo.
+			if !info.IsMe || (info.ID != "" && client.SelfAvatarDue()) {
 				avatarCandidates = append(avatarCandidates, db.ContactAvatarCandidate{
 					SourcePlatform: "sms",
 					ParticipantID:  info.ID,
@@ -717,6 +721,8 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 }
 
 func (a *App) storeMessage(msg *gmproto.Message) {
+	client.RecordMessageEncryption(a.Store, msg)
+	client.RecordMessageStatusText(a.Store, msg)
 	if msg.GetMessageStatus().GetStatus() == gmproto.MessageStatusType_MESSAGE_DELETED {
 		return // deleted in Google Messages; never re-store it
 	}

@@ -55,6 +55,8 @@ func main() {
 		err = cmd.RunServe(logger, os.Args[2:]...)
 	case "demo":
 		err = cmd.RunDemo(logger)
+	case "stt-proxy":
+		err = cmd.RunSTTProxy(logger, os.Args[2:]...)
 	case "backup":
 		err = cmd.RunBackup(logger, os.Args[2:]...)
 	case "migrate":
