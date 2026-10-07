@@ -634,7 +634,7 @@ func (a *App) grokComplete(ctx context.Context, conversation string, wantImage b
 	}
 	if wantImage {
 		body["tool_choice"] = "required" // a real image from search, not memory
-	} else {
+	} else if !strings.Contains(model, "non-reasoning") {
 		body["reasoning"] = map[string]string{"effort": "low"}
 	}
 	b, _ := json.Marshal(body)
