@@ -22,12 +22,14 @@ import (
 // @Grok: when a new live message mentions "@Grok", ask xAI's Grok for a short
 // reply using the conversation's recent messages and send it into the chat,
 // prefixed with GrokReplyPrefix. Off by default (Settings), and only works
-// with XAI_API_KEY set in the server's environment.
+// with XAI_API_KEY set in the server's environment. "@Groq" works the same
+// way through Groq's API (groq.go, GROQ_API_KEY) with its own switch and
+// limits; the "who can trigger" setting is shared.
 //
-// Safeguards: never answers Grok's own (prefixed) messages; at most one reply
-// per triggering message; only live messages from the last two minutes (no
-// history or backfill); 1 reply per 30 s per chat and 30 per day overall;
-// short prompt and reply.
+// Safeguards: never answers either bot's own (prefixed) messages; at most one
+// reply per triggering message (if both bots are mentioned, the first one
+// answers); only live messages from the last two minutes (no history or
+// backfill); per-bot limits per chat and per day; short prompt and reply.
 const (
 	GrokReplyPrefix      = "🤖 From Grok: "
 	grokPerChatInterval  = 30 * time.Second
@@ -47,37 +49,100 @@ const (
 	grokSettingsFileName = "grok.json"
 )
 
-var grokMention = regexp.MustCompile(`(?i)(^|[^\w@])@grok\b`)
+var (
+	grokMention = regexp.MustCompile(`(?i)(^|[^\w@])@grok\b`)
+	groqMention = regexp.MustCompile(`(?i)(^|[^\w@])@groq\b`)
+)
+
+const (
+	botGrok = "Grok"
+	botGroq = "Groq"
+)
+
+// botMentioned: which bot a message calls ("" for none); if both are
+// mentioned, the one written first.
+func botMentioned(body string) string {
+	gk, gq := grokMention.FindStringIndex(body), groqMention.FindStringIndex(body)
+	switch {
+	case gk == nil && gq == nil:
+		return ""
+	case gq == nil:
+		return botGrok
+	case gk == nil:
+		return botGroq
+	case gq[0] < gk[0]:
+		return botGroq
+	}
+	return botGrok
+}
+
+// botOwnMessage: a reply written by one of the bots (never answered).
+func botOwnMessage(body string) bool {
+	body = strings.TrimSpace(body)
+	for _, p := range []string{GrokReplyPrefix, GroqReplyPrefix} {
+		if strings.HasPrefix(body, strings.TrimSpace(p)) {
+			return true
+		}
+	}
+	return strings.Contains(body, "From Grok:") || strings.Contains(body, "From Groq:")
+}
 
 type GrokSettings struct {
-	Enabled bool   `json:"enabled"`
-	Trigger string `json:"trigger"` // "me" (default) or "everyone"
+	Enabled     bool   `json:"enabled"`
+	Trigger     string `json:"trigger"`      // "me" (default) or "everyone"; shared by both bots
+	GroqEnabled bool   `json:"groq_enabled"` // @Groq replies
 }
 
 // GrokStatus is what Settings shows.
 type GrokStatus struct {
 	GrokSettings
-	KeyConfigured bool   `json:"key_configured"`
-	Model         string `json:"model"`
-	RepliesToday  int    `json:"replies_today"`
-	DailyLimit    int    `json:"daily_limit"`
+	KeyConfigured     bool   `json:"key_configured"`
+	Model             string `json:"model"`
+	RepliesToday      int    `json:"replies_today"`
+	DailyLimit        int    `json:"daily_limit"`
+	GroqKeyConfigured bool   `json:"groq_key_configured"`
+	GroqModel         string `json:"groq_model"`
+	GroqSearch        bool   `json:"groq_search"` // the model has Groq's browser search
+	GroqRepliesToday  int    `json:"groq_replies_today"`
+	GroqDailyLimit    int    `json:"groq_daily_limit"`
+}
+
+// botLimits is one bot's rate-limit state.
+type botLimits struct {
+	lastChat    map[string]time.Time // conversation id -> last reply
+	replies     []time.Time          // replies in the last 24 h
+	pausedUntil time.Time            // after an HTTP 429 (Groq's free tier)
 }
 
 type grokState struct {
-	mu       sync.Mutex
-	loaded   bool
-	settings GrokSettings
-	handled  map[string]time.Time // message id -> when
-	lastChat map[string]time.Time // conversation id -> last reply
-	replies  []time.Time          // replies in the last 24 h
-	client   *http.Client
+	mu         sync.Mutex
+	loaded     bool
+	settings   GrokSettings
+	handled    map[string]time.Time // message id -> when (shared: one reply per message)
+	grokLim    botLimits
+	groqLim    botLimits
+	client     *http.Client
+	groqClient *http.Client
 }
 
 var grokStates sync.Map // *App -> *grokState
 
 func (a *App) grok() *grokState {
-	v, _ := grokStates.LoadOrStore(a, &grokState{handled: map[string]time.Time{}, lastChat: map[string]time.Time{}, client: &http.Client{Timeout: grokImageReqTimeout + 5*time.Second}})
+	v, _ := grokStates.LoadOrStore(a, &grokState{
+		handled:    map[string]time.Time{},
+		grokLim:    botLimits{lastChat: map[string]time.Time{}},
+		groqLim:    botLimits{lastChat: map[string]time.Time{}},
+		client:     &http.Client{Timeout: grokImageReqTimeout + 5*time.Second},
+		groqClient: &http.Client{Timeout: groqRequestTimeout + 5*time.Second},
+	})
 	return v.(*grokState)
+}
+
+func (g *grokState) limits(bot string) *botLimits {
+	if bot == botGroq {
+		return &g.groqLim
+	}
+	return &g.grokLim
 }
 
 func grokAPIKey() string { return strings.TrimSpace(os.Getenv("XAI_API_KEY")) }
@@ -138,13 +203,15 @@ func normalizeGrokSettings(s GrokSettings) GrokSettings {
 }
 
 func (g *grokState) pruneLocked(now time.Time) {
-	keep := g.replies[:0]
-	for _, t := range g.replies {
-		if now.Sub(t) < 24*time.Hour {
-			keep = append(keep, t)
+	for _, l := range []*botLimits{&g.grokLim, &g.groqLim} {
+		keep := l.replies[:0]
+		for _, t := range l.replies {
+			if now.Sub(t) < 24*time.Hour {
+				keep = append(keep, t)
+			}
 		}
+		l.replies = keep
 	}
-	g.replies = keep
 	if len(g.handled) > 2000 {
 		for id, t := range g.handled {
 			if now.Sub(t) > time.Hour {
@@ -161,7 +228,9 @@ func (a *App) GrokStatus() GrokStatus {
 	defer g.mu.Unlock()
 	g.loadLocked(a.grokSettingsPath())
 	g.pruneLocked(time.Now())
-	return GrokStatus{GrokSettings: g.settings, KeyConfigured: grokAPIKey() != "", Model: grokModel(), RepliesToday: len(g.replies), DailyLimit: grokDailyLimit}
+	gm := groqModel()
+	return GrokStatus{GrokSettings: g.settings, KeyConfigured: grokAPIKey() != "", Model: grokModel(), RepliesToday: len(g.grokLim.replies), DailyLimit: grokDailyLimit,
+		GroqKeyConfigured: groqAPIKey() != "", GroqModel: gm, GroqSearch: groqHasSearch(gm), GroqRepliesToday: len(g.groqLim.replies), GroqDailyLimit: groqDailyLimit}
 }
 
 // SetGrokSettings saves the @Grok settings (data dir, owner-only file).
@@ -184,83 +253,117 @@ func (a *App) SetGrokSettings(s GrokSettings) (GrokStatus, error) {
 	}
 	g.settings = s
 	g.mu.Unlock()
-	a.Logger.Info().Bool("enabled", s.Enabled).Str("trigger", s.Trigger).Msg("@Grok settings changed")
+	a.Logger.Info().Bool("enabled", s.Enabled).Bool("groq_enabled", s.GroqEnabled).Str("trigger", s.Trigger).Msg("@Grok settings changed")
 	return a.GrokStatus(), nil
 }
 
-// grokShouldReply decides (and reserves) a reply for a live message.
-func (a *App) grokShouldReply(m *db.Message, now time.Time) (bool, string) {
+// grokShouldReply decides (and reserves) a reply for a live message and
+// says which bot answers.
+func (a *App) grokShouldReply(m *db.Message, now time.Time) (string, bool, string) {
 	if m == nil || db.IsOutgoingPlaceholderID(m.MessageID) || strings.TrimSpace(m.MessageID) == "" {
-		return false, "not a real message"
+		return "", false, "not a real message"
 	}
 	body := strings.TrimSpace(m.Body)
-	if !grokMention.MatchString(body) {
-		return false, "no mention"
+	bot := botMentioned(body)
+	if bot == "" {
+		return "", false, "no mention"
 	}
-	if strings.HasPrefix(body, strings.TrimSpace(GrokReplyPrefix)) || strings.Contains(body, "From Grok:") {
-		return false, "Grok's own message"
+	if botOwnMessage(body) {
+		return bot, false, "a bot's own message"
 	}
 	if strings.HasPrefix(strings.ToUpper(m.Status), "TOMBSTONE") {
-		return false, "tombstone"
+		return bot, false, "tombstone"
 	}
 	if ts := time.UnixMilli(m.TimestampMS); m.TimestampMS <= 0 || now.Sub(ts) > grokMaxMessageAge || ts.Sub(now) > grokMaxMessageAge {
-		return false, "not a live message"
+		return bot, false, "not a live message"
 	}
 	g := a.grok()
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.loadLocked(a.grokSettingsPath())
-	if !g.settings.Enabled {
-		return false, "disabled"
-	}
-	if grokAPIKey() == "" {
-		return false, "no XAI_API_KEY"
+	interval, daily := grokPerChatInterval, grokDailyLimit
+	if bot == botGroq {
+		if !g.settings.GroqEnabled {
+			return bot, false, "disabled"
+		}
+		if groqAPIKey() == "" {
+			return bot, false, "no GROQ_API_KEY"
+		}
+		interval, daily = groqPerChatInterval, groqDailyLimit
+	} else {
+		if !g.settings.Enabled {
+			return bot, false, "disabled"
+		}
+		if grokAPIKey() == "" {
+			return bot, false, "no XAI_API_KEY"
+		}
 	}
 	if g.settings.Trigger != grokTriggerEveryone && !m.IsFromMe {
-		return false, "only you can trigger"
+		return bot, false, "only you can trigger"
 	}
 	if _, seen := g.handled[m.MessageID]; seen {
-		return false, "already handled"
+		return bot, false, "already handled"
 	}
 	g.pruneLocked(now)
-	if t, ok := g.lastChat[m.ConversationID]; ok && now.Sub(t) < grokPerChatInterval {
+	lim := g.limits(bot)
+	if now.Before(lim.pausedUntil) {
 		g.handled[m.MessageID] = now
-		return false, "chat rate limit"
+		return bot, false, "provider rate limit"
 	}
-	if len(g.replies) >= grokDailyLimit {
+	if t, ok := lim.lastChat[m.ConversationID]; ok && now.Sub(t) < interval {
 		g.handled[m.MessageID] = now
-		return false, "daily limit"
+		return bot, false, "chat rate limit"
+	}
+	if len(lim.replies) >= daily {
+		g.handled[m.MessageID] = now
+		return bot, false, "daily limit"
 	}
 	g.handled[m.MessageID] = now
-	g.lastChat[m.ConversationID] = now
-	g.replies = append(g.replies, now)
-	return true, ""
+	lim.lastChat[m.ConversationID] = now
+	lim.replies = append(lim.replies, now)
+	return bot, true, ""
 }
 
 // HandleLiveMessageForGrok is called for every new live message (yours and
-// others'). Replies run in the background.
+// others'). Replies (@Grok or @Groq) run in the background.
 func (a *App) HandleLiveMessageForGrok(m *db.Message) {
-	if a == nil || m == nil || !grokMention.MatchString(m.Body) {
+	if a == nil || m == nil || botMentioned(m.Body) == "" {
 		return
 	}
-	ok, why := a.grokShouldReply(m, time.Now())
+	bot, ok, why := a.grokShouldReply(m, time.Now())
 	if !ok {
-		a.Logger.Debug().Str("conv_id", m.ConversationID).Str("reason", why).Msg("@Grok mention ignored")
+		a.Logger.Debug().Str("conv_id", m.ConversationID).Str("bot", bot).Str("reason", why).Msg("@Grok/@Groq mention ignored")
 		return
 	}
 	msg := *m
-	go a.grokReply(&msg)
+	go a.botReply(&msg, a.chatBot(bot))
 }
 
-func (a *App) grokReply(m *db.Message) {
-	log := a.Logger.With().Str("conv_id", m.ConversationID).Logger()
-	ctx, cancel := context.WithTimeout(context.Background(), grokTimeout(grokWantsImage(m.Body)))
+// chatBot is one answering bot: its reply prefix and request function.
+type chatBot struct {
+	name     string
+	prefix   string
+	timeout  func(wantImage bool) time.Duration
+	complete func(ctx context.Context, conversation string, wantImage bool) (grokAnswer, error)
+}
+
+func (a *App) chatBot(name string) chatBot {
+	if name == botGroq {
+		return chatBot{name: botGroq, prefix: GroqReplyPrefix, timeout: func(bool) time.Duration { return groqRequestTimeout }, complete: a.groqComplete}
+	}
+	return chatBot{name: botGrok, prefix: GrokReplyPrefix, timeout: grokTimeout, complete: a.grokComplete}
+}
+
+func (a *App) botReply(m *db.Message, bot chatBot) {
+	log := a.Logger.With().Str("conv_id", m.ConversationID).Str("bot", bot.name).Logger()
+	wantImage := grokWantsImage(m.Body)
+	ctx, cancel := context.WithTimeout(context.Background(), bot.timeout(wantImage))
 	defer cancel()
 	prompt := a.grokContext(m)
 	started := time.Now()
-	ans, err := a.grokComplete(ctx, prompt, grokWantsImage(m.Body))
+	ans, err := bot.complete(ctx, prompt, wantImage)
 	if err != nil {
-		log.Warn().Str("error", grokSafeErr(err)).Dur("took", time.Since(started)).Msg("@Grok reply failed")
+		log.Warn().Str("error", grokSafeErr(err)).Dur("took", time.Since(started)).Msg("@" + bot.name + " reply failed")
 		return
 	}
 	reply := grokTrimReply(ans.Text)
@@ -272,7 +375,7 @@ func (a *App) grokReply(m *db.Message) {
 		var ierr error
 		img, imgMime, imgName, ierr = fetchGrokImage(context.Background(), ans.ImageURL)
 		if ierr != nil {
-			log.Warn().Str("error", ierr.Error()).Msg("@Grok image rejected; sending text only")
+			log.Warn().Str("error", ierr.Error()).Msg("@" + bot.name + " image rejected; sending text only")
 			img = nil
 			if errors.Is(ierr, errGrokImageTooLarge) { // real but too big for MMS: the link helps
 				reply = grokWithSource(reply, ans.ImageURL)
@@ -286,21 +389,21 @@ func (a *App) grokReply(m *db.Message) {
 		reply = "Here you go."
 	}
 	if reply == "" {
-		log.Warn().Msg("@Grok returned an empty reply")
+		log.Warn().Msg("@" + bot.name + " returned an empty reply")
 		return
 	}
-	if _, _, err := a.SendTextToConversation(m.ConversationID, GrokReplyPrefix+reply); err != nil {
-		log.Warn().Err(err).Msg("@Grok reply send failed")
+	if _, _, err := a.SendTextToConversation(m.ConversationID, bot.prefix+reply); err != nil {
+		log.Warn().Err(err).Msg("@" + bot.name + " reply send failed")
 		return
 	}
 	if img != nil {
 		if _, err := a.SendMediaToConversation(m.ConversationID, img, imgName, imgMime, "", ""); err != nil {
-			log.Warn().Err(err).Msg("@Grok image send failed")
+			log.Warn().Err(err).Msg("@" + bot.name + " image send failed")
 		} else {
-			log.Info().Str("mime", imgMime).Int("bytes", len(img)).Msg("@Grok sent an image")
+			log.Info().Str("mime", imgMime).Int("bytes", len(img)).Msg("@" + bot.name + " sent an image")
 		}
 	}
-	log.Info().Int("reply_chars", len([]rune(reply))).Int("search_calls", ans.Searches).Float64("cost_usd", ans.CostUSD).Dur("took", time.Since(started)).Msg("@Grok replied")
+	log.Info().Int("reply_chars", len([]rune(reply))).Int("search_calls", ans.Searches).Int("tokens", ans.Tokens).Float64("cost_usd", ans.CostUSD).Dur("took", time.Since(started)).Msg("@" + bot.name + " replied")
 }
 
 // grokContext: the recent messages, oldest first, short.
@@ -333,9 +436,11 @@ func grokLine(m *db.Message) string {
 		}
 	}
 	body := strings.TrimSpace(strings.ReplaceAll(m.Body, "\n", " "))
-	if strings.HasPrefix(body, strings.TrimSpace(GrokReplyPrefix)) {
-		who = "Grok"
-		body = strings.TrimSpace(strings.TrimPrefix(body, strings.TrimSpace(GrokReplyPrefix)))
+	for name, p := range map[string]string{botGrok: GrokReplyPrefix, botGroq: GroqReplyPrefix} {
+		if strings.HasPrefix(body, strings.TrimSpace(p)) {
+			who = name
+			body = strings.TrimSpace(strings.TrimPrefix(body, strings.TrimSpace(p)))
+		}
 	}
 	if r := []rune(body); len(r) > grokContextChars {
 		body = string(r[:grokContextChars]) + "…"
@@ -346,6 +451,7 @@ func grokLine(m *db.Message) string {
 func grokTrimReply(s string) string {
 	s = grokPlainText(s)
 	s = strings.TrimPrefix(s, strings.TrimSpace(GrokReplyPrefix))
+	s = strings.TrimPrefix(s, strings.TrimSpace(GroqReplyPrefix))
 	s = strings.TrimSpace(s)
 	if r := []rune(s); len(r) > grokReplyMaxChars {
 		s = strings.TrimSpace(string(r[:grokReplyMaxChars])) + "…"
@@ -364,6 +470,10 @@ var (
 	grokSpaces      = regexp.MustCompile(`[ \t]+`)
 	grokBlankLines  = regexp.MustCompile(`\n{3,}`)
 	grokSpaceBefore = regexp.MustCompile(`\s+([.,;:!?])`)
+	grokLenticular  = regexp.MustCompile(`\s*【[^】]*】`) // gpt-oss citations like 【2†L6-L10】
+	grokThink       = regexp.MustCompile(`(?s)<think>.*?</think>`)
+	// SMS-friendly: no-break and narrow spaces, non-breaking hyphens.
+	grokUnicodeFix = strings.NewReplacer("\u00a0", " ", "\u202f", " ", "\u2009", " ", "\u2007", " ", "\u2011", "-", "\u2010", "-")
 )
 
 // grokPlainText turns a markdown answer into SMS-friendly plain text:
@@ -371,6 +481,9 @@ var (
 // their text), bullets as "• ".
 func grokPlainText(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = grokThink.ReplaceAllString(s, "")
+	s = grokUnicodeFix.Replace(s)
+	s = grokLenticular.ReplaceAllString(s, "")
 	s = grokMDImage.ReplaceAllString(s, "")
 	s = grokCiteMarker.ReplaceAllString(s, "")
 	s = grokMDLink.ReplaceAllString(s, "$1")
@@ -419,6 +532,23 @@ func grokZone() *time.Location {
 // mixing them with the "search for anything current" and "no URLs" rules
 // made the model loop on searches.
 func grokSystemPrompt(now time.Time, wantImage bool) string {
+	return botSystemPrompt(botGrok, "search the web or X", now, wantImage)
+}
+
+// grokDateHints spells out "tomorrow" and "this weekend" (models slip on
+// weekday arithmetic, e.g. "this weekend" for movie openings).
+func grokDateHints(lt time.Time) string {
+	day := func(t time.Time) string { return t.Format("Monday, January 2") }
+	sat := lt.AddDate(0, 0, (int(time.Saturday)-int(lt.Weekday())+7)%7)
+	if lt.Weekday() == time.Sunday {
+		sat = lt.AddDate(0, 0, -1)
+	}
+	return "Tomorrow is " + day(lt.AddDate(0, 0, 1)) + "; this weekend is " + day(sat) + " to " + day(sat.AddDate(0, 0, 1)) + ". "
+}
+
+// botSystemPrompt: name is the bot ("Grok", "Groq"); search says how it
+// looks things up ("" = it can't, so it must say when live info is needed).
+func botSystemPrompt(name, search string, now time.Time, wantImage bool) string {
 	loc := grokZone()
 	lt := now.In(loc)
 	owner := strings.TrimSpace(os.Getenv("GROK_USER_NAME"))
@@ -426,22 +556,28 @@ func grokSystemPrompt(now time.Time, wantImage bool) string {
 		owner = "the phone's owner"
 	}
 	home := strings.TrimSpace(os.Getenv("GROK_USER_LOCATION"))
-	base := "You are Grok, replying inside a text-message conversation because someone wrote @Grok. " +
-		"Right now it is " + lt.Format("Monday, January 2, 2006, 3:04 PM MST") + " (" + loc.String() + " time). " +
+	base := "You are " + name + ", replying inside a text-message conversation because someone wrote @" + name + ". " +
+		"Right now it is " + lt.Format("Monday, January 2, 2006, 3:04 PM MST") + " (" + loc.String() + " time). " + grokDateHints(lt) +
 		"Messages marked \"Me\" are from " + owner
 	if home != "" {
 		base += ", who lives in the " + home + " area"
 	}
 	if wantImage {
-		return base + ". They want a picture: do one web search on Wikimedia Commons, pick a real existing photo from the results (never generate, guess or invent one), " +
-			"reply with one short plain-text sentence describing it, then put that photo's Commons file page URL (a jpg, png, gif or webp file, exactly as in the search results) alone on the last line as: IMAGE: https://commons.wikimedia.org/wiki/File:<file name>"
+		const imageLine = "reply with one short plain-text sentence describing it, then put that photo's Commons file page URL (a jpg, png, gif or webp file) alone on the last line as: IMAGE: https://commons.wikimedia.org/wiki/File:<file name>"
+		if search == "" {
+			return base + ". They want a picture: pick one real, well-known photo on Wikimedia Commons whose exact file name you are sure of (never generate, guess or invent one; if you aren't sure, say so and skip the IMAGE line), " + imageLine
+		}
+		return base + ". They want a picture: do one web search on Wikimedia Commons, pick a real existing photo from the results (never generate, guess or invent one; use the file name exactly as in the results), " + imageLine
 	}
 	if home != "" {
 		base += "; use that for local questions (weather, showtimes, events, \"near me\") unless another place is named"
 	}
-	return base + ". Answer the latest message that mentions @Grok, using the recent messages for context. " +
-		"For anything current (news, releases, schedules, prices, scores, weather, events) search the web or X first and give concrete, dated facts. " +
-		"Reply in plain text like a text message: at most about 500 characters, no markdown, no headings, no citations or URLs, no preamble."
+	live := "For anything current (news, releases, schedules, prices, scores, weather, events) " + search + " first and give concrete, dated facts. "
+	if search == "" {
+		live = "You can't look up live information. If a question needs current info (news, weather, scores, schedules, prices, events), say briefly that you can't check live info, then give your best general answer. "
+	}
+	return base + ". Answer the latest message that mentions @" + name + ", using the recent messages for context. " + live +
+		"Reply in plain text like a text message: at most about 500 characters, no markdown, no tables, no headings, no citations or URLs, no preamble."
 }
 
 var errGrokHTTP = errors.New("xAI API error")
@@ -453,6 +589,7 @@ type grokAnswer struct {
 	ImageURL string  // a real image found by search ("IMAGE: <url>" line)
 	Searches int     // server-side tool calls (web/X search), billed per call
 	CostUSD  float64 // xAI's reported cost for the request (tokens + tools)
+	Tokens   int     // total tokens (Groq's free tier is limited by tokens)
 }
 
 // grokTimeout: picture requests get longer (image search is slower).
@@ -601,9 +738,16 @@ func parseGrokResponse(raw []byte) (grokAnswer, error) {
 // GrokTestAnswer runs the real request path (no message is sent) and
 // returns the SMS-ready reply; used by the "grok-test" command.
 func (a *App) GrokTestAnswer(question string) (string, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), grokTimeout(grokWantsImage(question)))
+	return a.BotTestAnswer(botGrok, question)
+}
+
+// BotTestAnswer is GrokTestAnswer for either bot ("Grok" or "Groq").
+func (a *App) BotTestAnswer(name, question string) (string, int, error) {
+	bot := a.chatBot(name)
+	wantImage := grokWantsImage(question)
+	ctx, cancel := context.WithTimeout(context.Background(), bot.timeout(wantImage))
 	defer cancel()
-	ans, err := a.grokComplete(ctx, "Me: "+question, grokWantsImage(question))
+	ans, err := bot.complete(ctx, "Me: "+question, wantImage)
 	if err != nil {
 		return "", 0, errors.New(grokSafeErr(err))
 	}
@@ -625,7 +769,11 @@ func (a *App) GrokTestAnswer(question string) (string, int, error) {
 	if !imgOK && reply != "" {
 		reply = grokWithSource(reply, ans.Source)
 	}
-	out := GrokReplyPrefix + reply + fmt.Sprintf("\n[xAI cost $%.3f]", ans.CostUSD) + note
+	usage := fmt.Sprintf("\n[xAI cost $%.3f]", ans.CostUSD)
+	if bot.name == botGroq {
+		usage = fmt.Sprintf("\n[Groq %s: %d tokens, free tier]", groqModel(), ans.Tokens)
+	}
+	out := bot.prefix + reply + usage + note
 	return out, ans.Searches, nil
 }
 
@@ -633,10 +781,12 @@ func (a *App) GrokTestAnswer(question string) (string, int, error) {
 // ever in a header, never in the URL or error text).
 func grokSafeErr(err error) string {
 	s := err.Error()
-	if k := grokAPIKey(); k != "" {
-		s = strings.ReplaceAll(s, k, "[key]")
+	for _, k := range []string{grokAPIKey(), groqAPIKey()} {
+		if k != "" {
+			s = strings.ReplaceAll(s, k, "[key]")
+		}
 	}
 	return grokKeyLikeRe.ReplaceAllString(s, "[key]") // e.g. a partially echoed key
 }
 
-var grokKeyLikeRe = regexp.MustCompile(`xai-[A-Za-z0-9*_.-]{4,}`)
+var grokKeyLikeRe = regexp.MustCompile(`(xai|gsk)[-_][A-Za-z0-9*_.-]{4,}`)

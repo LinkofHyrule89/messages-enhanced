@@ -53,6 +53,10 @@ func (b webRefreshBackend) RefreshStatus() any { return b.a.GoogleRefreshStatus(
 type webGrokBackend struct{ a *app.App }
 
 func (b webGrokBackend) GrokStatus() any { return b.a.GrokStatus() }
-func (b webGrokBackend) SetGrokSettings(enabled bool, trigger string) (any, error) {
-	return b.a.SetGrokSettings(app.GrokSettings{Enabled: enabled, Trigger: trigger})
+func (b webGrokBackend) SetGrokSettings(enabled bool, trigger string, groqEnabled *bool) (any, error) {
+	groq := b.a.GrokStatus().GroqEnabled
+	if groqEnabled != nil {
+		groq = *groqEnabled
+	}
+	return b.a.SetGrokSettings(app.GrokSettings{Enabled: enabled, Trigger: trigger, GroqEnabled: groq})
 }

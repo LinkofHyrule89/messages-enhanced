@@ -103,6 +103,13 @@ select more, info
     search, knowing the current date and time; ask for a picture and it sends
     a real photo from Wikimedia Commons. Short plain-text replies, rate
     limited, with a "who can trigger" setting
+  - optional @Groq replies (off by default, needs `GROQ_API_KEY`, which works
+    on Groq's free tier): the same idea through Groq's `openai/gpt-oss-120b`
+    with Groq's built-in browser search, including Wikimedia photos. It has
+    its own on/off switch (sharing "who can trigger"), its own limits (one
+    reply per chat every 30 seconds, 40 a day, pausing on Groq rate limits),
+    and `GROQ_CHAT_MODEL` picks another model (models without browser search
+    answer without live info and say so)
   - remote MCP connector at `/mcp` (OAuth 2.1 with PKCE, or a bearer token)
     so AI assistants can read and send messages
   - gzip, long-lived caching for versioned assets, and security headers
@@ -144,8 +151,11 @@ included here):
 | `MESSAGES_STT_PROVIDER` | Server speech-to-text provider. |
 | `MESSAGES_MCP_TOKEN` | Turns on the remote MCP connector at `/mcp` (32+ characters). |
 | `XAI_API_KEY` | Enables the optional @Grok replies (then turn them on in Settings). |
-| `GROK_TIMEZONE` | Optional IANA time zone for @Grok's notion of "now" (e.g. `America/New_York`; default: server local time). |
-| `GROK_USER_NAME`, `GROK_USER_LOCATION` | Optional: your name and home area, so @Grok can answer "near me" questions. |
+| `GROQ_API_KEY` | Groq key: server speech-to-text and the optional @Groq replies (then turn them on in Settings). |
+| `GROQ_CHAT_MODEL` | Optional model for @Groq (default `openai/gpt-oss-120b`). |
+| `MESSAGES_GROQ_BASE_URL` | Optional Groq API base URL (e.g. a loopback `stt-proxy`, which forwards transcription and @Groq chat calls). |
+| `GROK_TIMEZONE` | Optional IANA time zone for @Grok's and @Groq's notion of "now" (e.g. `America/New_York`; default: server local time). |
+| `GROK_USER_NAME`, `GROK_USER_LOCATION` | Optional: your name and home area, so @Grok and @Groq can answer "near me" questions. |
 
 Variable names from earlier versions are still read as a fallback. More options are documented in [`app/GUIDE.md`](app/GUIDE.md).
 

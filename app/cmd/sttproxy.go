@@ -4,9 +4,9 @@ package cmd
 // server whose own traffic is pinned to a VPN (some STT providers block VPN
 // exit IPs) can send just those calls out the host's normal route. Run it
 // as a different user than the server (e.g. systemd DynamicUser) and point
-// MESSAGES_GROQ_BASE_URL at it. Only the transcription endpoint is
-// forwarded; the API key comes from the server's request and is never
-// stored or logged here.
+// MESSAGES_GROQ_BASE_URL at it. Only the transcription endpoints and chat
+// completions (@Groq replies) are forwarded; the API key comes from the
+// server's request and is never stored or logged here.
 
 import (
 	"errors"
@@ -27,6 +27,7 @@ const sttProxyMaxBody = 26 << 20 // Groq's limit is 25 MB per file
 var sttProxyPaths = map[string]bool{
 	"/openai/v1/audio/transcriptions": true,
 	"/openai/v1/audio/translations":   true,
+	"/openai/v1/chat/completions":     true, // @Groq replies
 }
 
 func RunSTTProxy(logger zerolog.Logger, args ...string) error {

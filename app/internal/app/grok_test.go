@@ -24,14 +24,14 @@ func TestGrokSafeguards(t *testing.T) {
 	if st := a.GrokStatus(); st.Enabled || st.Trigger != "me" {
 		t.Fatalf("defaults = %+v", st)
 	}
-	if ok, why := a.grokShouldReply(msg("m0", "c1", "@Grok hi", true, 0), now); ok || why != "disabled" {
+	if _, ok, why := a.grokShouldReply(msg("m0", "c1", "@Grok hi", true, 0), now); ok || why != "disabled" {
 		t.Fatalf("disabled: ok=%v why=%q", ok, why)
 	}
 	if _, err := a.SetGrokSettings(GrokSettings{Enabled: true, Trigger: "bogus"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("XAI_API_KEY", "")
-	if ok, why := a.grokShouldReply(msg("m1", "c1", "@Grok hi", true, 0), now); ok || why != "no XAI_API_KEY" {
+	if _, ok, why := a.grokShouldReply(msg("m1", "c1", "@Grok hi", true, 0), now); ok || why != "no XAI_API_KEY" {
 		t.Fatalf("no key: ok=%v why=%q", ok, why)
 	}
 	t.Setenv("XAI_API_KEY", "test-key")
@@ -41,36 +41,36 @@ func TestGrokSafeguards(t *testing.T) {
 	}{
 		{msg("x1", "c1", "hello there", true, 0), "no mention"},
 		{msg("x2", "c1", "email me@grok.com", true, 0), "no mention"},
-		{msg("x3", "c1", GrokReplyPrefix+"@grok said hi", true, 0), "Grok's own message"},
+		{msg("x3", "c1", GrokReplyPrefix+"@grok said hi", true, 0), "a bot's own message"},
 		{msg("x4", "c1", "@grok old", true, 10*time.Minute), "not a live message"},
 		{msg("tmp_123", "c1", "@grok placeholder", true, 0), "not a real message"},
 		{msg("x5", "c1", "hey @Grok what's up", false, 0), "only you can trigger"},
 	}
 	for _, c := range cases {
-		if ok, why := a.grokShouldReply(c.m, now); ok || why != c.want {
+		if _, ok, why := a.grokShouldReply(c.m, now); ok || why != c.want {
 			t.Fatalf("%s: ok=%v why=%q want %q", c.m.MessageID, ok, why, c.want)
 		}
 	}
-	if ok, _ := a.grokShouldReply(msg("y1", "c1", "@Grok summarize", true, 0), now); !ok {
+	if _, ok, _ := a.grokShouldReply(msg("y1", "c1", "@Grok summarize", true, 0), now); !ok {
 		t.Fatal("own mention should trigger")
 	}
-	if ok, why := a.grokShouldReply(msg("y1", "c1", "@Grok summarize", true, 0), now); ok || why != "already handled" {
+	if _, ok, why := a.grokShouldReply(msg("y1", "c1", "@Grok summarize", true, 0), now); ok || why != "already handled" {
 		t.Fatalf("same message twice: %v %q", ok, why)
 	}
-	if ok, why := a.grokShouldReply(msg("y2", "c1", "@Grok again", true, 0), now.Add(10*time.Second)); ok || why != "chat rate limit" {
+	if _, ok, why := a.grokShouldReply(msg("y2", "c1", "@Grok again", true, 0), now.Add(10*time.Second)); ok || why != "chat rate limit" {
 		t.Fatalf("per-chat limit: %v %q", ok, why)
 	}
 	// Everyone mode; other chats; daily limit.
 	if _, err := a.SetGrokSettings(GrokSettings{Enabled: true, Trigger: "everyone"}); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := a.grokShouldReply(msg("z0", "c2", "@grok hi", false, 0), now); !ok {
+	if _, ok, _ := a.grokShouldReply(msg("z0", "c2", "@grok hi", false, 0), now); !ok {
 		t.Fatal("everyone mode: others should trigger")
 	}
 	for i := 0; i < grokDailyLimit; i++ {
 		a.grokShouldReply(msg("d"+string(rune('a'+i)), "chat"+string(rune('a'+i)), "@grok", true, 0), now)
 	}
-	if ok, why := a.grokShouldReply(msg("last", "zz", "@grok", true, 0), now); ok || why != "daily limit" {
+	if _, ok, why := a.grokShouldReply(msg("last", "zz", "@grok", true, 0), now); ok || why != "daily limit" {
 		t.Fatalf("daily limit: %v %q", ok, why)
 	}
 	// Settings persist.
@@ -130,6 +130,15 @@ func TestGrokSystemPromptDate(t *testing.T) {
 	for _, want := range []string{"Wednesday, October 7, 2026, 11:30 PM EDT (America/New_York time)", "from Sam, who lives in the Springfield area", "near me"} {
 		if !strings.Contains(p, want) {
 			t.Fatalf("prompt lacks %q: %q", want, p)
+		}
+	}
+	if !strings.Contains(p, "Tomorrow is Thursday, October 8; this weekend is Saturday, October 10 to Sunday, October 11.") {
+		t.Fatalf("date hints: %q", p)
+	}
+	for in, want := range map[string]string{"2026-10-10": "Saturday, October 10 to Sunday, October 11", "2026-10-11": "Saturday, October 10 to Sunday, October 11", "2026-10-12": "Saturday, October 17 to Sunday, October 18"} {
+		d, _ := time.Parse("2006-01-02", in)
+		if h := grokDateHints(d.Add(12 * time.Hour)); !strings.Contains(h, want) {
+			t.Fatalf("%s: %q", in, h)
 		}
 	}
 	if ip := grokSystemPrompt(now, true); !strings.Contains(ip, "IMAGE: https://commons.wikimedia.org/wiki/File:") || strings.Contains(ip, "no citations or URLs") {
@@ -224,5 +233,148 @@ func TestGrokSafeErrRedactsKeyLike(t *testing.T) {
 	got := grokSafeErr(errors.New("xAI API error: HTTP 400: Incorrect API key provided: xai-AbCd****wxyz"))
 	if strings.Contains(got, "AbCd") || !strings.Contains(got, "[key]") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestGroqTriggerAndLimits(t *testing.T) {
+	a := newTestApp(t, &mockGMClient{})
+	a.DataDir = t.TempDir()
+	now := time.Now()
+	msg := func(id, conv, body string) *db.Message {
+		return &db.Message{MessageID: id, ConversationID: conv, Body: body, IsFromMe: true, TimestampMS: now.UnixMilli()}
+	}
+	for body, want := range map[string]string{
+		"@Groq hi": botGroq, "@groq hi": botGroq, "hey @GROQ?": botGroq, "@Grok hi": botGrok,
+		"@Groq vs @Grok": botGroq, "@Grok vs @Groq": botGrok, "@Groqy hi": "", "a@groq.com": "", "@Grokq": "", "nothing": "",
+	} {
+		if got := botMentioned(body); got != want {
+			t.Fatalf("botMentioned(%q) = %q, want %q", body, got, want)
+		}
+	}
+	t.Setenv("XAI_API_KEY", "x-key")
+	t.Setenv("GROQ_API_KEY", "")
+	if st := a.GrokStatus(); st.GroqEnabled || st.GroqKeyConfigured || st.GroqDailyLimit != groqDailyLimit || !st.GroqSearch {
+		t.Fatalf("groq defaults = %+v", st)
+	}
+	// @Grok on, @Groq off: each toggle is separate.
+	if _, err := a.SetGrokSettings(GrokSettings{Enabled: true, Trigger: "me"}); err != nil {
+		t.Fatal(err)
+	}
+	if bot, ok, why := a.grokShouldReply(msg("q1", "c1", "@Groq hi"), now); bot != botGroq || ok || why != "disabled" {
+		t.Fatalf("groq off: %s %v %q", bot, ok, why)
+	}
+	if _, err := a.SetGrokSettings(GrokSettings{Enabled: true, Trigger: "me", GroqEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, why := a.grokShouldReply(msg("q2", "c1", "@Groq hi"), now); ok || why != "no GROQ_API_KEY" {
+		t.Fatalf("groq no key: %v %q", ok, why)
+	}
+	t.Setenv("GROQ_API_KEY", "gsk-test")
+	for _, own := range []string{GroqReplyPrefix + "@Grok said", GrokReplyPrefix + "@Groq said"} {
+		if _, ok, why := a.grokShouldReply(msg("own"+own[:3], "c1", own), now); ok || why != "a bot's own message" {
+			t.Fatalf("own %q: %v %q", own, ok, why)
+		}
+	}
+	// Separate limits: a Grok reply doesn't block Groq in the same chat.
+	if bot, ok, _ := a.grokShouldReply(msg("q3", "c1", "@Grok hi"), now); bot != botGrok || !ok {
+		t.Fatal("grok should reply")
+	}
+	if bot, ok, _ := a.grokShouldReply(msg("q4", "c1", "@Groq hi"), now); bot != botGroq || !ok {
+		t.Fatal("groq should reply")
+	}
+	if _, ok, why := a.grokShouldReply(msg("q5", "c1", "@Groq again"), now.Add(5*time.Second)); ok || why != "chat rate limit" {
+		t.Fatalf("groq chat limit: %v %q", ok, why)
+	}
+	// A 429 pauses @Groq only.
+	a.grok().mu.Lock()
+	a.grok().groqLim.pausedUntil = now.Add(time.Minute)
+	a.grok().mu.Unlock()
+	if _, ok, why := a.grokShouldReply(msg("q6", "c2", "@Groq hi"), now); ok || why != "provider rate limit" {
+		t.Fatalf("paused: %v %q", ok, why)
+	}
+	if _, ok, _ := a.grokShouldReply(msg("q7", "c2", "@Grok hi"), now); !ok {
+		t.Fatal("grok unaffected by groq pause")
+	}
+	if st := a.GrokStatus(); st.GroqRepliesToday != 1 || st.RepliesToday != 2 {
+		t.Fatalf("counts = %+v", st)
+	}
+	if got := grokLine(&db.Message{Body: GroqReplyPrefix + "hi", IsFromMe: true}); got != "Groq: hi" {
+		t.Fatalf("grokLine = %q", got)
+	}
+	if d := groqRetryAfter("7"); d != 7*time.Second {
+		t.Fatalf("retry-after = %v", d)
+	}
+	if d := groqRetryAfter(""); d != groqDefaultBackoff {
+		t.Fatalf("retry-after default = %v", d)
+	}
+}
+
+func TestGroqComplete(t *testing.T) {
+	var gotPath, gotAuth string
+	var gotBody map[string]any
+	status, retryAfter, calls := 200, "40", 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+		gotBody = nil
+		calls++
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		if code := status; code != 200 {
+			if retryAfter == "1" {
+				status = 200 // the retry succeeds
+			}
+			w.Header().Set("Retry-After", retryAfter)
+			w.WriteHeader(code)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limited"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Tomorrow in Springfield: sunny, high **83\u202f°F** 【2†L6-L10】.","executed_tools":[{"type":"search"},{"type":"open"}]}}],"usage":{"total_tokens":3700}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("MESSAGES_GROQ_BASE_URL", srv.URL+"/openai/v1")
+	t.Setenv("GROQ_API_KEY", "gsk-123")
+	t.Setenv("GROQ_CHAT_MODEL", "")
+	a := &App{}
+	ans, err := a.groqComplete(context.Background(), "Me: @Groq weather tomorrow?", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := grokTrimReply(ans.Text); got != "Tomorrow in Springfield: sunny, high 83 °F." || ans.Searches != 2 || ans.Tokens != 3700 {
+		t.Fatalf("ans = %+v (%q)", ans, got)
+	}
+	tools, _ := json.Marshal(gotBody["tools"])
+	if gotPath != "/openai/v1/chat/completions" || gotAuth != "Bearer gsk-123" || gotBody["model"] != groqDefaultModel ||
+		string(tools) != `[{"type":"browser_search"}]` || gotBody["tool_choice"] != "auto" || gotBody["reasoning_effort"] != "low" {
+		t.Fatalf("path=%s auth=%s body=%v", gotPath, gotAuth, gotBody)
+	}
+	msgs, _ := json.Marshal(gotBody["messages"])
+	if !strings.Contains(string(msgs), "You are Groq") || !strings.Contains(string(msgs), "search the web first") || !strings.Contains(string(msgs), "Right now it is") {
+		t.Fatalf("prompt = %s", msgs)
+	}
+	// Pictures must search.
+	if _, err := a.groqComplete(context.Background(), "Me: @Groq picture of a fox", true); err != nil || gotBody["tool_choice"] != "required" {
+		t.Fatalf("image: err=%v body=%v", err, gotBody)
+	}
+	// A model without browser search: no tools, and it says it can't look things up.
+	t.Setenv("GROQ_CHAT_MODEL", "qwen/qwen3.8-27b")
+	if _, err := a.groqComplete(context.Background(), "Me: @Groq news?", false); err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ = json.Marshal(gotBody["messages"])
+	if _, has := gotBody["tools"]; has || gotBody["reasoning_effort"] != nil || !strings.Contains(string(msgs), "can't look up live information") {
+		t.Fatalf("no-search body = %v", gotBody)
+	}
+	// 429: a short Retry-After is waited out once (here it's too long), then
+	// @Groq pauses; the key never shows in the error.
+	status, retryAfter, calls = 429, "1", 0
+	if _, err := a.groqComplete(context.Background(), "Me: @Groq hi", false); err != nil || calls != 2 {
+		t.Fatalf("short 429 retry: err=%v calls=%d", err, calls)
+	}
+	status, retryAfter, calls = 429, "40", 0
+	_, err = a.groqComplete(context.Background(), "Me: @Groq hi", false)
+	if err == nil || calls != 1 || strings.Contains(grokSafeErr(err), "gsk-123") {
+		t.Fatalf("429 err = %v calls=%d", err, calls)
+	}
+	if until := a.grok().groqLim.pausedUntil; time.Until(until) < 30*time.Second {
+		t.Fatalf("pause = %v", time.Until(until))
 	}
 }

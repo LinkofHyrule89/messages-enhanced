@@ -4911,28 +4911,41 @@
     }).catch(function (e) { btn.disabled = false; refreshDesc("Couldn't refresh: " + e.message); });
   }
 
-  // ---------- @Grok (server-wide setting) ----------
+  // ---------- @Grok / @Groq (server-wide settings) ----------
   var grokState = null;
-  function renderGrok() {
-    var st = grokState, btn = $("grokEnable");
-    if (!st) return;
-    var on = !!st.enabled;
+  function renderBotSwitch(btn, on, available) {
     btn.setAttribute("aria-checked", on ? "true" : "false");
     btn.classList.toggle("on", on);
+    btn.disabled = !available;
+  }
+  function renderGrok() {
+    var st = grokState;
+    if (!st) return;
+    var on = !!st.enabled, gq = !!st.groq_enabled, anyKey = !!(st.key_configured || st.groq_key_configured);
+    renderBotSwitch($("grokEnable"), on, st.key_configured);
+    renderBotSwitch($("groqEnable"), gq, st.groq_key_configured);
     var radios = document.querySelectorAll('input[name="grokTrigger"]');
-    for (var i = 0; i < radios.length; i++) { radios[i].checked = radios[i].value === (st.trigger || "me"); radios[i].disabled = !st.key_configured; }
-    $("grokTriggerRow").classList.toggle("disabled", !st.key_configured);
-    btn.disabled = !st.key_configured;
+    for (var i = 0; i < radios.length; i++) { radios[i].checked = radios[i].value === (st.trigger || "me"); radios[i].disabled = !anyKey; }
+    $("grokTriggerRow").classList.toggle("disabled", !anyKey);
     $("grokDesc").textContent = !st.key_configured
       ? "Not available yet: the server has no xAI API key (XAI_API_KEY)"
       : on ? "On · " + st.replies_today + " of " + st.daily_limit + " replies used today" : "Grok answers in the conversation, starting with “🤖 From Grok:”";
+    $("groqDesc").textContent = !st.groq_key_configured
+      ? "Not available: the server has no Groq API key (GROQ_API_KEY)"
+      : gq ? "On · " + st.groq_replies_today + " of " + st.groq_daily_limit + " replies used today" + (st.groq_search ? " · live web search" : " · no live search")
+      : "Groq answers in the conversation, starting with “🤖 From Groq:” (free tier)";
+    if (st.daily_limit && st.groq_daily_limit) {
+      $("grokLimitsDesc").textContent = "Each bot replies at most once per chat every 30 seconds (@Grok " + st.daily_limit + " a day, @Groq " + st.groq_daily_limit + " a day). Applies to every signed-in device.";
+    }
   }
   function loadGrok() {
     api("/api/app/grok").then(function (st) { grokState = st; renderGrok(); }).catch(function () {});
   }
-  function saveGrok(enabled, trigger) {
-    postJSON("/api/app/grok", { enabled: enabled, trigger: trigger }).then(function (st) { grokState = st; renderGrok(); })
-      .catch(function (e) { toast("Couldn't save @Grok setting: " + e.message, "error"); loadGrok(); });
+  function saveGrok(enabled, trigger, groqEnabled) {
+    var body = { enabled: enabled, trigger: trigger };
+    if (typeof groqEnabled === "boolean") body.groq_enabled = groqEnabled;
+    postJSON("/api/app/grok", body).then(function (st) { grokState = st; renderGrok(); })
+      .catch(function (e) { toast("Couldn't save the @Grok/@Groq setting: " + e.message, "error"); loadGrok(); });
   }
 
   // ---------- folders (view only) ----------
@@ -5398,10 +5411,14 @@
     $("refreshAllBtn").addEventListener("click", refreshEverything);
     $("grokEnable").addEventListener("click", function () {
       if (!grokState || !grokState.key_configured) return;
-      saveGrok(!grokState.enabled, grokState.trigger || "me");
+      saveGrok(!grokState.enabled, grokState.trigger || "me", !!grokState.groq_enabled);
+    });
+    $("groqEnable").addEventListener("click", function () {
+      if (!grokState || !grokState.groq_key_configured) return;
+      saveGrok(!!grokState.enabled, grokState.trigger || "me", !grokState.groq_enabled);
     });
     Array.prototype.forEach.call(document.querySelectorAll('input[name="grokTrigger"]'), function (r) {
-      r.addEventListener("change", function () { if (r.checked && grokState) saveGrok(!!grokState.enabled, r.value); });
+      r.addEventListener("change", function () { if (r.checked && grokState) saveGrok(!!grokState.enabled, r.value, !!grokState.groq_enabled); });
     });
     $("newMsgPill").addEventListener("click", function () {
       var box = $("messages");

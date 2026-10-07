@@ -356,7 +356,7 @@
           <span id="refreshAllDesc" class="setting-desc" role="status">Re-read conversations, group names, group icons and contact photos from Google Messages</span>
         </span>
       </button>
-      <div class="sheet-label">@Grok</div>
+      <div class="sheet-label">@Grok and @Groq</div>
       <button id="grokEnable" class="setting-row" type="button" role="switch" aria-checked="false">
         <span class="setting-text">
           <span class="setting-name">Reply when someone writes @Grok</span>
@@ -364,11 +364,18 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
+      <button id="groqEnable" class="setting-row" type="button" role="switch" aria-checked="false">
+        <span class="setting-text">
+          <span class="setting-name">Reply when someone writes @Groq</span>
+          <span id="groqDesc" class="setting-desc">Groq answers in the conversation, starting with “🤖 From Groq:”</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
       <div id="grokTriggerRow" class="setting-row setting-col" role="radiogroup" aria-labelledby="grokTriggerName">
         <span id="grokTriggerName" class="setting-name">Who can trigger</span>
         <label class="grok-choice"><input type="radio" name="grokTrigger" value="me" checked> Only me</label>
         <label class="grok-choice"><input type="radio" name="grokTrigger" value="everyone"> Everyone in the group</label>
-        <span class="setting-desc">At most one reply per chat every 30 seconds and 30 a day. Applies to every signed-in device.</span>
+        <span id="grokLimitsDesc" class="setting-desc">Each bot replies at most once per chat every 30 seconds (@Grok 30 a day, @Groq 40 a day). Applies to every signed-in device.</span>
       </div>
       <div class="sheet-label">Account</div>
       <button id="signOutBtn" class="setting-row signout-row" type="button">

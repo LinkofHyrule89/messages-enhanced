@@ -35,7 +35,14 @@ func TestSTTProxyForwardsOnlyTranscriptions(t *testing.T) {
 	if resp.StatusCode != 200 || string(b) != `{"text":"hi"}` || gotPath != "/openai/v1/audio/transcriptions" || gotAuth != "Bearer k" || gotHost != strings.TrimPrefix(up.URL, "http://") {
 		t.Fatalf("forward: %d %s path=%s auth=%s host=%s", resp.StatusCode, b, gotPath, gotAuth, gotHost)
 	}
-	for _, c := range []struct{ method, path string }{{"GET", "/openai/v1/audio/transcriptions"}, {"POST", "/openai/v1/chat/completions"}, {"POST", "/"}} {
+	// @Groq replies go through too.
+	req, _ = http.NewRequest(http.MethodPost, px.URL+"/openai/v1/chat/completions", strings.NewReader("q"))
+	if resp, err := http.DefaultClient.Do(req); err != nil || resp.StatusCode != 200 || gotPath != "/openai/v1/chat/completions" {
+		t.Fatalf("chat completions: %v %v %s", err, resp, gotPath)
+	} else {
+		resp.Body.Close()
+	}
+	for _, c := range []struct{ method, path string }{{"GET", "/openai/v1/audio/transcriptions"}, {"POST", "/openai/v1/embeddings"}, {"GET", "/openai/v1/models"}, {"POST", "/"}} {
 		req, _ := http.NewRequest(c.method, px.URL+c.path, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {

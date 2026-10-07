@@ -11,17 +11,22 @@ import (
 	"github.com/maxghenis/openmessage/internal/app"
 )
 
-// RunGrokTest asks @Grok one question through the same request path the
-// live auto-reply uses (Responses API + web/X search) and prints the reply.
-// Nothing is sent to any conversation. Needs XAI_API_KEY.
+// RunGrokTest asks @Grok (or, with --groq, @Groq) one question through the
+// same request path the live auto-reply uses and prints the reply, plus
+// whether a picture would be sent. Nothing is sent to any conversation.
+// Needs XAI_API_KEY (or GROQ_API_KEY).
 func RunGrokTest(logger zerolog.Logger, args ...string) error {
+	bot := "Grok"
+	if len(args) > 0 && (args[0] == "--groq" || args[0] == "-groq") {
+		bot, args = "Groq", args[1:]
+	}
 	q := strings.TrimSpace(strings.Join(args, " "))
 	if q == "" {
-		return errors.New("usage: grok-test <question>")
+		return errors.New("usage: grok-test [--groq] <question>")
 	}
 	a := &app.App{Logger: logger}
 	start := time.Now()
-	reply, searches, err := a.GrokTestAnswer(q)
+	reply, searches, err := a.BotTestAnswer(bot, q)
 	if err != nil {
 		return err
 	}

@@ -5,11 +5,12 @@ import "net/http"
 // GrokBackend holds the @Grok auto-reply settings (server-wide).
 type GrokBackend interface {
 	GrokStatus() any
-	SetGrokSettings(enabled bool, trigger string) (any, error)
+	// groqEnabled nil keeps the current @Groq setting.
+	SetGrokSettings(enabled bool, trigger string, groqEnabled *bool) (any, error)
 }
 
-// GET  /api/app/grok -> {enabled, trigger, key_configured, model, replies_today, daily_limit}
-// POST /api/app/grok {"enabled": bool, "trigger": "me"|"everyone"}
+// GET  /api/app/grok -> {enabled, trigger, groq_enabled, key_configured, groq_key_configured, ...}
+// POST /api/app/grok {"enabled": bool, "trigger": "me"|"everyone", "groq_enabled": bool (optional)}
 func (s *Server) handleGrok(w http.ResponseWriter, r *http.Request) {
 	b := s.deps.Grok
 	if b == nil {
@@ -22,8 +23,9 @@ func (s *Server) handleGrok(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, b.GrokStatus())
 	case http.MethodPost:
 		var req struct {
-			Enabled *bool  `json:"enabled"`
-			Trigger string `json:"trigger"`
+			Enabled     *bool  `json:"enabled"`
+			Trigger     string `json:"trigger"`
+			GroqEnabled *bool  `json:"groq_enabled"`
 		}
 		if !decodeJSONBody(w, r, &req) {
 			return
@@ -32,7 +34,7 @@ func (s *Server) handleGrok(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "enabled and trigger (me or everyone) are required"})
 			return
 		}
-		st, err := b.SetGrokSettings(*req.Enabled, req.Trigger)
+		st, err := b.SetGrokSettings(*req.Enabled, req.Trigger, req.GroqEnabled)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
