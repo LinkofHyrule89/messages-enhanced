@@ -644,53 +644,22 @@ func reconcileBatchReachedLocalBoundary(msgs []*gmproto.Message, localLatestTS i
 }
 
 func (a *App) storeConversation(conv *gmproto.Conversation) error {
+	cands, err := a.storeConversationSnapshot(conv, client.SelfAvatarDue())
+	if err != nil {
+		return err
+	}
+	a.QueueGoogleAvatarCandidates(cands)
+	return nil
+}
+
+// storeConversationSnapshot saves Google's view of a conversation (name,
+// members, pin, archive/spam state; deleted -> removed) and returns the
+// photos to fetch (group icon first).
+func (a *App) storeConversationSnapshot(conv *gmproto.Conversation, includeSelf bool) ([]db.ContactAvatarCandidate, error) {
 	if client.GoogleConversationDeleted(conv) {
-		return a.Store.DeleteConversation(conv.GetConversationID())
+		return nil, a.Store.DeleteConversation(conv.GetConversationID())
 	}
-	participantsJSON := "[]"
-	var avatarCandidates []db.ContactAvatarCandidate
-	if ps := conv.GetParticipants(); len(ps) > 0 {
-		type pInfo struct {
-			Name      string `json:"name"`
-			Number    string `json:"number"`
-			IsMe      bool   `json:"is_me,omitempty"`
-			ID        string `json:"id,omitempty"` // participant ID, used to resolve reaction actors to names
-			ContactID string `json:"contact_id,omitempty"`
-			// As Google writes names in "Read by …" status text.
-			FirstName string `json:"first_name,omitempty"`
-		}
-		var infos []pInfo
-		for _, p := range ps {
-			info := pInfo{
-				Name:      p.GetFullName(),
-				IsMe:      p.GetIsMe(),
-				ContactID: p.GetContactID(),
-				FirstName: p.GetFirstName(),
-			}
-			if id := p.GetID(); id != nil {
-				info.Number = id.GetNumber()
-				info.ID = id.GetParticipantID()
-			}
-			if info.Number == "" {
-				info.Number = p.GetFormattedNumber()
-			}
-			// You too (rarely): the list header shows your own photo.
-			if !info.IsMe || (info.ID != "" && client.SelfAvatarDue()) {
-				avatarCandidates = append(avatarCandidates, db.ContactAvatarCandidate{
-					SourcePlatform: "sms",
-					ParticipantID:  info.ID,
-					ContactID:      info.ContactID,
-					PhoneNumber:    info.Number,
-					DisplayName:    info.Name,
-					Source:         "backfill",
-				})
-			}
-			infos = append(infos, info)
-		}
-		if b, err := json.Marshal(infos); err == nil {
-			participantsJSON = string(b)
-		}
-	}
+	participantsJSON, avatarCandidates := client.ParticipantsSnapshot(conv, "backfill", includeSelf)
 
 	client.LogGroupAvatarPresence(a.Logger, conv)
 	if groupCandidate, ok := client.GroupAvatarCandidate(conv, "backfill"); ok {
@@ -713,11 +682,10 @@ func (a *App) storeConversation(conv *gmproto.Conversation) error {
 		// Pinned on the phone (read-only flag).
 		GooglePinnedSnapshot: &pinned,
 	}); err != nil {
-		return err
+		return nil, err
 	}
 	client.MirrorGoogleConversationStatus(a.Store, a.Logger, conv)
-	a.QueueGoogleAvatarCandidates(avatarCandidates)
-	return nil
+	return avatarCandidates, nil
 }
 
 func (a *App) storeMessage(msg *gmproto.Message) {

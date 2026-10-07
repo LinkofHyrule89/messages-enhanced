@@ -31,6 +31,16 @@ func MirrorGoogleConversationStatus(store *db.Store, logger zerolog.Logger, conv
 		archived = true
 	case gmproto.ConversationStatus_ACTIVE:
 		archived = false
+		if changed, _ := store.UnmirrorGoogleSpam(conv.GetConversationID()); changed {
+			logger.Info().Str("conv_id", conv.GetConversationID()).Msg("Conversation left Google spam/blocked")
+		}
+	case gmproto.ConversationStatus_SPAM_FOLDER, gmproto.ConversationStatus_BLOCKED_FOLDER:
+		if changed, err := store.MirrorGoogleSpam(conv.GetConversationID()); err != nil {
+			logger.Warn().Err(err).Str("conv_id", conv.GetConversationID()).Msg("Failed to mirror Google spam state")
+		} else if changed {
+			logger.Info().Str("conv_id", conv.GetConversationID()).Msg("Mirrored Google spam/blocked state")
+		}
+		return
 	default:
 		return
 	}

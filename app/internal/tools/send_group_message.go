@@ -122,7 +122,7 @@ func sendGroupMessageHandler(a *app.App, v2Options ...*V2Dependencies) server.To
 		a.RecordGoogleSendOutcome(true)
 
 		// Persist so the group send appears in local history (like 1:1 sends).
-		if err := a.Store.RecordOutgoingMessage(&db.Message{
+		outgoing := &db.Message{
 			MessageID:      payload.TmpID,
 			ConversationID: conv.GetConversationID(),
 			Body:           message,
@@ -130,9 +130,11 @@ func sendGroupMessageHandler(a *app.App, v2Options ...*V2Dependencies) server.To
 			TimestampMS:    time.Now().UnixMilli(),
 			Status:         "OUTGOING_SENDING",
 			SourcePlatform: "sms",
-		}, ""); err != nil {
+		}
+		if err := a.Store.RecordOutgoingMessage(outgoing, ""); err != nil {
 			return errorResult(fmt.Sprintf("group message sent but failed to persist: %v", err)), nil
 		}
+		a.DropPlaceholderIfEchoed(outgoing.MessageID, outgoing.TimestampMS)
 
 		return textResult(fmt.Sprintf("Group message sent to %s: %s", strings.Join(phones, ", "), message)), nil
 	}

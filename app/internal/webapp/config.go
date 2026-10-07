@@ -15,6 +15,13 @@ import (
 // Config is read from the environment. The web app is enabled only when
 // MESSAGES_SECRET is set.
 type Config struct {
+	// MCPToken guards the remote MCP connector at /mcp (MESSAGES_MCP_TOKEN;
+	// shorter than 32 characters or unset = /mcp is off).
+	MCPToken string
+	// PublicURL overrides the public origin used in OAuth metadata
+	// (MESSAGES_PUBLIC_URL, e.g. https://messages.example.com; default: the
+	// request's Host).
+	PublicURL      string
 	Secret         string        // MESSAGES_SECRET: login secret (>= 16 chars)
 	SessionTTL     time.Duration // MESSAGES_SESSION_DAYS (default 30)
 	CookieSecure   string        // MESSAGES_COOKIE_SECURE: "auto" (default), "1", "0"
@@ -51,6 +58,8 @@ func Enabled() bool { return strings.TrimSpace(Getenv("MESSAGES_SECRET")) != "" 
 func ConfigFromEnv() (Config, error) {
 	c := Config{
 		Secret:         strings.TrimSpace(Getenv("MESSAGES_SECRET")),
+		MCPToken:       strings.TrimSpace(Getenv("MESSAGES_MCP_TOKEN")),
+		PublicURL:      strings.TrimRight(strings.TrimSpace(Getenv("MESSAGES_PUBLIC_URL")), "/"),
 		SessionTTL:     time.Duration(envInt("MESSAGES_SESSION_DAYS", 30)) * 24 * time.Hour,
 		CookieSecure:   firstNonEmpty(strings.ToLower(strings.TrimSpace(Getenv("MESSAGES_COOKIE_SECURE"))), "auto"),
 		STTProvider:    strings.ToLower(strings.TrimSpace(Getenv("MESSAGES_STT_PROVIDER"))),

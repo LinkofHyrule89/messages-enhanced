@@ -195,6 +195,7 @@ func (a *App) sendSMSMedia(conversationID string, data []byte, filename, mime, c
 	if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
 		a.Logger.Warn().Err(err).Msg("Scheduler: sent SMS media but failed to record locally")
 	}
+	a.DropPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 	// Caption can't ride on the SMS media payload — send it as a follow-up text.
 	if c := strings.TrimSpace(caption); c != "" {
 		if _, err := a.sendSMSText(conversationID, c, replyToID); err != nil {
@@ -258,11 +259,12 @@ func (a *App) sendSMSText(conversationID, body, replyToID string) (*db.Message, 
 		Body:           body,
 		IsFromMe:       true,
 		TimestampMS:    time.Now().UnixMilli(),
-		Status:         "OUTGOING_SENT",
+		Status:         "OUTGOING_SENDING", // replaced by Google's copy (TmpID or content match)
 		ReplyToID:      replyToID,
 	}
 	if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
 		a.Logger.Warn().Err(err).Msg("Scheduler: sent SMS but failed to record locally")
 	}
+	a.DropPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 	return msg, nil
 }

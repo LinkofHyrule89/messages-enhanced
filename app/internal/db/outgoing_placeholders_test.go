@@ -55,7 +55,8 @@ func TestOutgoingPlaceholderMatches(t *testing.T) {
 		{"media vs text", withMedia(placeholderMsg("tm-1", "5", "", phBase), "up1", "image/png"), realOwnMsg("g1", "5", "hi", phBase+1000), false},
 		{"empty text never matches", placeholderMsg("tm-1", "5", "  ", phBase), realOwnMsg("g1", "5", "", phBase+1000), false},
 		{"failed placeholder", &Message{MessageID: "tm-1", ConversationID: "5", Body: "hi", TimestampMS: phBase, Status: "OUTGOING_FAILED:FAILURE_2", IsFromMe: true}, realOwnMsg("g1", "5", "hi", phBase+1000), false},
-		{"not a tm- placeholder", placeholderMsg("tmp_000000000001", "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), false},
+		{"tmp_ server/MCP placeholder", placeholderMsg("tmp_000000000001", "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), true},
+		{"not a placeholder id", placeholderMsg("msg-local-1", "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), false},
 		{"real is another placeholder", placeholderMsg("tm-1", "5", "hi", phBase), placeholderMsg("tm-2", "5", "hi", phBase+1000), false},
 		{"real is incoming", placeholderMsg("tm-1", "5", "hi", phBase), &Message{MessageID: "g1", ConversationID: "5", Body: "hi", TimestampMS: phBase + 1000, Status: "INCOMING_COMPLETE"}, false},
 	}
@@ -163,8 +164,16 @@ func TestDeleteOutgoingPlaceholderIfEchoed(t *testing.T) {
 		t.Fatalf("realID = %q, err = %v", realID, err)
 	}
 	assertPresent(t, s, "tm-x", false)
-	if realID, _ := s.DeleteOutgoingPlaceholderIfEchoed("tmp_000000000001", 0); realID != "" {
-		t.Fatalf("non tm- id handled: %q", realID)
+
+	// Server/MCP tmp_ placeholders get the same send-side race check.
+	mustStore(t, s, placeholderMsg("tmp_000000000001", "5", "mcp hi", phBase+100000))
+	mustStore(t, s, realOwnMsg("g-mcp", "5", "mcp hi", phBase+100200))
+	if realID, err := s.DeleteOutgoingPlaceholderIfEchoed("tmp_000000000001", phBase+100000-5000); err != nil || realID != "g-mcp" {
+		t.Fatalf("tmp_ realID = %q, err = %v", realID, err)
+	}
+	assertPresent(t, s, "tmp_000000000001", false)
+	if realID, _ := s.DeleteOutgoingPlaceholderIfEchoed("msg-not-a-placeholder", 0); realID != "" {
+		t.Fatalf("non-placeholder id handled: %q", realID)
 	}
 }
 
@@ -223,4 +232,33 @@ func TestCleanupMatchedOutgoingPlaceholdersOnce(t *testing.T) {
 	}
 	assertPresent(t, s, "tm-dup-a", true)
 	assertPresent(t, s, "tm-dup-b", false)
+}
+
+func TestReconcileOwnEcho_TmpServerPlaceholder(t *testing.T) {
+	s := newTestStore(t)
+	mustStore(t, s, placeholderMsg("tmp_012345678901", "5", "From Grok", phBase))
+	real := realOwnMsg("192500", "5", "From Grok", phBase+800)
+	mustStore(t, s, real)
+	// No TmpID on the echo (backfill / race); content match must still clear tmp_.
+	removed, err := s.ReconcileOwnEcho(real, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != "tmp_012345678901" {
+		t.Fatalf("removed = %q, want tmp_ placeholder", removed)
+	}
+	assertPresent(t, s, "tmp_012345678901", false)
+	assertPresent(t, s, "192500", true)
+}
+
+func TestReconcileOwnEcho_TmpExactID(t *testing.T) {
+	s := newTestStore(t)
+	mustStore(t, s, placeholderMsg("tmp_012345678901", "5", "From Grok", phBase))
+	real := realOwnMsg("192501", "5", "From Grok", phBase+500)
+	mustStore(t, s, real)
+	removed, err := s.ReconcileOwnEcho(real, "tmp_012345678901", true)
+	if err != nil || removed != "tmp_012345678901" {
+		t.Fatalf("removed = %q, err = %v", removed, err)
+	}
+	assertPresent(t, s, "tmp_012345678901", false)
 }

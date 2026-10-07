@@ -45,8 +45,15 @@ type Deps struct {
 	Typing *TypingTracker
 	// Push sends Web Push notifications for incoming messages (nil = off).
 	Push *PushHub
+	// MCP is the remote MCP connector (Streamable HTTP) served at /mcp behind
+	// Config.MCPToken (nil or no token = off).
+	MCP http.Handler
 	// Profile serves the header's Google account photo (nil = none).
 	Profile ProfilePhotoSource
+	// Refresh re-reads conversations/photos from Google (nil = 503).
+	Refresh RefreshBackend
+	// Grok holds the @Grok auto-reply settings (nil = 503).
+	Grok GrokBackend
 	// NoHealthMonitor skips starting the background health watcher (tests).
 	NoHealthMonitor bool
 }
@@ -69,6 +76,9 @@ type Server struct {
 	stars    *StarStore // nil if the data dir couldn't be prepared
 	version  string     // hash of the static files (version.go)
 	index    []byte     // index.html with versioned asset URLs
+	mcpFails mcpFailures
+	oauth    *oauthStore
+	gated    http.Handler // the login-protected app (fallback for /mcp when the connector is off)
 }
 
 // NewHandler builds the public-facing handler: login + auth gate in front of
@@ -112,6 +122,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	s.index = versionedIndex(sub, s.version)
 
 	s.health = NewHealthMonitor(cfg, d.GoogleStatus, d.Push)
+	s.health.SetLogger(d.Logger)
 	if s.health.Enabled() && !d.NoHealthMonitor {
 		go s.health.Run(context.Background())
 	}
@@ -162,8 +173,12 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	registerLegacyRoutes(root)
 	root.HandleFunc("/.well-known/assetlinks.json", handleAssetLinks) // Android app (TWA) link; public
 	s.registerPWARoutes(root)                                         // manifest, service worker, icons, offline page (no private data)
-	root.Handle("/", s.auth.Require(protected))
-	return root, s, nil
+	root.HandleFunc("/mcp", s.handleMCP)                              // remote MCP connector: own bearer token, not the login cookie
+	s.oauth = newOAuthStore(d.DataDir)
+	s.registerOAuthRoutes(root) // OAuth for the MCP connector; /oauth/authorize needs the login
+	s.gated = s.auth.Require(protected)
+	root.Handle("/", s.gated)
+	return withSecurityHeaders(withGzip(root), cfg.PublicURL), s, nil
 }
 
 func (s *Server) Pairer() *Pairer     { return s.pairer }
@@ -200,7 +215,13 @@ func setPageSecurityHeaders(w http.ResponseWriter) {
 
 func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	setPageSecurityHeaders(w)
-	w.Header().Set("Cache-Control", "no-cache")
+	// Asset URLs in index.html carry ?v=<build hash>: those never change, so
+	// cache them for a year; everything else (the page itself) revalidates.
+	if v := r.URL.Query().Get("v"); v != "" && v == s.version && r.URL.Path != "/app/" && r.URL.Path != "/app/index.html" {
+		w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	if (r.URL.Path == "/app/" || r.URL.Path == "/app/index.html") && len(s.index) > 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("X-App-Version", s.version)

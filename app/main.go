@@ -19,7 +19,12 @@ func main() {
 	cmd.SetVersion(version)
 
 	level := cmd.LogLevel()
-	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+	// No ANSI colors when stderr isn't a terminal (journald, files).
+	noColor := true
+	if fi, err := os.Stderr.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+		noColor = false
+	}
+	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, NoColor: noColor}).
 		With().Timestamp().Logger().Level(level)
 
 	if len(os.Args) < 2 {

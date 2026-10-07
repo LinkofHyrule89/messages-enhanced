@@ -28,16 +28,18 @@ type OnSessionInvalid func()
 type OnConnectionLost func()
 
 type EventHandler struct {
-	Store                    *db.Store
-	Logger                   zerolog.Logger
-	SessionPath              string
-	Client                   *Client
-	Now                      func() time.Time
-	PersistCookiesEvery      time.Duration
-	OnConversationsChange    func()
-	OnSessionInvalid         OnSessionInvalid
-	OnConnectionLost         OnConnectionLost
-	OnIncomingMessage        func(*db.Message)
+	Store                 *db.Store
+	Logger                zerolog.Logger
+	SessionPath           string
+	Client                *Client
+	Now                   func() time.Time
+	PersistCookiesEvery   time.Duration
+	OnConversationsChange func()
+	OnSessionInvalid      OnSessionInvalid
+	OnConnectionLost      OnConnectionLost
+	OnIncomingMessage     func(*db.Message)
+	// OnLiveMessage: a new live message (yours or incoming, not history).
+	OnLiveMessage            func(*db.Message)
 	OnPendingMedia           func(conversationID, messageID string)
 	OnMessagesChange         func(string)
 	OnRealtimeGapRecovered   func(string)
@@ -227,11 +229,11 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 
 	// Whether this own message is new decides if the placeholder fallback
 	// below may run (a status-only re-delivery must not consume a placeholder).
-	isNewOwn := false
-	if dbMsg.IsFromMe {
-		exists, err := h.Store.MessageExists(dbMsg.MessageID)
-		isNewOwn = err == nil && !exists
+	isNew := false
+	if exists, err := h.Store.MessageExists(dbMsg.MessageID); err == nil {
+		isNew = !exists
 	}
+	isNewOwn := dbMsg.IsFromMe && isNew
 
 	if err := h.Store.UpsertMessage(dbMsg); err != nil {
 		h.Logger.Error().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to store message")
@@ -266,6 +268,9 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 	if !dbMsg.IsFromMe && !evt.IsOld && h.OnIncomingMessage != nil {
 		h.OnIncomingMessage(dbMsg)
 	}
+	if isNew && !evt.IsOld && h.OnLiveMessage != nil {
+		h.OnLiveMessage(dbMsg)
+	}
 	if !dbMsg.IsFromMe && !evt.IsOld && h.OnPhoneRespondingChange != nil {
 		h.OnPhoneRespondingChange(true)
 	}
@@ -298,49 +303,7 @@ func (h *EventHandler) storeConversation(conv *gmproto.Conversation) bool {
 		}
 		return true
 	}
-	participantsJSON := "[]"
-	var avatarCandidates []db.ContactAvatarCandidate
-	if ps := conv.GetParticipants(); len(ps) > 0 {
-		type pInfo struct {
-			Name      string `json:"name"`
-			Number    string `json:"number"`
-			IsMe      bool   `json:"is_me,omitempty"`
-			ID        string `json:"id,omitempty"` // participant ID, used to resolve reaction actors to names
-			ContactID string `json:"contact_id,omitempty"`
-			// As Google writes names in "Read by …" status text.
-			FirstName string `json:"first_name,omitempty"`
-		}
-		var infos []pInfo
-		for _, p := range ps {
-			info := pInfo{
-				Name:      p.GetFullName(),
-				IsMe:      p.GetIsMe(),
-				ContactID: p.GetContactID(),
-				FirstName: p.GetFirstName(),
-			}
-			if id := p.GetID(); id != nil {
-				info.Number = id.GetNumber()
-				info.ID = id.GetParticipantID()
-			}
-			if info.Number == "" {
-				info.Number = p.GetFormattedNumber()
-			}
-			if !info.IsMe {
-				avatarCandidates = append(avatarCandidates, db.ContactAvatarCandidate{
-					SourcePlatform: "sms",
-					ParticipantID:  info.ID,
-					ContactID:      info.ContactID,
-					PhoneNumber:    info.Number,
-					DisplayName:    info.Name,
-					Source:         "live",
-				})
-			}
-			infos = append(infos, info)
-		}
-		if b, err := json.Marshal(infos); err == nil {
-			participantsJSON = string(b)
-		}
-	}
+	participantsJSON, avatarCandidates := ParticipantsSnapshot(conv, "live", false)
 
 	LogGroupAvatarPresence(h.Logger, conv)
 	if groupCandidate, ok := GroupAvatarCandidate(conv, "live"); ok {

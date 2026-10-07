@@ -1,0 +1,7 @@
+[Unit]
+Description=Messages Enhanced VPN watchdog (re-adds wg0 routing, restarts a stale tunnel)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/me-vpn-watchdog

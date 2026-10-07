@@ -10,16 +10,17 @@ import (
 
 // Outgoing placeholders.
 //
-// When a Google Messages send succeeds, the web API stores a local row with
-// MessageID = the client's idempotency key ("tm-<ms>-<rand>" from the car
-// page) and status OUTGOING_SENDING, so the message shows immediately. The
-// real copy arrives later from Google with its own message ID. Normally the
-// echo carries the same TmpID and the placeholder is deleted by ID, but that
-// can miss: the echo can be processed before the placeholder row is written
-// (the send response and the echo race over the same long-poll), and copies
-// that come in through the reconcile/backfill fetch path may not carry a
-// TmpID at all. The placeholder then stays forever as a duplicate stuck on
-// "Sending".
+// When a Google Messages send succeeds, the app stores a local row with
+// MessageID = the send's temporary ID and status OUTGOING_SENDING, so the
+// message shows immediately. Temporary IDs are either "tm-<ms>-<rand>" from
+// the car/web UI or "tmp_<digits>" from server-side sends (MCP tools,
+// app.SendTextToConversation, the scheduler). The real copy arrives later
+// from Google with its own message ID. Normally the echo carries the same
+// TmpID and the placeholder is deleted by ID, but that can miss: the echo
+// can be processed before the placeholder row is written (the send response
+// and the echo race over the same long-poll), and copies that come in
+// through the reconcile/backfill fetch path may not carry a TmpID at all.
+// The placeholder then stays forever as a duplicate stuck on "Sending".
 //
 // The helpers below remove such a placeholder by content instead: same
 // conversation, both from me, placeholder still in a sending state, timestamps
@@ -29,21 +30,25 @@ import (
 // be a genuinely failed send the user needs to see.
 
 const (
-	// OutgoingPlaceholderPrefix is the ID prefix of the idempotency keys the
-	// car page generates; only rows with this prefix are ever matched.
+	// OutgoingPlaceholderPrefix is the web/car UI idempotency-key prefix
+	// ("tm-<ms>-<rand>"). Server-side sends use OutgoingServerTmpPrefix instead.
 	OutgoingPlaceholderPrefix = "tm-"
+	// OutgoingServerTmpPrefix is the temporary ID prefix from newSendTmpID
+	// (MCP connector, app.SendTextToConversation, scheduler).
+	OutgoingServerTmpPrefix = "tmp_"
 	// OutgoingPlaceholderMatchWindowMS is how far apart (either direction) the
 	// placeholder's and the real message's timestamps may be.
 	OutgoingPlaceholderMatchWindowMS int64 = 3 * 60 * 1000
 )
 
-// IsOutgoingPlaceholderID reports whether id is a car-page send placeholder.
+// IsOutgoingPlaceholderID reports whether id is a local optimistic-send
+// placeholder (web "tm-…" or server/MCP "tmp_…").
 func IsOutgoingPlaceholderID(id string) bool {
-	return strings.HasPrefix(id, OutgoingPlaceholderPrefix)
+	return strings.HasPrefix(id, OutgoingPlaceholderPrefix) || strings.HasPrefix(id, OutgoingServerTmpPrefix)
 }
 
 func isLocalOutgoingID(id string) bool {
-	return IsOutgoingPlaceholderID(id) || strings.HasPrefix(id, "tmp_")
+	return IsOutgoingPlaceholderID(id)
 }
 
 // isPlaceholderSendingStatus: still waiting for the real copy. Failed or
@@ -141,10 +146,10 @@ func placeholderCandidatesTx(tx *sql.Tx, conversationID string, fromMS, toMS int
 		FROM messages
 		WHERE conversation_id = ?
 		  AND is_from_me = 1
-		  AND substr(message_id, 1, 3) = ?
+		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ?)
 		  AND timestamp_ms BETWEEN ? AND ?
 		ORDER BY timestamp_ms ASC, message_id ASC
-	`, conversationID, OutgoingPlaceholderPrefix, fromMS, toMS)
+	`, conversationID, OutgoingPlaceholderPrefix, OutgoingServerTmpPrefix, fromMS, toMS)
 }
 
 // candidate real (non-local) from-me messages around a placeholder.
@@ -155,10 +160,10 @@ func realOwnCandidatesTx(tx *sql.Tx, conversationID string, fromMS, toMS int64) 
 		WHERE conversation_id = ?
 		  AND is_from_me = 1
 		  AND substr(message_id, 1, 3) != ?
-		  AND substr(message_id, 1, 4) != 'tmp_'
+		  AND substr(message_id, 1, 4) != ?
 		  AND timestamp_ms BETWEEN ? AND ?
 		ORDER BY timestamp_ms ASC, message_id ASC
-	`, conversationID, OutgoingPlaceholderPrefix, fromMS, toMS)
+	`, conversationID, OutgoingPlaceholderPrefix, OutgoingServerTmpPrefix, fromMS, toMS)
 }
 
 // closestPlaceholderMatch picks the matching placeholder nearest in time to
@@ -177,9 +182,9 @@ func closestPlaceholderMatch(real *Message, candidates []*Message) *Message {
 }
 
 // DeleteMatchingOutgoingPlaceholder is the echo-side fallback: given a real
-// from-me message that was just stored, delete at most one matching "tm-"
-// placeholder (the closest in time). It returns the deleted placeholder ID,
-// or "" when nothing matched.
+// from-me message that was just stored, delete at most one matching local
+// placeholder (tm- or tmp_; the closest in time). It returns the deleted
+// placeholder ID, or "" when nothing matched.
 func (s *Store) DeleteMatchingOutgoingPlaceholder(real *Message) (string, error) {
 	if real == nil || !real.IsFromMe || isLocalOutgoingID(real.MessageID) || real.ConversationID == "" || real.TimestampMS <= 0 {
 		return "", nil
@@ -315,7 +320,7 @@ func (s *Store) MessageExists(messageID string) (bool, error) {
 
 // outgoingPlaceholderCleanupTask names the one-time startup sweep in
 // store_maintenance_tasks.
-const outgoingPlaceholderCleanupTask = "cleanup_matched_tm_placeholders_v1"
+const outgoingPlaceholderCleanupTask = "cleanup_matched_outgoing_placeholders_v2"
 
 // CleanupMatchedOutgoingPlaceholdersOnce runs CleanupMatchedOutgoingPlaceholders
 // the first time it is called on a database and records that it ran, in the
@@ -360,10 +365,11 @@ func (s *Store) CleanupMatchedOutgoingPlaceholdersOnce() (bool, int, error) {
 }
 
 // CleanupMatchedOutgoingPlaceholders sweeps placeholders left behind before
-// the fallback existed. Each stuck "tm-" placeholder is paired with at most
-// one matching real message and each real message with at most one
-// placeholder, closest timestamps first. Placeholders without a match are
-// kept. Startup uses CleanupMatchedOutgoingPlaceholdersOnce.
+// the fallback existed (or before tmp_ IDs were included). Each stuck
+// placeholder is paired with at most one matching real message and each real
+// message with at most one placeholder, closest timestamps first.
+// Placeholders without a match are kept. Startup uses
+// CleanupMatchedOutgoingPlaceholdersOnce.
 func (s *Store) CleanupMatchedOutgoingPlaceholders() (int, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -384,9 +390,10 @@ func (s *Store) cleanupMatchedOutgoingPlaceholdersTx(tx *sql.Tx) (int, error) {
 	placeholders, err := queryMessagesTx(tx, `
 		SELECT `+messageColumns+`
 		FROM messages
-		WHERE is_from_me = 1 AND substr(message_id, 1, 3) = ?
+		WHERE is_from_me = 1
+		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ?)
 		ORDER BY conversation_id, timestamp_ms ASC, message_id ASC
-	`, OutgoingPlaceholderPrefix)
+	`, OutgoingPlaceholderPrefix, OutgoingServerTmpPrefix)
 	if err != nil {
 		return 0, err
 	}

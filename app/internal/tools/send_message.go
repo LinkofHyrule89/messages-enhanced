@@ -181,7 +181,7 @@ func sendMessageHandler(a *app.App, v2Options ...*V2Dependencies) server.ToolHan
 			}
 			a.RecordGoogleSendOutcome(true)
 			now := time.Now().UnixMilli()
-			if err := a.Store.RecordOutgoingMessage(&db.Message{
+			outgoing := &db.Message{
 				MessageID:      payload.TmpID,
 				ConversationID: conv.GetConversationID(),
 				Body:           message,
@@ -189,9 +189,11 @@ func sendMessageHandler(a *app.App, v2Options ...*V2Dependencies) server.ToolHan
 				TimestampMS:    now,
 				Status:         "OUTGOING_SENDING",
 				SourcePlatform: "sms",
-			}, ""); err != nil {
+			}
+			if err := a.Store.RecordOutgoingMessage(outgoing, ""); err != nil {
 				return errorResult(fmt.Sprintf("failed to persist sent message: %v", err)), nil
 			}
+			a.DropPlaceholderIfEchoed(outgoing.MessageID, outgoing.TimestampMS)
 			storedMsg, err := a.Store.GetMessageByID(payload.TmpID)
 			if err != nil {
 				return errorResult(fmt.Sprintf("failed to load sent message: %v", err)), nil

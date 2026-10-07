@@ -47,6 +47,8 @@ func (s *Server) registerCarRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/app/conversations/mute", s.handleCarConversationMute)
 	mux.HandleFunc("/api/app/conversations/read", s.handleCarConversationRead)
 	mux.HandleFunc("/api/app/conversations/meta", s.handleCarConversationMeta)
+	mux.HandleFunc("/api/app/refresh", s.handleRefresh)
+	mux.HandleFunc("/api/app/grok", s.handleGrok)
 	s.registerProfileRoutes(mux)
 }
 

@@ -147,6 +147,8 @@ type App struct {
 	avatarSyncClosed          bool
 	avatarSyncQueue           chan db.ContactAvatarCandidate
 	avatarSyncStop            chan struct{}
+	avatarPending             atomic.Int64 // refresh-queued avatars not yet handled
+	refresh                   googleRefreshState
 	whatsAppMu                sync.Mutex
 	WhatsApp                  *whatsapplive.Bridge
 	whatsAppLifecycleMu       sync.RWMutex
@@ -539,6 +541,7 @@ func (a *App) LoadAndConnect() error {
 			a.emitConversationsChange()
 		},
 		OnIncomingMessage: a.OnIncomingMessage,
+		OnLiveMessage:     a.HandleLiveMessageForGrok,
 		OnPendingMedia: func(conversationID, messageID string) {
 			a.StartPendingMediaRefresh(conversationID, messageID)
 		},

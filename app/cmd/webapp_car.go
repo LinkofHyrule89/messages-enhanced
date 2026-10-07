@@ -1,6 +1,10 @@
 package cmd
 
-import "github.com/maxghenis/openmessage/internal/app"
+import (
+	"errors"
+
+	"github.com/maxghenis/openmessage/internal/app"
+)
 
 // webCarBackend adapts *app.App to webapp.CarBackend.
 type webCarBackend struct{ a *app.App }
@@ -31,4 +35,24 @@ func (b webCarBackend) MarkConversationRead(id string) (any, error) {
 }
 func (b webCarBackend) ConversationMeta(id string) (any, error) {
 	return b.a.CarConversationMeta(id)
+}
+
+// webRefreshBackend adapts *app.App to webapp.RefreshBackend.
+type webRefreshBackend struct{ a *app.App }
+
+func (b webRefreshBackend) StartRefresh(scope string) (any, int, error) {
+	st, err := b.a.StartGoogleRefresh(scope)
+	if errors.Is(err, app.ErrRefreshRateLimited) {
+		return st, st.RetryAfterSec, nil
+	}
+	return st, 0, err
+}
+func (b webRefreshBackend) RefreshStatus() any { return b.a.GoogleRefreshStatus() }
+
+// webGrokBackend adapts *app.App to webapp.GrokBackend.
+type webGrokBackend struct{ a *app.App }
+
+func (b webGrokBackend) GrokStatus() any { return b.a.GrokStatus() }
+func (b webGrokBackend) SetGrokSettings(enabled bool, trigger string) (any, error) {
+	return b.a.SetGrokSettings(app.GrokSettings{Enabled: enabled, Trigger: trigger})
 }

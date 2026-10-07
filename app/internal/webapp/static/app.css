@@ -375,8 +375,14 @@ body.readonly-thread .conv-menu-btn { display: grid; }
 .typing-dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); animation: tm-typing 1.2s infinite ease-in-out; }
 .typing-dots i:nth-child(2) { animation-delay: .2s; }
 .typing-dots i:nth-child(3) { animation-delay: .4s; }
-.typing-name { margin-left: 16px; font-size: 22px; color: var(--muted); }
+.typing-name { font-size: 22px; color: var(--muted); }
+.typing-row.typing-named .bubble { padding: 16px 26px; }
 @keyframes tm-typing { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-6px); } }
+/* Inline "…" after "Name is typing": dots scale with the text. */
+.typing-dots-inline { display: inline-flex; height: auto; gap: .14em; margin-left: .2em; align-items: flex-end; vertical-align: baseline; }
+.typing-dots-inline i { width: .22em; height: .22em; background: currentColor; animation-name: tm-typing-inline; }
+@keyframes tm-typing-inline { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-.25em); } }
+@media (prefers-reduced-motion: reduce) { .typing-dots i { animation: none; opacity: .7; } }
 
 /* ---------- start chat panel ---------- */
 .newchat-view { position: fixed; inset: 0; z-index: 22; background: var(--bg); display: flex; justify-content: center; }
@@ -1215,3 +1221,23 @@ html:not(.desk) .compose-field > .btn-mic svg { width: 48px; height: 48px; fill:
 html:not(.desk) .compose-field > .btn-mic:active { background: rgba(255, 255, 255, .1); }
 html:not(.desk) body.rec-ui .thread-view > .compose .compose-field { border-color: rgba(229, 72, 77, .85); }
 html:not(.desk) .thread-view > .compose .compose-field:has(.drop-target) { border-color: var(--accent); border-style: dashed; }
+
+/* ---------- scroll: "new messages" pill + unread divider ---------- */
+.thread-view { position: relative; }
+.new-msg-pill { position: absolute; left: 50%; transform: translateX(-50%); z-index: 5; display: inline-flex; align-items: center; gap: 10px;
+  padding: 12px 24px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: inherit; font-size: 22px; font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45); cursor: pointer; }
+.new-msg-pill[hidden] { display: none; }
+.new-msg-pill svg { width: 26px; height: 26px; fill: currentColor; }
+html.desk .new-msg-pill { font-size: 15px; padding: 8px 16px; gap: 6px; }
+html.desk .new-msg-pill svg { width: 18px; height: 18px; }
+.unread-sep { align-self: stretch; display: flex; align-items: center; gap: 14px; margin: 6px 0; color: var(--accent); font-size: 20px; font-weight: 600; }
+.unread-sep::before, .unread-sep::after { content: ""; flex: 1; height: 1px; background: currentColor; opacity: .5; }
+html.desk .unread-sep { font-size: 13px; }
+
+/* ---------- @Grok settings ---------- */
+.grok-choice { display: flex; align-items: center; gap: 14px; font-size: 24px; padding: 8px 0; cursor: pointer; }
+.grok-choice input { width: 28px; height: 28px; accent-color: var(--accent); }
+html.desk .grok-choice { font-size: 15px; gap: 10px; padding: 4px 0; }
+html.desk .grok-choice input { width: 18px; height: 18px; }
+#grokTriggerRow.disabled { opacity: .5; }

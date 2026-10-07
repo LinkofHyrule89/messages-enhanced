@@ -99,6 +99,11 @@ type ContactAvatarCandidate struct {
 	// Google group conversation icon; ParticipantID is then
 	// GroupAvatarParticipantID(conversationID).
 	GroupAvatarURL string
+	// Force (in memory only) re-downloads even if the cached copy is fresh
+	// ("Refresh everything" in Settings).
+	Force bool
+	// Tracked (in memory only): counted in the refresh progress.
+	Tracked bool
 }
 
 // UnifiedContact maps a person across messaging platforms.

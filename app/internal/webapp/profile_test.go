@@ -17,7 +17,9 @@ func (f fakeProfile) AccountPhoto() ([]byte, string, string, bool) {
 }
 
 func TestProfilePhotoProxied(t *testing.T) {
-	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) { d.Profile = fakeProfile{img: []byte("\x89PNG\r\n\x1a\nfake"), hash: "abc123"} })
+	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) {
+		d.Profile = fakeProfile{img: []byte("\x89PNG\r\n\x1a\nfake"), hash: "abc123"}
+	})
 	// Login required.
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "http://car.example/api/app/profile-photo", nil))

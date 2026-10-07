@@ -81,6 +81,7 @@
     bell: "M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z",
     send: "M2.01 21 23 12 2.01 3 2 10l15 2-15 2z",
     install: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+    refresh: "M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
     gear: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7 7 0 0 0-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.47.47 0 0 0-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.48.48 0 0 0-.59.22L2.74 8.87a.47.47 0 0 0 .12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.61l-2.01-1.58zM12 15.6a3.6 3.6 0 1 1 0-7.2 3.6 3.6 0 0 1 0 7.2z",
   };
   function icon(name, cls) {
@@ -236,7 +237,7 @@
   function avatarLookups(c) {
     if (!c || sourcePlatformOf(c) !== "sms") return [];
     var all = conversationParticipants(c);
-    var others = all.filter(function (p) { return p && !isMe(p); });
+    var others = c.IsGroup ? currentMembers(c).others : all.filter(function (p) { return p && !isMe(p); });
     var list = [];
     if (c.IsGroup) {
       var g = { source: "sms", participantIDs: ["conv:" + c.ConversationID], contactIDs: [], numbers: [], group: true };
@@ -271,7 +272,7 @@
         avatarInflight++;
         // v=2: busts browser-cached responses from before the participant-ID
         // collision fix (they were served with max-age=86400).
-        var q = "v=2&source=" + encodeURIComponent(r.source);
+        var q = "v=2&source=" + encodeURIComponent(r.source) + (syncState.avatarVersion ? "&av=" + syncState.avatarVersion : "");
         if (r.participantIDs[0]) q += "&participant_id=" + encodeURIComponent(r.participantIDs[0]);
         if (r.contactIDs[0]) q += "&contact_id=" + encodeURIComponent(r.contactIDs[0]);
         if (r.numbers[0]) q += "&phone=" + encodeURIComponent(r.numbers[0]);
@@ -478,7 +479,7 @@
     if (state.folder) return force ? loadFolder() : Promise.resolve();
     return api("/api/conversations?limit=100").then(function (list) {
       if (state.folder) return;
-      state.convs = (list || []).filter(function (c) { return c.tab !== "archive"; });
+      state.convs = (list || []).filter(function (c) { return c.tab !== "archive" && c.tab !== "spam"; });
       chime.noteConversations(state.convs);
       applyConvPatches();
       renderConversations();
@@ -571,7 +572,7 @@
     var kind = statusKind({ Status: c.last_status, MessageID: "" });
     if (kind === "read" && c.IsGroup) {
       var names = readByNames({ status_text: c.last_status_text });
-      var others = conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).length;
+      var others = currentMembers(c).others.length;
       if (names && names.length && others && names.length < others) kind = "delivered";
     }
     return kind;
@@ -643,7 +644,7 @@
     if (PLATFORM[c.source_platform]) nameRow.appendChild(el("span", "tag", PLATFORM[c.source_platform]));
     mid.appendChild(nameRow);
     var typers = typingNames(c.ConversationID);
-    if (typers.length) mid.appendChild(el("div", "conv-preview typing", typingLabel(typers, c.IsGroup)));
+    if (typers.length) mid.appendChild(typingText("conv-preview typing", typingLabel(typers, c.IsGroup)));
     else {
       var pv = el("div", "conv-preview");
       var lk = listStatusKind(c);
@@ -770,16 +771,47 @@
     if (f && f.btn) { f.btn.classList.remove("open"); if (f.btn.id === "convMenuBtn") f.btn.setAttribute("aria-expanded", "false"); }
   }
   // ----- Group / Contact details -----
-  function openDetails(c) {
+  // Current members only: Google keeps people who left or were removed in
+  // the participant list (stored with hidden: true) so old messages still
+  // show their names. If every other entry is hidden, show them all.
+  function currentMembers(c) {
     var people = conversationParticipants(c);
     var others = people.filter(function (p) { return p && !isMe(p); });
+    var current = others.filter(function (p) { return !p.hidden; });
+    return { others: current.length ? current : others, me: people.filter(isMe)[0] || null };
+  }
+  // Your own name: from your participant entry in any conversation.
+  function selfName() {
+    var n = "";
+    state.convs.some(function (c) {
+      return conversationParticipants(c).some(function (p) { if (p && isMe(p) && (p.name || p.first_name)) { n = p.name || p.first_name; return true; } return false; });
+    });
+    return n;
+  }
+  function selfAvatar(me, cls) {
+    var name = (me && (me.name || me.first_name)) || selfName() || "Me";
+    if (profilePhoto.hash) {
+      var av = el("div", cls + " has-photo");
+      var img = el("img", "avatar-img");
+      img.alt = "";
+      img.src = "/api/app/profile-photo?h=" + encodeURIComponent(profilePhoto.hash);
+      av.appendChild(img);
+      img.addEventListener("error", function () { av.replaceWith(contactAvatar({ name: name, number: me && me.number, participant_id: me && me.id }, cls)); });
+      return av;
+    }
+    return contactAvatar({ name: name, number: me && me.number, participant_id: me && me.id }, cls);
+  }
+  function openDetails(c) {
+    var people = conversationParticipants(c);
+    var cm = currentMembers(c);
+    var others = cm.others;
     $("detailsTitle").textContent = c.IsGroup ? "Group details" : "Contact details";
     var slot = $("detailsAvatar");
     slot.textContent = "";
     slot.appendChild(buildAvatar(c, "avatar details-avatar"));
     $("detailsName").textContent = convName(c);
     var sub;
-    if (c.IsGroup) sub = people.length ? people.length + " people, including you" : "Group conversation";
+    if (c.IsGroup) sub = people.length ? (others.length + 1) + " people, including you" : "Group conversation";
     else sub = (others[0] && others[0].number && others[0].number !== convName(c)) ? others[0].number : (others[0] && others[0].number ? "" : "No number available");
     $("detailsSub").textContent = sub;
     var list = $("detailsMembers");
@@ -788,19 +820,20 @@
     list.hidden = !c.IsGroup;
     if (c.IsGroup) {
       var rows = others.slice().sort(function (a, b) { return String(a.name || a.number).localeCompare(String(b.name || b.number)); });
-      var me = people.filter(isMe)[0];
-      if (me) rows.push(me);
+      rows.unshift(cm.me || { is_me: true });
       rows.forEach(function (p) {
         var row = el("div", "details-member");
-        var name = isMe(p) ? "You" : (p.name || p.number || "Unknown");
-        row.appendChild(contactAvatar({ name: isMe(p) ? (p.name || "You") : name, number: p.number, participant_id: isMe(p) ? "" : p.id, contact_id: isMe(p) ? "" : p.contact_id }, "avatar details-member-avatar"));
+        var mine = isMe(p), myName = mine ? (p.name || p.first_name || selfName()) : "";
+        var name = mine ? (myName ? myName + " (you)" : "You") : (p.name || p.number || "Unknown");
+        row.appendChild(mine ? selfAvatar(p, "avatar details-member-avatar") :
+          contactAvatar({ name: name, number: p.number, participant_id: p.id, contact_id: p.contact_id }, "avatar details-member-avatar"));
         var txt = el("div", "details-member-text");
         txt.appendChild(el("div", "details-member-name", name));
         if (p.number && p.number !== name) txt.appendChild(el("div", "details-member-num", p.number));
         row.appendChild(txt);
         list.appendChild(row);
       });
-      if (!rows.length) list.appendChild(el("div", "details-empty", "Member list isn't available for this conversation."));
+      if (!others.length) list.appendChild(el("div", "details-empty", "Member list isn't available for this conversation."));
     }
     $("detailsView").hidden = false;
   }
@@ -1256,6 +1289,7 @@
     refreshTheme(id);
     state.nodes = {};
     clearReply();
+    beginScrollState(id, c, readOnly);
     $("messages").textContent = "";
     renderConversations();
     relayoutSoon();
@@ -1635,7 +1669,8 @@
   }
 
   // ---------- pending send placeholders ----------
-  // A send is stored by the server under its idempotency key ("tm-...") with
+  // A send is stored by the server under its temporary ID ("tm-..." from this
+  // app, "tmp_..." from server/MCP sends) with
   // status OUTGOING_SENDING until Google's real copy replaces it. If both are
   // ever present (the server cleanup missed it), show only the real one, by
   // the same rule the server uses (db.OutgoingPlaceholderMatches): same
@@ -1644,7 +1679,7 @@
   var PLACEHOLDER_WINDOW_MS = 3 * 60 * 1000;
   function isSendPlaceholder(m) {
     var s = String(m.Status || "").toUpperCase();
-    return !!m.IsFromMe && String(m.MessageID || "").indexOf("tm-") === 0 &&
+    return !!m.IsFromMe && /^(tm-|tmp_)/.test(String(m.MessageID || "")) &&
       !/FAIL|CANCEL/.test(s) && /SENDING|YET_TO_SEND|VALIDATING|AWAITING_RETRY/.test(s);
   }
   function mimeMajor(t) {
@@ -1729,6 +1764,7 @@
       var prevSame = idx > 0 && sameRun(msgs[idx - 1], m);
       var nextSame = idx < msgs.length - 1 && sameRun(m, msgs[idx + 1]);
       row.classList.add(prevSame ? (nextSame ? "grp-mid" : "grp-last") : (nextSame ? "grp-first" : "grp-solo"));
+      if (scrollState.unreadFromID && m.MessageID === scrollState.unreadFromID && scrollState.conv === state.current) box.appendChild(el("div", "unread-sep", "Unread"));
       if (groupChat && !m.IsFromMe && !prevSame) box.appendChild(el("div", "run-sender", m.SenderName || m.SenderNumber || "Unknown"));
       row.dataset.id = m.MessageID;
       var bubble = el("div", "bubble");
@@ -1803,8 +1839,105 @@
     });
     if (menuOpenFor && !menuStillThere) closeMsgMenu();
     renderTypingRow(false);
-    if (forceScroll || nearBottom) box.scrollTop = box.scrollHeight;
-    if (state.jump) finishJump();
+    if (state.jump) { if (forceScroll || nearBottom) box.scrollTop = box.scrollHeight; finishJump(); noteTail(msgs); return; }
+    applyScroll(msgs, forceScroll, nearBottom);
+  }
+  // ---------- scroll position ----------
+  // Opening a conversation starts at its first unread message (with an
+  // "Unread" divider) or at the bottom when everything's read or the last
+  // message is yours. Afterwards: your own sends always scroll to the
+  // bottom; incoming messages scroll only if you're already near the
+  // bottom, otherwise a "New messages" pill appears. "Read up to" is
+  // remembered per conversation on this device (when you reach the bottom).
+  var SEEN_KEY = "tm.seen.v1", seenTS = {};
+  try { seenTS = JSON.parse(localStorage.getItem(SEEN_KEY) || "{}") || {}; } catch (e) { seenTS = {}; }
+  var scrollState = { conv: null };
+  function markSeen(convID, ts) {
+    if (!convID || !ts || (seenTS[convID] || 0) >= ts) return;
+    seenTS[convID] = ts;
+    var keys = Object.keys(seenTS);
+    if (keys.length > 400) keys.sort(function (a, b) { return seenTS[a] - seenTS[b]; }).slice(0, keys.length - 400).forEach(function (k) { delete seenTS[k]; });
+    try { localStorage.setItem(SEEN_KEY, JSON.stringify(seenTS)); } catch (e) {}
+  }
+  function beginScrollState(id, c, readOnly) {
+    if (scrollState.conv === id && !scrollState.pendingOpen) return; // re-open of the open chat
+    scrollState = { conv: id, pendingOpen: true, unread: !readOnly && !!(c && c.UnreadCount > 0), seenAt: seenTS[id] || 0, tailID: "", unreadFromID: "", pill: 0 };
+    showNewPill(0);
+  }
+  function realTail(msgs) {
+    for (var i = msgs.length - 1; i >= 0; i--) if (!/^TOMBSTONE/i.test(msgs[i].Status || "")) return msgs[i];
+    return null;
+  }
+  function noteTail(msgs) { var t = realTail(msgs); scrollState.tailID = t ? String(t.MessageID) : ""; }
+  function firstUnread(msgs, seenAt) {
+    var i, from = -1;
+    if (seenAt) {
+      for (i = 0; i < msgs.length; i++) if (!msgs[i].IsFromMe && !/^TOMBSTONE/i.test(msgs[i].Status || "") && msgs[i].TimestampMS > seenAt) { from = i; break; }
+    } else {
+      // Never opened here: the incoming run after your last message.
+      for (i = msgs.length - 1; i >= 0 && !msgs[i].IsFromMe; i--) if (!/^TOMBSTONE/i.test(msgs[i].Status || "")) from = i;
+    }
+    return from >= 0 ? msgs[from] : null;
+  }
+  function rowFor(id) {
+    var rows = $("messages").querySelectorAll(".msg-row");
+    for (var i = 0; i < rows.length; i++) if (rows[i].dataset.id === String(id)) return rows[i];
+    return null;
+  }
+  function scrollToBottom() {
+    var box = $("messages");
+    box.scrollTop = box.scrollHeight;
+    showNewPill(0);
+    var t = state.lastMsgs && realTail(state.lastMsgs);
+    if (t && state.current && !state.folder) markSeen(state.current, t.TimestampMS);
+  }
+  function applyScroll(msgs, forceScroll, nearBottom) {
+    var box = $("messages"), sc = scrollState;
+    if (sc.conv !== state.current) { beginScrollState(state.current, null, !!state.folder); sc = scrollState; }
+    var tail = realTail(msgs);
+    if (sc.pendingOpen) {
+      if (!msgs.length) { box.scrollTop = box.scrollHeight; return; }
+      sc.pendingOpen = false;
+      var target = sc.unread && tail && !tail.IsFromMe ? firstUnread(msgs, sc.seenAt) : null;
+      if (target) {
+        sc.unreadFromID = String(target.MessageID);
+        // Re-render once so the divider sits above it, then place it near the top.
+        renderMessages(msgs, false);
+        var row = rowFor(target.MessageID), sep = box.querySelector(".unread-sep");
+        var anchor = sep || row;
+        if (anchor) {
+          box.scrollTop = Math.max(0, anchor.offsetTop - box.offsetTop - 16);
+          noteTail(msgs);
+          if (box.scrollHeight - box.scrollTop - box.clientHeight < 200) scrollToBottom();
+          return;
+        }
+      }
+      noteTail(msgs);
+      scrollToBottom();
+      return;
+    }
+    var newTail = tail && sc.tailID && String(tail.MessageID) !== sc.tailID;
+    var mineTail = tail && tail.IsFromMe;
+    if (forceScroll || (newTail && mineTail)) scrollToBottom();
+    else if (newTail) {
+      if (nearBottom) scrollToBottom();
+      else {
+        var n = 0;
+        for (var i = msgs.length - 1; i >= 0 && String(msgs[i].MessageID) !== sc.tailID; i--) if (!msgs[i].IsFromMe && !/^TOMBSTONE/i.test(msgs[i].Status || "")) n++;
+        showNewPill(sc.pill + Math.max(1, n));
+      }
+    } else if (nearBottom) { box.scrollTop = box.scrollHeight; if (tail && !state.folder) markSeen(state.current, tail.TimestampMS); }
+    noteTail(msgs);
+  }
+  function showNewPill(n) {
+    var p = $("newMsgPill");
+    if (!p) return;
+    scrollState.pill = n;
+    if (!n) { p.hidden = true; return; }
+    $("newMsgPillText").textContent = n === 1 ? "1 new message" : n + " new messages";
+    var box = $("messages");
+    p.style.top = Math.max(0, box.offsetTop + box.clientHeight - 80) + "px";
+    p.hidden = false;
   }
   // ---------- read receipts (Google Messages-style) ----------
   // Under your latest sent message only, as in Google Messages: a clock
@@ -1886,7 +2019,7 @@
     if (!kind) return null;
     var box = el("div", "msg-status rcpt-row");
     var names = groupChat && kind !== "failed" && kind !== "sending" ? readByNames(m) : null;
-    var others = groupChat ? conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).length : 0;
+    var others = groupChat ? currentMembers(c).others.length : 0;
     if (names && names.length && !(others && names.length >= others)) {
       box.classList.add("read-by");
       var avs = el("span", "rb-avs");
@@ -4690,6 +4823,118 @@
   // Pin icon (pinned conversations).
   var PIN_ICON = "M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z";
 
+  // ---------- refresh from Google ----------
+  // On page load the server re-reads the conversation list from Google
+  // (names, members, archived/spam/trash state; at most once a minute).
+  // Settings > Refresh everything also re-downloads every photo and group
+  // icon (at most once every 5 minutes) and shows progress. The server's
+  // avatar_version changes whenever a cached photo changes: the page then
+  // drops its in-memory photos and repaints.
+  var syncState = { avatarVersion: 0, lastCheck: 0, polling: null };
+  function refreshPost(scope) {
+    return fetch("/api/app/refresh", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: scope }) })
+      .then(function (r) {
+        if (r.status === 401) throw new Error("login required");
+        return r.json().catch(function () { return {}; }).then(function (b) { b = b || {}; b._status = r.status; return b; });
+      });
+  }
+  function resetAvatarCache() {
+    var old = [];
+    Object.keys(avatarCache).forEach(function (k) {
+      var e = avatarCache[k];
+      if (e && e.pending) return;
+      if (e && e.url) old.push(e.url);
+      delete avatarCache[k];
+    });
+    // Revoke the old photos once the repaint has replaced them.
+    setTimeout(function () { old.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (x) {} }); }, 30000);
+    profileKey = "";
+    if (!state.folder) renderConversations();
+    if (state.current) renderCurrent(false);
+  }
+  function noteAvatarVersion(v) {
+    v = +v || 0;
+    if (!v) return;
+    var changed = syncState.avatarVersion && v !== syncState.avatarVersion;
+    syncState.avatarVersion = v;
+    if (changed) resetAvatarCache();
+  }
+  function checkAvatarVersion(force) {
+    if (!force && Date.now() - syncState.lastCheck < 10 * 60 * 1000) return;
+    syncState.lastCheck = Date.now();
+    api("/api/app/refresh").then(function (st) { noteAvatarVersion(st && st.avatar_version); }).catch(function () {});
+  }
+  function refreshDesc(text) { var d = $("refreshAllDesc"); if (d) d.textContent = text; }
+  function refreshProgressText(st) {
+    if (!st) return "";
+    if (st.running) {
+      if (st.stage === "Updating photos") return "Updating photos… " + Math.max(0, st.photos_queued - st.photos_left) + " of " + st.photos_queued;
+      return (st.stage || "Refreshing") + "… " + (st.conversations ? st.conversations + " conversations" : "");
+    }
+    if (st.error) return "Refresh failed: " + st.error;
+    if (st.finished_at_ms) return "Done: " + st.conversations + " conversations, " + st.photos_queued + " photos checked · " + new Date(st.finished_at_ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return "";
+  }
+  function pollRefresh(showProgress) {
+    clearTimeout(syncState.polling);
+    api("/api/app/refresh").then(function (st) {
+      if (showProgress) refreshDesc(refreshProgressText(st));
+      noteAvatarVersion(st.avatar_version);
+      if (st.running) { syncState.polling = setTimeout(function () { pollRefresh(showProgress); }, 1500); return; }
+      if (showProgress) {
+        $("refreshAllBtn").disabled = false;
+        if (!st.error) toast("Everything is up to date", "ok");
+      }
+      loadConversations();
+    }).catch(function () { if (showProgress) { $("refreshAllBtn").disabled = false; refreshDesc("Couldn't check the refresh status"); } });
+  }
+  function refreshOnLoad() {
+    refreshPost("list").then(function (st) {
+      noteAvatarVersion(st.avatar_version);
+      if (st._status === 202) syncState.polling = setTimeout(function () { pollRefresh(false); }, 3000);
+    }).catch(function () {});
+  }
+  function refreshEverything() {
+    var btn = $("refreshAllBtn");
+    btn.disabled = true;
+    refreshDesc("Starting…");
+    refreshPost("all").then(function (st) {
+      if (st._status === 429) {
+        btn.disabled = false;
+        var mins = Math.max(1, Math.ceil((st.retry_after_sec || 60) / 60));
+        refreshDesc("Refreshed recently. Try again in " + mins + " minute" + (mins === 1 ? "" : "s") + ".");
+        return;
+      }
+      if (st._status >= 400) { btn.disabled = false; refreshDesc("Couldn't refresh: " + (st.error || "HTTP " + st._status)); return; }
+      refreshDesc(refreshProgressText(st) || "Refreshing…");
+      pollRefresh(true);
+    }).catch(function (e) { btn.disabled = false; refreshDesc("Couldn't refresh: " + e.message); });
+  }
+
+  // ---------- @Grok (server-wide setting) ----------
+  var grokState = null;
+  function renderGrok() {
+    var st = grokState, btn = $("grokEnable");
+    if (!st) return;
+    var on = !!st.enabled;
+    btn.setAttribute("aria-checked", on ? "true" : "false");
+    btn.classList.toggle("on", on);
+    var radios = document.querySelectorAll('input[name="grokTrigger"]');
+    for (var i = 0; i < radios.length; i++) { radios[i].checked = radios[i].value === (st.trigger || "me"); radios[i].disabled = !st.key_configured; }
+    $("grokTriggerRow").classList.toggle("disabled", !st.key_configured);
+    btn.disabled = !st.key_configured;
+    $("grokDesc").textContent = !st.key_configured
+      ? "Not available yet: the server has no xAI API key (XAI_API_KEY)"
+      : on ? "On · " + st.replies_today + " of " + st.daily_limit + " replies used today" : "Grok answers in the conversation, starting with “🤖 From Grok:”";
+  }
+  function loadGrok() {
+    api("/api/app/grok").then(function (st) { grokState = st; renderGrok(); }).catch(function () {});
+  }
+  function saveGrok(enabled, trigger) {
+    postJSON("/api/app/grok", { enabled: enabled, trigger: trigger }).then(function (st) { grokState = st; renderGrok(); })
+      .catch(function (e) { toast("Couldn't save @Grok setting: " + e.message, "error"); loadGrok(); });
+  }
+
   // ---------- folders (view only) ----------
   // Archived / Spam / Blocked are listed live from Google Messages
   // (GET /api/app/folder). No archive / unarchive / spam / block actions.
@@ -4763,8 +5008,18 @@
   }
   function typingLabel(names, group) {
     var named = names.filter(Boolean);
-    if (!group || !named.length) return "typing…";
-    return (named.length > 1 ? named[0] + " +" + (named.length - 1) : named[0]) + " is typing…";
+    if (!group || !named.length) return "typing";
+    return (named.length > 1 ? named[0] + " +" + (named.length - 1) : named[0]) + " is typing";
+  }
+  // "Name is typing" followed by three animated dots sized to the text.
+  function typingText(cls, label) {
+    var span = el("span", cls);
+    span.appendChild(document.createTextNode(label));
+    var dots = el("span", "typing-dots typing-dots-inline");
+    dots.setAttribute("aria-hidden", "true");
+    dots.appendChild(el("i")); dots.appendChild(el("i")); dots.appendChild(el("i"));
+    span.appendChild(dots);
+    return span;
   }
   function typingChanged() {
     pruneTyping();
@@ -4786,10 +5041,16 @@
     row.textContent = "";
     row.setAttribute("aria-label", typingLabel(names, c && c.IsGroup));
     var bubble = el("div", "bubble");
-    var dots = el("span", "typing-dots");
-    dots.appendChild(el("i")); dots.appendChild(el("i")); dots.appendChild(el("i"));
-    bubble.appendChild(dots);
-    if (c && c.IsGroup && names.filter(Boolean).length) bubble.appendChild(el("span", "typing-name", typingLabel(names, true)));
+    if (c && c.IsGroup && names.filter(Boolean).length) {
+      // Group: who's typing, with the dots inline at text size.
+      row.classList.add("typing-named");
+      bubble.appendChild(typingText("typing-name", typingLabel(names, true)));
+    } else {
+      row.classList.remove("typing-named");
+      var dots = el("span", "typing-dots");
+      dots.appendChild(el("i")); dots.appendChild(el("i")); dots.appendChild(el("i"));
+      bubble.appendChild(dots);
+    }
     row.appendChild(bubble);
     box.appendChild(row); // keep it last
     if (scrollIfNear && nearBottom) box.scrollTop = box.scrollHeight;
@@ -5088,7 +5349,7 @@
     $("attachBtn").addEventListener("click", onAttachTap);
     $("fileInput").addEventListener("change", onFilePicked);
     initPlusSheet();
-    $("settingsBtn").addEventListener("click", function () { showSettings(true); });
+    $("settingsBtn").addEventListener("click", function () { showSettings(true); loadGrok(); });
     $("settingsClose").addEventListener("click", function () { showSettings(false); });
     $("settingsView").addEventListener("click", function (e) { if (e.target === $("settingsView")) showSettings(false); });
     $("setCarMode").addEventListener("change", function () { setCarMode(this.checked); });
@@ -5134,6 +5395,27 @@
     $("zoomIn").addEventListener("click", function () { stepZoom(1); });
     applySettings();
     // Sign out lives in Settings; it asks first, then POSTs /logout.
+    $("refreshAllBtn").addEventListener("click", refreshEverything);
+    $("grokEnable").addEventListener("click", function () {
+      if (!grokState || !grokState.key_configured) return;
+      saveGrok(!grokState.enabled, grokState.trigger || "me");
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name="grokTrigger"]'), function (r) {
+      r.addEventListener("change", function () { if (r.checked && grokState) saveGrok(!!grokState.enabled, r.value); });
+    });
+    $("newMsgPill").addEventListener("click", function () {
+      var box = $("messages");
+      try { box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } catch (e) { box.scrollTop = box.scrollHeight; }
+      showNewPill(0);
+    });
+    $("messages").addEventListener("scroll", function () {
+      var box = $("messages");
+      if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) {
+        if (scrollState.pill) showNewPill(0);
+        var t = state.lastMsgs && realTail(state.lastMsgs);
+        if (t && state.current && !state.folder && scrollState.conv === state.current && !scrollState.pendingOpen) markSeen(state.current, t.TimestampMS);
+      }
+    }, { passive: true });
     $("signOutBtn").addEventListener("click", function () { showSettings(false); $("signOutView").hidden = false; });
     $("signOutCancel").addEventListener("click", function () { $("signOutView").hidden = true; });
     $("signOutView").addEventListener("click", function (e) { if (e.target === $("signOutView")) $("signOutView").hidden = true; });
@@ -5324,6 +5606,7 @@
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) return;
       refreshProfilePhoto(false);
+      checkAvatarVersion(false);
       checkVersion();
       loadThemes(); onPageResume();
       loadConversations();
@@ -5335,6 +5618,8 @@
     window.addEventListener("pageshow", onPageResume);
 
     checkMic(true);
+    refreshOnLoad();
+    setInterval(function () { checkAvatarVersion(false); }, 10 * 60 * 1000);
     loadConversations().then(function () {
       var m = /[?&]c=([^&]+)/.exec(location.search);
       if (m) {

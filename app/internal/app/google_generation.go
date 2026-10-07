@@ -30,6 +30,7 @@ func (a *App) BeginGoogleGeneration(cli *client.Client) *GoogleGeneration {
 			a.emitConversationsChange()
 		},
 		OnIncomingMessage: a.OnIncomingMessage,
+		OnLiveMessage:     a.HandleLiveMessageForGrok,
 		OnPendingMedia: func(conversationID, messageID string) {
 			a.StartPendingMediaRefresh(conversationID, messageID)
 		},

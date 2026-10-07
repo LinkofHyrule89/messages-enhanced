@@ -10,6 +10,27 @@ import (
 	"github.com/maxghenis/openmessage/internal/db"
 )
 
+// Same slack as the web API: Google's echo timestamp can land a few seconds
+// before the local clock when the placeholder is written.
+const outgoingEchoClockSlackMS = int64(5000)
+
+// DropPlaceholderIfEchoed removes a just-written optimistic row when Google's
+// real copy already arrived (echo won the race). Covers both tm- (web) and
+// tmp_ (MCP / SendTextToConversation) IDs.
+func (a *App) DropPlaceholderIfEchoed(placeholderID string, sendStartedMS int64) {
+	if a == nil || a.Store == nil || !db.IsOutgoingPlaceholderID(placeholderID) {
+		return
+	}
+	realID, err := a.Store.DeleteOutgoingPlaceholderIfEchoed(placeholderID, sendStartedMS-outgoingEchoClockSlackMS)
+	if err != nil {
+		a.Logger.Warn().Err(err).Str("tmp_id", placeholderID).Msg("Failed to check send placeholder against stored echo")
+		return
+	}
+	if realID != "" {
+		a.Logger.Debug().Str("tmp_id", placeholderID).Str("msg_id", realID).Msg("Echo arrived before placeholder; removed placeholder")
+	}
+}
+
 var (
 	sendWhatsAppConversationText = func(a *App, conversationID, body, replyToID string) (*db.Message, error) {
 		return a.SendWhatsAppText(conversationID, body, replyToID)
@@ -83,6 +104,7 @@ func (a *App) SendTextToConversation(conversationID, body string) (*db.Conversat
 		if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
 			return conv, nil, fmt.Errorf("persist sent message: %w", err)
 		}
+		a.DropPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 		return conv, msg, nil
 	default:
 		return conv, nil, fmt.Errorf("sending is not supported for platform %s via OpenMessage yet", conv.SourcePlatform)

@@ -89,6 +89,21 @@ select more, info
   - voice typing from a mic button inside the message field: while it
     listens, the live words appear in the field (thin red edge) with Cancel
     and Edit inside it and Send outside; it stops on its own after a minute
+  - stays in sync with Google: the conversation list (group names, members,
+    archived / spam / trash state) is re-read on page load and every 12
+    hours, contact photos and group icons refresh when they change, and
+    Settings has a "Refresh everything" button with progress
+  - group details list only current members, plus you with your Google
+    account photo; group typing shows "Name is typing" with animated dots
+  - conversations open at the first unread message; incoming messages only
+    scroll the view if you're at the bottom, otherwise a "New messages" pill
+    appears; your own sends always scroll down
+  - optional @Grok replies (off by default, needs an xAI API key): write
+    "@Grok" in a conversation and Grok answers there, rate limited, with a
+    "who can trigger" setting
+  - remote MCP connector at `/mcp` (OAuth 2.1 with PKCE, or a bearer token)
+    so AI assistants can read and send messages
+  - gzip, long-lived caching for versioned assets, and security headers
   See [`app/GUIDE.md`](app/GUIDE.md) for details.
 - **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Messages Enhanced
@@ -125,6 +140,8 @@ included here):
 | `MESSAGES_SECRET` | Login secret for the web app (turns it on). |
 | `MESSAGES_STT_MODE` | Voice-to-text engine choice (browser, server, or auto). |
 | `MESSAGES_STT_PROVIDER` | Server speech-to-text provider. |
+| `MESSAGES_MCP_TOKEN` | Turns on the remote MCP connector at `/mcp` (32+ characters). |
+| `XAI_API_KEY` | Enables the optional @Grok replies (then turn them on in Settings). |
 
 Variable names from earlier versions are still read as a fallback. More options are documented in [`app/GUIDE.md`](app/GUIDE.md).
 

@@ -133,6 +133,7 @@ func sendMediaToConversationHandler(a *app.App, v2Options ...*V2Dependencies) se
 			if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
 				return errorResult(fmt.Sprintf("failed to persist sent message: %v", err)), nil
 			}
+			a.DropPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 			return textResult(fmt.Sprintf("Media sent to %s (%s): %s", conversationName(conv), conversationID, filename)), nil
 		case "signal":
 			msg, err := sendSignalMediaMessage(a, conversationID, data, filename, mimeType, caption, replyToID)
@@ -142,6 +143,7 @@ func sendMediaToConversationHandler(a *app.App, v2Options ...*V2Dependencies) se
 			if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
 				return errorResult(fmt.Sprintf("failed to persist sent message: %v", err)), nil
 			}
+			a.DropPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 			return textResult(fmt.Sprintf("Media sent to %s (%s): %s", conversationName(conv), conversationID, filename)), nil
 		case "", "sms":
 			media, err := uploadGoogleMedia(a, data, filename, mimeType)
@@ -187,6 +189,7 @@ func sendMediaToConversationHandler(a *app.App, v2Options ...*V2Dependencies) se
 			if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
 				return errorResult(fmt.Sprintf("failed to persist sent message: %v", err)), nil
 			}
+			a.DropPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 			return textResult(fmt.Sprintf("Media sent to %s (%s): %s", conversationName(conv), conversationID, filename)), nil
 		default:
 			return errorResult(fmt.Sprintf("media sending is not supported for platform %s via OpenMessage MCP yet", conv.SourcePlatform)), nil

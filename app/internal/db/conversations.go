@@ -278,7 +278,7 @@ func (s *Store) SetConversationsTab(ids []string, tab string) error {
 func (s *Store) validateConversationTab(tab string) (string, error) {
 	tab = strings.TrimSpace(tab)
 	switch tab {
-	case TabInbox, TabArchive:
+	case TabInbox, TabArchive, TabSpam:
 		return tab, nil
 	}
 	var exists int

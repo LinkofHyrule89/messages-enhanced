@@ -33,7 +33,14 @@ jobs:
         run: |
           set -euo pipefail
           expected="replace go.mau.fi/mautrix-gmessages => ${FORK_MODULE} ${FORK_VERSION}"
-          if ! grep -Fqx "${expected}" go.mod; then
+          vendored="replace go.mau.fi/mautrix-gmessages => ./third_party/gmessages"
+          if grep -Fqx "${vendored}" go.mod; then
+            # Vendored copy of the pinned fork (plus local patches, see PATCHED.md).
+            if ! grep -Fq "\`${FORK_MODULE}\` at \`${FORK_VERSION}\`" third_party/gmessages/PATCHED.md; then
+              echo "::error::third_party/gmessages/PATCHED.md must record the vendored fork pin ${FORK_MODULE} ${FORK_VERSION}"
+              exit 1
+            fi
+          elif ! grep -Fqx "${expected}" go.mod; then
             echo "::error::go.mod must contain the recorded gmessages fork pin: ${expected}"
             exit 1
           fi

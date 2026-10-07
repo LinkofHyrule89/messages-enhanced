@@ -15,7 +15,7 @@ import (
 
 const (
 	googleAvatarMaxBytes      = 512 * 1024
-	googleAvatarSuccessTTL    = 7 * 24 * time.Hour
+	googleAvatarSuccessTTL    = 12 * time.Hour
 	googleAvatarMissingTTL    = 24 * time.Hour
 	googleAvatarRequestDelay  = 500 * time.Millisecond
 	googleAvatarQueueCapacity = 256
@@ -38,23 +38,7 @@ func (a *App) QueueGoogleAvatarCandidates(candidates []db.ContactAvatarCandidate
 	if !googleAvatarSyncEnabled() || len(candidates) == 0 || a == nil {
 		return
 	}
-	a.avatarSyncMu.Lock()
-	if a.avatarSyncClosed {
-		a.avatarSyncMu.Unlock()
-		return
-	}
-	a.avatarSyncOnce.Do(func() {
-		a.avatarSyncQueue = make(chan db.ContactAvatarCandidate, googleAvatarQueueCapacity)
-		a.avatarSyncStop = make(chan struct{})
-		a.avatarSyncWG.Add(1)
-		go func() {
-			defer a.avatarSyncWG.Done()
-			a.googleAvatarSyncLoop()
-		}()
-	})
-	queue := a.avatarSyncQueue
-	stop := a.avatarSyncStop
-	a.avatarSyncMu.Unlock()
+	queue, stop := a.ensureAvatarSyncLoop()
 	if queue == nil {
 		return
 	}
@@ -78,6 +62,26 @@ func (a *App) QueueGoogleAvatarCandidates(candidates []db.ContactAvatarCandidate
 				Msg("Google avatar sync queue full; dropping candidate")
 		}
 	}
+}
+
+// ensureAvatarSyncLoop starts the avatar fetch loop once and returns its
+// queue and stop channel (nil queue once stopped).
+func (a *App) ensureAvatarSyncLoop() (chan db.ContactAvatarCandidate, chan struct{}) {
+	a.avatarSyncMu.Lock()
+	defer a.avatarSyncMu.Unlock()
+	if a.avatarSyncClosed {
+		return nil, nil
+	}
+	a.avatarSyncOnce.Do(func() {
+		a.avatarSyncQueue = make(chan db.ContactAvatarCandidate, googleAvatarQueueCapacity)
+		a.avatarSyncStop = make(chan struct{})
+		a.avatarSyncWG.Add(1)
+		go func() {
+			defer a.avatarSyncWG.Done()
+			a.googleAvatarSyncLoop()
+		}()
+	})
+	return a.avatarSyncQueue, a.avatarSyncStop
 }
 
 func (a *App) StopGoogleAvatarSync() {
@@ -114,11 +118,24 @@ func (a *App) googleAvatarSyncLoop() {
 				// A changed icon URL is a new item, even within the hour.
 				key += "#" + db.GroupAvatarURLHash(candidate.GroupAvatarURL)
 			}
-			if seenAt, ok := recent[key]; ok && time.Since(seenAt) < time.Hour {
+			window := time.Hour
+			if candidate.Force {
+				window = 5 * time.Minute
+			}
+			if seenAt, ok := recent[key]; ok && time.Since(seenAt) < window {
+				a.avatarDone(candidate)
 				continue
+			}
+			if len(recent) > 4096 {
+				for k, t := range recent {
+					if time.Since(t) > time.Hour {
+						delete(recent, k)
+					}
+				}
 			}
 			recent[key] = time.Now()
 			a.fetchGoogleAvatarCandidate(candidate)
+			a.avatarDone(candidate)
 			select {
 			case <-a.avatarSyncStop:
 				return
@@ -142,7 +159,7 @@ func (a *App) fetchGoogleAvatarCandidate(candidate db.ContactAvatarCandidate) {
 		a.Logger.Debug().Err(err).Msg("Google avatar lookup before fetch failed")
 		return
 	}
-	if existing != nil {
+	if existing != nil && !candidate.Force {
 		checkedAt := time.UnixMilli(existing.LastCheckedAtMS)
 		if existing.ImageHash != "" && time.Since(checkedAt) < googleAvatarSuccessTTL {
 			return
@@ -246,4 +263,46 @@ func thumbnailImageForIdentifier(resp *gmproto.GetThumbnailResponse, identifier 
 		}
 	}
 	return nil
+}
+
+// queueGoogleAvatarCandidatesWait queues candidates like
+// QueueGoogleAvatarCandidates but waits for room instead of dropping (used
+// by the background refresh, which may queue hundreds). Returns how many
+// were queued.
+func (a *App) queueGoogleAvatarCandidatesWait(stopCh <-chan struct{}, candidates []db.ContactAvatarCandidate) int {
+	if !googleAvatarSyncEnabled() || len(candidates) == 0 || a == nil {
+		return 0
+	}
+	queue, stop := a.ensureAvatarSyncLoop()
+	if queue == nil {
+		return 0
+	}
+	n := 0
+	for _, c := range candidates {
+		if db.ContactAvatarID(c) == "" {
+			continue
+		}
+		c.Tracked = true
+		a.avatarPending.Add(1)
+		select {
+		case queue <- c:
+			n++
+		case <-stop:
+			a.avatarPending.Add(-1)
+			return n
+		case <-stopCh:
+			a.avatarPending.Add(-1)
+			return n
+		}
+	}
+	return n
+}
+
+// avatarDone counts a refresh-queued candidate as handled.
+func (a *App) avatarDone(c db.ContactAvatarCandidate) {
+	if c.Tracked {
+		if a.avatarPending.Add(-1) < 0 {
+			a.avatarPending.Store(0)
+		}
+	}
 }

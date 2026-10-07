@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 const healthInterval = 30 * time.Second
@@ -46,11 +48,12 @@ type HealthMonitor struct {
 	checks map[string]*healthCheck // "google", "vpn"
 	// alert overrides the push sender (tests).
 	alert func(title, body, tag string)
+	log   zerolog.Logger
 }
 
 func NewHealthMonitor(cfg Config, google func() any, push *PushHub) *HealthMonitor {
 	h := &HealthMonitor{cfg: cfg, google: google, push: push, now: time.Now,
-		client: ipv4Client(), checks: map[string]*healthCheck{}}
+		client: ipv4Client(), checks: map[string]*healthCheck{}, log: zerolog.Nop()}
 	if cfg.HealthAfter <= 0 {
 		h.cfg.HealthAfter = 3 * time.Minute
 	}
@@ -214,7 +217,12 @@ func healthAlertText(name string, recovered bool, detail string) (string, string
 	return what + " is down", body + ". New messages may not arrive."
 }
 
+// SetLogger records health transitions (and whether a push went out) in the log.
+func (h *HealthMonitor) SetLogger(l zerolog.Logger) { h.log = l }
+
 func (h *HealthMonitor) send(title, body, tag string) {
+	pushed := h.alert != nil || (h.push != nil && h.push.Ready())
+	h.log.Warn().Str("alert", title).Str("detail", body).Bool("push_sent", pushed).Msg("Health alert")
 	if h.alert != nil {
 		h.alert(title, body, tag)
 		return

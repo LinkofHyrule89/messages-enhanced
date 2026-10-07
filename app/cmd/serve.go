@@ -127,6 +127,9 @@ func Version() string {
 }
 
 func RunServe(logger zerolog.Logger, args ...string) error {
+	if lim := app.ApplyCgroupMemoryLimit(); lim > 0 {
+		logger.Info().Int64("mib", lim>>20).Msg("Go memory limit set from the service's cgroup")
+	}
 	previousUmask := syscall.Umask(0o077)
 	defer syscall.Umask(previousUmask)
 
@@ -679,6 +682,9 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 
 	httpEnabled := opts.web || opts.mcpSSE
 	if httpEnabled {
+		// webAppGated: the web app login fronts everything, so the inner
+		// control bootstrap URL is never needed (and isn't logged).
+		webAppGated := false
 		controlAuth, err := web.NewControlAuth(a.DataDir, logger)
 		if err != nil {
 			return fmt.Errorf("initialize local control authentication: %w", err)
@@ -745,6 +751,13 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 			if err := webPush.Open(a.DataDir, webPushSource(a), logger); err != nil {
 				logger.Warn().Err(err).Msg("Web Push unavailable")
 			}
+			var remoteMCP http.Handler
+			if len(webCfg.MCPToken) >= 32 {
+				remoteMCP = newRemoteMCPHandler(a, buildVersion, tools.Options{Reads: reads, V2Primary: v2Primary, V2: mcpV2})
+				logger.Info().Msg("Remote MCP connector enabled at " + baseURL + "/mcp (bearer token required)")
+			} else if webCfg.MCPToken != "" {
+				logger.Warn().Msg("MESSAGES_MCP_TOKEN is shorter than 32 characters: remote MCP connector stays off")
+			}
 			webHandler, _, err := webapp.NewHandler(webCfg, webapp.Deps{
 				DataDir:     a.DataDir,
 				SessionPath: a.SessionPath,
@@ -761,12 +774,17 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 				Typing:         webTyping,
 				Push:           webPush,
 				Profile:        a,
+				MCP:            remoteMCP,
+				Refresh:        webRefreshBackend{a: a},
+				Grok:           webGrokBackend{a: a},
 			})
 			if err != nil {
 				return fmt.Errorf("initialize web app UI: %w", err)
 			}
 			controlAuth.SetEnforce(true)
+			webAppGated = true
 			httpHandler = webHandler
+			a.StartPeriodicGoogleRefresh()
 			// Keep the header's Google account photo fresh (AccountPhoto
 			// refreshes in the background when the cache is stale).
 			go func() {
@@ -792,7 +810,9 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		go func() {
 			if opts.web {
 				logger.Info().Str("addr", listenAddr).Msg("Web UI available at " + baseURL)
-				fmt.Fprintf(os.Stderr, "Open this single-use URL to authorize the web UI (it redirects without exposing the control token):\n%s\n", controlAuth.BootstrapURL(baseURL))
+				if !webAppGated {
+					fmt.Fprintf(os.Stderr, "Open this single-use URL to authorize the web UI (it redirects without exposing the control token):\n%s\n", controlAuth.BootstrapURL(baseURL))
+				}
 			}
 			if opts.mcpSSE {
 				logger.Info().Str("addr", listenAddr).Msg("MCP SSE available at " + baseURL + "/mcp/sse")

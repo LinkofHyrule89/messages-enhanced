@@ -81,6 +81,7 @@
           <button id="selDelete" class="btn btn-ghost sel-danger" type="button">Delete</button>
         </div>
         <div id="messages" class="messages" aria-live="polite"></div>
+        <button id="newMsgPill" class="new-msg-pill" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12l-1.41-1.41L13 16.17V4h-2v12.17l-5.58-5.59L4 12l8 8 8-8z"/></svg><span id="newMsgPillText">New messages</span></button>
         <div id="readonlyNote" class="readonly-note" hidden></div>
         <div id="recBar" class="rec-bar" hidden>
           <span class="rec-dot" aria-hidden="true"></span>
@@ -346,6 +347,28 @@
           </span>
         </button>
         <p id="installHint" class="setting-note" hidden></p>
+      </div>
+      <div class="sheet-label">Sync</div>
+      <button id="refreshAllBtn" class="setting-row" type="button">
+        <span class="folder-icon" aria-hidden="true" data-icon="refresh"></span>
+        <span class="setting-text">
+          <span class="setting-name">Refresh everything</span>
+          <span id="refreshAllDesc" class="setting-desc" role="status">Re-read conversations, group names, group icons and contact photos from Google Messages</span>
+        </span>
+      </button>
+      <div class="sheet-label">@Grok</div>
+      <button id="grokEnable" class="setting-row" type="button" role="switch" aria-checked="false">
+        <span class="setting-text">
+          <span class="setting-name">Reply when someone writes @Grok</span>
+          <span id="grokDesc" class="setting-desc">Grok answers in the conversation, starting with “🤖 From Grok:”</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
+      <div id="grokTriggerRow" class="setting-row setting-col" role="radiogroup" aria-labelledby="grokTriggerName">
+        <span id="grokTriggerName" class="setting-name">Who can trigger</span>
+        <label class="grok-choice"><input type="radio" name="grokTrigger" value="me" checked> Only me</label>
+        <label class="grok-choice"><input type="radio" name="grokTrigger" value="everyone"> Everyone in the group</label>
+        <span class="setting-desc">At most one reply per chat every 30 seconds and 30 a day. Applies to every signed-in device.</span>
       </div>
       <div class="sheet-label">Account</div>
       <button id="signOutBtn" class="setting-row signout-row" type="button">
