@@ -99,6 +99,11 @@ type ContactAvatarCandidate struct {
 	// Google group conversation icon; ParticipantID is then
 	// GroupAvatarParticipantID(conversationID).
 	GroupAvatarURL string
+	// GroupIcon (in memory only) marks a group conversation's icon candidate
+	// (ParticipantID "conv:<id>"), with or without GroupAvatarURL: Google
+	// often leaves the URL out and serves the icon only through
+	// GetParticipantThumbnail(conversationID).
+	GroupIcon bool
 	// Force (in memory only) re-downloads even if the cached copy is fresh
 	// ("Refresh everything" in Settings).
 	Force bool

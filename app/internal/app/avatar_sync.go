@@ -120,6 +120,9 @@ func (a *App) googleAvatarSyncLoop() {
 			}
 			window := time.Hour
 			if candidate.Force {
+				// Forced checks (Refresh everything, a "group icon changed"
+				// event) aren't swallowed by a routine check made just before.
+				key += "#force"
 				window = 5 * time.Minute
 			}
 			if seenAt, ok := recent[key]; ok && time.Since(seenAt) < window {
@@ -150,7 +153,7 @@ func (a *App) fetchGoogleAvatarCandidate(candidate db.ContactAvatarCandidate) {
 	if a.Store == nil {
 		return
 	}
-	if strings.TrimSpace(candidate.GroupAvatarURL) != "" {
+	if candidate.GroupIcon || strings.TrimSpace(candidate.GroupAvatarURL) != "" {
 		a.fetchGoogleGroupAvatar(candidate)
 		return
 	}

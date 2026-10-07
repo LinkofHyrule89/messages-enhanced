@@ -115,16 +115,7 @@ func (a *App) CarMarkConversationRead(conversationID string) (map[string]any, er
 	if conversationID == "" {
 		return nil, carErr(http.StatusBadRequest, "conversation_id is required")
 	}
-	scope := "local"
-	if gm := a.getGMClient(); gm != nil {
-		if msgs, err := a.Store.GetMessagesByConversation(conversationID, 1); err == nil && len(msgs) > 0 && isGooglePlatform(msgs[0].SourcePlatform) {
-			if err := gm.MarkRead(conversationID, msgs[0].MessageID); err == nil {
-				scope = "google"
-			} else {
-				a.HandleGoogleAuthExpiredError(err)
-			}
-		}
-	}
+	scope, _ := a.MarkReadOnGoogle(conversationID)
 	if err := a.Store.MarkConversationRead(conversationID); err != nil {
 		return nil, carErr(http.StatusInternalServerError, "mark read: %v", err)
 	}

@@ -158,9 +158,10 @@ func (s *Store) findTapbackTarget(conversationID, quoted string, beforeTS int64,
 }
 
 type tapbackReaction struct {
-	Emoji  string   `json:"emoji"`
-	Count  int      `json:"count"`
-	Actors []string `json:"actors,omitempty"`
+	Emoji  string          `json:"emoji"`
+	Count  int             `json:"count"`
+	Actors []string        `json:"actors,omitempty"`
+	Custom json.RawMessage `json:"custom,omitempty"` // image reaction details, kept as is
 }
 
 // mergeReaction adds or removes an actor's reaction for an emoji in the stored

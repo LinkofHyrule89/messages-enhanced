@@ -695,6 +695,7 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 				Auth:                  controlAuth,
 				V2:                    v2Options,
 				V2IngestCounters:      v2IngestCounters,
+				MarkReadOnGoogle:      a.MarkReadOnGoogle,
 				Reads:                 reads,
 				V2Primary:             v2Primary,
 				Client:                a.GetClient,

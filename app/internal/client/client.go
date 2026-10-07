@@ -121,10 +121,47 @@ func ExtractMediaInfo(msg *gmproto.Message) *MediaInfo {
 // Reaction holds an emoji, how many people reacted with it, and the participant
 // IDs of those reactors. Actors are Google Messages participant IDs that resolve
 // to names via the conversation's participant list (see SmallInfo.ParticipantID).
+// Image reactions (Google Messages EmojiType EMOTIFY/CUSTOM with custom
+// emoji data) carry a UUID in the emoji field; Custom then describes the
+// image. Google only sends the image's path on the phone
+// (a file:// path inside the Messages app)
+// and Messages for Web has no call to fetch it, so clients show a generic
+// "custom reaction" icon; a downloadable https URL is kept if one ever comes.
 type Reaction struct {
-	Emoji  string   `json:"emoji"`
-	Count  int      `json:"count"`
-	Actors []string `json:"actors,omitempty"`
+	Emoji  string          `json:"emoji"`
+	Count  int             `json:"count"`
+	Actors []string        `json:"actors,omitempty"`
+	Custom *CustomReaction `json:"custom,omitempty"`
+}
+
+// CustomReaction is the image behind a custom reaction, as Google sends it.
+type CustomReaction struct {
+	UUID   string `json:"uuid,omitempty"`
+	Type   string `json:"type,omitempty"` // EmojiType name (EMOTIFY, CUSTOM)
+	URI    string `json:"uri,omitempty"`  // https only (phone-local paths are dropped)
+	Mime   string `json:"mime,omitempty"`
+	Width  int    `json:"w,omitempty"`
+	Height int    `json:"h,omitempty"`
+}
+
+// extractCustomReaction returns the image data of a non-unicode reaction.
+func extractCustomReaction(data *gmproto.ReactionData) *CustomReaction {
+	ce := data.GetCustomEmoji()
+	if ce == nil { // e.g. CUSTOM with a plain unicode emoji picked from the full list
+		return nil
+	}
+	c := &CustomReaction{UUID: ce.GetUuid(), Type: data.GetType().String()}
+	if in := ce.GetInnerData(); in != nil {
+		if d := in.GetSecond().GetData(); d != nil && d.GetUri() != "" {
+			c.URI, c.Mime, c.Width, c.Height = d.GetUri(), d.GetMimeType(), int(d.GetWidth()), int(d.GetHeight())
+		} else if f := in.GetFirst(); f != nil && f.GetUri() != "" {
+			c.URI, c.Mime = f.GetUri(), f.GetMimeType()
+		}
+	}
+	if !strings.HasPrefix(c.URI, "https://") {
+		c.URI = ""
+	}
+	return c
 }
 
 // ExtractReactions extracts reaction data from a protobuf Message.
@@ -138,6 +175,10 @@ func ExtractReactions(msg *gmproto.Message) []Reaction {
 	for _, entry := range entries {
 		if data := entry.GetData(); data != nil {
 			emoji := data.GetUnicode()
+			custom := extractCustomReaction(data)
+			if emoji == "" && custom != nil {
+				emoji = custom.UUID
+			}
 			if emoji == "" {
 				continue
 			}
@@ -146,6 +187,7 @@ func ExtractReactions(msg *gmproto.Message) []Reaction {
 				Emoji:  emoji,
 				Count:  len(participantIDs),
 				Actors: participantIDs,
+				Custom: custom,
 			})
 		}
 	}

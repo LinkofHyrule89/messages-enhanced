@@ -80,6 +80,8 @@ select more, info
     everyone has read it
   - long-press message menu (reactions, reply, forward, copy, star, delete,
     select more, info); swipe right to reply, swipe left to show times
+  - custom (image) reactions from Google Messages show as a picture icon
+    with who reacted, instead of a raw ID
   - per-message end-to-end encryption locks, health alerts, and the page
     reloads itself after the server is updated
   - Car Mode gets the same bubble colors, grouping, sender names and photos,
@@ -91,8 +93,11 @@ select more, info
     and Edit inside it and Send outside; it stops on its own after a minute
   - stays in sync with Google: the conversation list (group names, members,
     archived / spam / trash state) is re-read on page load and every 12
-    hours, contact photos and group icons refresh when they change, and
-    Settings has a "Refresh everything" button with progress
+    hours, contact photos and group icons refresh when they change (group
+    pictures are re-read from Google, also when one is changed or removed on
+    the phone), and Settings has a "Refresh everything" button with progress
+  - reading a chat (open and visible, or scrolled to the newest message)
+    marks it read in Google Messages, which clears the phone's notifications
   - group details list only current members, plus you with your Google
     account photo; group typing shows "Name is typing" with animated dots
   - conversations open at the first unread message; incoming messages only

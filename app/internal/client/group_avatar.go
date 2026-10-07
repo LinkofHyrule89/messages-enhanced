@@ -11,24 +11,48 @@ import (
 )
 
 // GroupAvatarCandidate returns the avatar-sync candidate for a Google group
-// conversation's icon (Conversation.groupAvatarURL, seen on RCS groups), or
-// ok=false when the conversation isn't a group or has no icon URL.
+// conversation's icon, or ok=false when the conversation isn't a group. The
+// candidate carries Conversation.groupAvatarURL when Google sends one; it is
+// returned without a URL too, since Google often omits the field and serves
+// the (current) icon only through GetParticipantThumbnail(conversationID).
 func GroupAvatarCandidate(conv *gmproto.Conversation, source string) (db.ContactAvatarCandidate, bool) {
 	if conv == nil || !conv.GetIsGroupChat() {
 		return db.ContactAvatarCandidate{}, false
 	}
-	iconURL := strings.TrimSpace(conv.GetGroupAvatarURL())
-	participantID := db.GroupAvatarParticipantID(conv.GetConversationID())
-	if iconURL == "" || participantID == "" {
+	c, ok := GroupIconCandidate(conv.GetConversationID(), source, false)
+	if !ok {
+		return c, false
+	}
+	c.DisplayName = conv.GetName()
+	c.GroupAvatarURL = strings.TrimSpace(conv.GetGroupAvatarURL())
+	return c, true
+}
+
+// GroupIconCandidate returns a group-icon candidate for a conversation ID
+// (no URL); force re-checks Google even if the cached icon is fresh.
+func GroupIconCandidate(conversationID, source string, force bool) (db.ContactAvatarCandidate, bool) {
+	participantID := db.GroupAvatarParticipantID(conversationID)
+	if participantID == "" {
 		return db.ContactAvatarCandidate{}, false
 	}
 	return db.ContactAvatarCandidate{
 		SourcePlatform: "sms",
 		ParticipantID:  participantID,
-		DisplayName:    conv.GetName(),
 		Source:         source,
-		GroupAvatarURL: iconURL,
+		GroupIcon:      true,
+		Force:          force,
 	}, true
+}
+
+// GroupIconEventStatus reports whether a message status is Google's "group
+// icon changed" / "group icon removed" event.
+func GroupIconEventStatus(status gmproto.MessageStatusType) bool {
+	switch status {
+	case gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CHANGED_GLOBAL,
+		gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CLEARED_GLOBAL:
+		return true
+	}
+	return false
 }
 
 // groupAvatarPresenceLogged remembers, per group conversation ID, the last

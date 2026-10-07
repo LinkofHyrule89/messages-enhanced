@@ -425,3 +425,27 @@ func (h *v1RecorderHarness) do(t *testing.T, request *http.Request) *http.Respon
 	h.handler.ServeHTTP(recorder, request)
 	return recorder.Result()
 }
+
+func TestMarkReadGoogleFlagCallsHookOnlyWhenAsked(t *testing.T) {
+	var calls []string
+	ts := newV1RecorderHarness(t, APIOptions{MarkReadOnGoogle: func(id string) (string, error) {
+		calls = append(calls, id)
+		return "google", nil
+	}})
+	if err := ts.store.UpsertConversation(&db.Conversation{ConversationID: "g1", SourcePlatform: "sms", UnreadCount: 2}); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`{"conversation_id":"g1"}`, `{"conversation_id":"g1","google":true}`} {
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/api/mark-read", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := ts.do(t, req)
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d; body=%s", resp.StatusCode, raw)
+		}
+	}
+	if len(calls) != 1 || calls[0] != "g1" {
+		t.Fatalf("Google mark-read calls = %v, want exactly one for the google:true request", calls)
+	}
+}

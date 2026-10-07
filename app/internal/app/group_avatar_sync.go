@@ -53,10 +53,20 @@ func groupAvatarErrKind(err error) string {
 	return "other"
 }
 
-// fetchGoogleGroupAvatar downloads a group conversation's icon and caches it
-// under participant_id "conv:<conversationID>". An icon whose URL hash matches
-// the cached one is not downloaded again; a failed URL is retried after
-// googleAvatarMissingTTL. The URL is never logged or stored.
+// fetchGoogleGroupAvatar caches a group conversation's icon under
+// participant_id "conv:<conversationID>". Two sources:
+//
+//   - Conversation.groupAvatarURL, when Google sends it: downloaded unless the
+//     cached image came from the same URL (Force downloads it anyway);
+//   - otherwise (or if the download fails) GetParticipantThumbnail with the
+//     conversation ID, which returns the group's current icon. Google often
+//     omits the URL (e.g. after the icon is changed on the phone), so this is
+//     the path that picks up changes; it's re-checked like contact photos
+//     (googleAvatarSuccessTTL / googleAvatarMissingTTL) or at once when forced.
+//
+// A cached icon is replaced only when the image bytes differ (that bumps
+// AvatarVersion so clients refetch), and cleared when Google reports no icon
+// at all (no URL and an empty thumbnail). URLs are never logged or stored.
 func (a *App) fetchGoogleGroupAvatar(candidate db.ContactAvatarCandidate) {
 	now := time.Now().UnixMilli()
 	convID := strings.TrimPrefix(candidate.ParticipantID, db.GroupAvatarParticipantPrefix)
@@ -69,54 +79,110 @@ func (a *App) fetchGoogleGroupAvatar(candidate db.ContactAvatarCandidate) {
 		log.Debug().Err(err).Msg("Google group icon lookup before fetch failed")
 		return
 	}
-	if state != nil && state.SourceURLHash == urlHash {
-		if state.ImageHash != "" {
-			return // this exact icon is already cached
-		}
-		if time.Since(time.UnixMilli(state.LastCheckedAtMS)) < googleAvatarMissingTTL {
-			return // this URL failed recently
-		}
+	cachedImage := ""
+	if state != nil {
+		cachedImage = state.ImageHash
 	}
-	failed := func(reason string) {
-		log.Info().Str("reason", reason).Msg("Google group icon not cached")
-		tried := urlHash
-		if state != nil && state.ImageHash != "" {
-			tried = "" // keep the older icon, and keep retrying the new URL
+	if !candidate.Force && state != nil {
+		checkedAgo := time.Since(time.UnixMilli(state.LastCheckedAtMS))
+		switch {
+		case iconURL != "" && state.SourceURLHash == urlHash:
+			if state.ImageHash != "" {
+				return // this exact icon is already cached
+			}
+			if checkedAgo < googleAvatarMissingTTL {
+				return // this URL failed recently
+			}
+		case iconURL == "":
+			if state.ImageHash != "" && checkedAgo < googleAvatarSuccessTTL {
+				return
+			}
+			if state.ImageHash == "" && checkedAgo < googleAvatarMissingTTL {
+				return
+			}
 		}
-		_ = a.Store.MarkGroupAvatarChecked(candidate, tried, now)
-	}
-	if !allowedGroupAvatarURL(iconURL) {
-		failed("url_not_allowed")
-		return
 	}
 	gm := a.getGMClient()
 	if gm == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), googleGroupAvatarTimeout)
-	defer cancel()
-	image, err := gm.DownloadAvatar(ctx, iconURL)
+	store := func(image []byte, from string) bool {
+		if len(image) == 0 {
+			return false
+		}
+		if len(image) > googleAvatarMaxBytes {
+			log.Info().Str("reason", "too_large").Str("from", from).Msg("Google group icon not cached")
+			return false
+		}
+		mimeType := http.DetectContentType(image)
+		if !strings.HasPrefix(mimeType, "image/") || mimeType == "image/svg+xml" {
+			log.Info().Str("reason", "not_an_image").Str("from", from).Msg("Google group icon not cached")
+			return false
+		}
+		sum := sha256.Sum256(image)
+		imageHash := hex.EncodeToString(sum[:])
+		if err := a.Store.UpsertGroupAvatar(candidate, urlHash, image, mimeType, imageHash, now); err != nil {
+			log.Debug().Err(err).Msg("Google group icon cache write failed")
+			return true
+		}
+		if imageHash != cachedImage {
+			log.Info().Int("bytes", len(image)).Str("mime", mimeType).Str("from", from).Bool("replaced", cachedImage != "").Msg("Google group icon cached")
+		}
+		return true
+	}
+
+	urlFailed := ""
+	if iconURL != "" {
+		if !allowedGroupAvatarURL(iconURL) {
+			urlFailed = "url_not_allowed"
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), googleGroupAvatarTimeout)
+			image, err := gm.DownloadAvatar(ctx, iconURL)
+			cancel()
+			switch {
+			case err != nil:
+				urlFailed = "download_" + groupAvatarErrKind(err)
+			case len(image) == 0:
+				urlFailed = "empty_image"
+			case store(image, "url"):
+				return
+			default:
+				urlFailed = "bad_image"
+			}
+		}
+		log.Info().Str("reason", urlFailed).Msg("Google group icon URL not usable; trying thumbnail")
+	}
+
+	resp, err := gm.GetParticipantThumbnail(convID)
 	if err != nil {
-		failed("download_" + groupAvatarErrKind(err))
+		log.Info().Str("reason", "thumbnail_failed").Msg("Google group icon not cached")
+		a.markGroupAvatarChecked(candidate, state, urlHash, now)
 		return
 	}
+	image := thumbnailImageForIdentifier(resp, convID)
 	if len(image) == 0 {
-		failed("empty_image")
+		if iconURL == "" && cachedImage != "" {
+			// No URL and no thumbnail: the group has no icon any more.
+			if cleared, err := a.Store.ClearGroupAvatar(candidate, now); err == nil && cleared {
+				log.Info().Msg("Google group icon removed; cleared cached icon")
+				return
+			}
+		}
+		a.markGroupAvatarChecked(candidate, state, urlHash, now)
 		return
 	}
-	if len(image) > googleAvatarMaxBytes {
-		failed("too_large")
-		return
+	if !store(image, "thumbnail") {
+		a.markGroupAvatarChecked(candidate, state, urlHash, now)
 	}
-	mimeType := http.DetectContentType(image)
-	if !strings.HasPrefix(mimeType, "image/") || mimeType == "image/svg+xml" {
-		failed("not_an_image")
-		return
+}
+
+// markGroupAvatarChecked records a check that cached nothing new. A tried
+// URL is recorded (so it isn't retried before googleAvatarMissingTTL) only
+// when no older image is cached; otherwise a changed URL keeps being retried.
+func (a *App) markGroupAvatarChecked(candidate db.ContactAvatarCandidate, state *db.GroupAvatarState, urlHash string, now int64) {
+	tried := urlHash
+	if state != nil && state.ImageHash != "" {
+		tried = ""
 	}
-	sum := sha256.Sum256(image)
-	if err := a.Store.UpsertGroupAvatar(candidate, urlHash, image, mimeType, hex.EncodeToString(sum[:]), now); err != nil {
-		log.Debug().Err(err).Msg("Google group icon cache write failed")
-		return
-	}
-	log.Info().Int("bytes", len(image)).Str("mime", mimeType).Msg("Google group icon cached")
+	_ = a.Store.MarkGroupAvatarChecked(candidate, tried, now)
 }

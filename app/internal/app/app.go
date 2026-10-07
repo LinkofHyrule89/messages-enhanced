@@ -112,6 +112,7 @@ func (p *BackfillProgress) snapshot() BackfillSnapshot {
 }
 
 type App struct {
+	markReadSent        map[string]markReadSent // guarded by markReadSentMu
 	clientMu            sync.RWMutex
 	Client              *client.Client
 	googleGeneration    *GoogleGeneration

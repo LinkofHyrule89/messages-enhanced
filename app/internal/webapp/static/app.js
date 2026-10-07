@@ -1295,8 +1295,11 @@
     relayoutSoon();
     loadMessages(true);
     fetchTyping();
-    // Folders are view only: opening one must not change it (no mark-read).
-    if (!readOnly) postJSON("/api/mark-read", { conversation_id: id }).catch(function () {});
+    // Mark read (here and on the phone) once the chat is actually viewed:
+    // syncReadSoon checks visibility. Folders are view only (no mark-read);
+    // a chat opened by a search jump is marked only when scrolled to the end.
+    readSync.openConv = readOnly || (state.jump && state.jump.conv === id) ? "" : id;
+    if (!readOnly) syncReadSoon();
   }
   function closeThread() {
     if (state.rec) cancelRecording();
@@ -1852,7 +1855,36 @@
   var SEEN_KEY = "tm.seen.v1", seenTS = {};
   try { seenTS = JSON.parse(localStorage.getItem(SEEN_KEY) || "{}") || {}; } catch (e) { seenTS = {}; }
   var scrollState = { conv: null };
+  // ---------- read state on the phone ----------
+  // Tells the server (and through it Google Messages, which clears the
+  // phone's notifications) that the open chat was read up to its latest
+  // message: when it's opened, when new messages arrive while it's scrolled
+  // to the end, and when the tab comes back. Never while the page is hidden
+  // or for folders; debounced and sent once per latest message.
+  var readSync = { timer: 0, sent: {}, openConv: "" };
+  function syncReadSoon() {
+    clearTimeout(readSync.timer);
+    readSync.timer = setTimeout(syncReadNow, 700);
+  }
+  function syncReadNow() {
+    var id = state.current;
+    if (!id || state.folder || document.visibilityState !== "visible") return;
+    if (scrollState.conv !== id || scrollState.pendingOpen) return; // not rendered yet
+    var t = state.lastMsgs && realTail(state.lastMsgs);
+    if (!t || !t.MessageID) return;
+    var box = $("messages");
+    var atEnd = box && box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    if (!atEnd && readSync.openConv !== id) return;
+    var key = String(t.MessageID);
+    readSync.openConv = "";
+    if (readSync.sent[id] === key) return;
+    readSync.sent[id] = key;
+    postJSON("/api/mark-read", { conversation_id: id, google: true }).catch(function () {
+      if (readSync.sent[id] === key) delete readSync.sent[id];
+    });
+  }
   function markSeen(convID, ts) {
+    if (convID && convID === state.current) syncReadSoon();
     if (!convID || !ts || (seenTS[convID] || 0) >= ts) return;
     seenTS[convID] = ts;
     var keys = Object.keys(seenTS);
@@ -1908,6 +1940,7 @@
         if (anchor) {
           box.scrollTop = Math.max(0, anchor.offsetTop - box.offsetTop - 16);
           noteTail(msgs);
+          syncReadSoon();
           if (box.scrollHeight - box.scrollTop - box.clientHeight < 200) scrollToBottom();
           return;
         }
@@ -2353,15 +2386,48 @@
     if (typeof r === "string") { try { r = JSON.parse(r); } catch (e) { return []; } }
     return Array.isArray(r) ? r.filter(function (x) { return x && x.emoji; }) : [];
   }
+  // Image reactions (Google Messages "custom"/Emotify reactions) arrive as a
+  // UUID: Google only sends the picture's path on the phone, so they show as
+  // a picture icon, never the raw ID. Long ASCII tokens (":custom:" from
+  // other bridges) get the same icon.
+  var REACTION_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  var CUSTOM_REACTION_ICON = "M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z";
+  function isCustomReaction(r) {
+    var e = String((r && r.emoji) || "").trim();
+    return !!(r && r.custom) || REACTION_UUID_RE.test(e) || /^:?[a-z0-9_-]{6,}:?$/i.test(e);
+  }
+  function reactionText(r) { return isCustomReaction(r) ? "Custom reaction" : String(r.emoji); }
+  function reactionGlyph(r) {
+    if (!isCustomReaction(r)) return document.createTextNode(String(r.emoji));
+    var s = el("span", "reaction-custom");
+    s.setAttribute("role", "img");
+    s.setAttribute("aria-label", "Custom reaction");
+    s.appendChild(svgIcon(CUSTOM_REACTION_ICON));
+    return s;
+  }
+  // Who reacted, as names (actors are Google participant IDs).
+  function reactorNames(r, convID) {
+    var actors = Array.isArray(r.actors) ? r.actors : [];
+    if (!actors.length) return [];
+    var c = state.convs.find(function (x) { return x.ConversationID === convID; });
+    var people = c ? conversationParticipants(c) : [];
+    return actors.map(function (id) {
+      var p = people.find(function (q) { return q && String(q.id) === String(id); });
+      return p ? (isMe(p) ? "You" : (p.name || p.number || "")) : "";
+    }).filter(Boolean);
+  }
   function reactionsNode(m) {
     var list = parseReactions(m);
     if (!list.length) return null;
     var box = el("div", "reactions");
+    var convID = m.ConversationID || state.current;
     list.forEach(function (r) {
       var n = Number(r.count) || 1;
-      var p = el("span", "reaction", String(r.emoji));
+      var p = el("span", "reaction");
+      p.appendChild(reactionGlyph(r));
       if (n > 1) p.appendChild(el("span", "reaction-count", String(n)));
-      p.title = (Array.isArray(r.actors) && r.actors.length ? r.actors.join(", ") : n + " reaction" + (n > 1 ? "s" : ""));
+      var names = reactorNames(r, convID);
+      p.title = (isCustomReaction(r) ? "Custom reaction · " : "") + (names.length ? names.join(", ") : n + " reaction" + (n > 1 ? "s" : ""));
       box.appendChild(p);
     });
     return box;
@@ -2754,6 +2820,13 @@
       add("Status", /READ|DISPLAYED/i.test(m.Status || "") ? "Read" : "Received");
     }
     add("Sent via", protocolText(m));
+    var rxList = parseReactions(m), rxConv = m.ConversationID || state.current;
+    if (rxList.length) {
+      add("Reactions", rxList.map(function (r) {
+        var n = Number(r.count) || 1, names = reactorNames(r, rxConv);
+        return reactionText(r) + (names.length ? " (" + names.join(", ") + ")" : n > 1 ? " ×" + n : "");
+      }).join(" · "));
+    }
     if (state.stars[m.MessageID]) add("Starred", "Yes (on this server)");
     $("infoView").hidden = false;
     $("infoClose").focus();
@@ -5622,6 +5695,7 @@
     });
     document.addEventListener("visibilitychange", function () {
       if (document.hidden) return;
+      syncReadSoon();
       refreshProfilePhoto(false);
       checkAvatarVersion(false);
       checkVersion();
@@ -5630,6 +5704,7 @@
       if (state.current) loadMessages(false, true);
     });
     window.addEventListener("focus", onPageResume);
+    window.addEventListener("focus", syncReadSoon);
     window.addEventListener("focus", function () { checkVersion(); });
     setTimeout(function () { checkVersion(true); }, 4000);
     window.addEventListener("pageshow", onPageResume);

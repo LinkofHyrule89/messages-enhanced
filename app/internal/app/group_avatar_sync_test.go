@@ -112,3 +112,111 @@ func TestStoreConversationQueuesGroupIconFirst(t *testing.T) {
 	}
 	t.Fatal("group icon from storeConversation was not cached")
 }
+
+func thumbGroupCandidate(convID string, force bool) db.ContactAvatarCandidate {
+	return db.ContactAvatarCandidate{SourcePlatform: "sms", ParticipantID: db.GroupAvatarParticipantID(convID), Source: "live", GroupIcon: true, Force: force}
+}
+
+func groupIconHash(t *testing.T, a *App, convID string) string {
+	t.Helper()
+	st, err := a.Store.GetGroupAvatarState(thumbGroupCandidate(convID, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st == nil {
+		return ""
+	}
+	return st.ImageHash
+}
+
+// Google omits groupAvatarURL after the icon is changed on the phone and
+// serves the new icon only via GetParticipantThumbnail(conversationID): the
+// old cached icon must be replaced, AvatarVersion bumped, and the icon
+// removed when Google has none.
+func TestFetchGoogleGroupAvatarByThumbnailReplacesAndClears(t *testing.T) {
+	const oldURL = "https://lh3.googleusercontent.com/old-icon"
+	newIcon := append(append([]byte{}, testAvatarPNG...), 0x01, 0x02)
+	mock := &mockGMClient{avatarDownloads: map[string][]byte{oldURL: testAvatarPNG}, participantThumbnails: map[string][]byte{}}
+	a := newTestApp(t, mock)
+
+	a.fetchGoogleGroupAvatar(groupCandidate("g-thumb", oldURL))
+	oldHash := groupIconHash(t, a, "g-thumb")
+	if oldHash == "" {
+		t.Fatal("old icon not cached")
+	}
+	v1 := a.Store.AvatarVersion()
+
+	// Icon changed on the phone: no URL any more, new thumbnail.
+	mock.mu.Lock()
+	mock.participantThumbnails["g-thumb"] = newIcon
+	mock.mu.Unlock()
+	// Routine check within the TTL: not re-checked.
+	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", false))
+	if groupIconHash(t, a, "g-thumb") != oldHash {
+		t.Fatal("routine check within TTL should not refetch")
+	}
+	// Forced (Refresh everything / icon-changed event): picks up the new icon.
+	time.Sleep(2 * time.Millisecond)
+	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", true))
+	newHash := groupIconHash(t, a, "g-thumb")
+	if newHash == "" || newHash == oldHash {
+		t.Fatalf("icon not replaced: old=%s new=%s", oldHash, newHash)
+	}
+	v2 := a.Store.AvatarVersion()
+	if v2 <= v1 {
+		t.Fatalf("AvatarVersion not bumped: %d -> %d", v1, v2)
+	}
+	// Same icon again: no version bump.
+	time.Sleep(2 * time.Millisecond)
+	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", true))
+	if a.Store.AvatarVersion() != v2 {
+		t.Fatal("unchanged icon must not bump AvatarVersion")
+	}
+	// Removed on the phone: no URL, empty thumbnail -> cleared, version bumped.
+	mock.mu.Lock()
+	delete(mock.participantThumbnails, "g-thumb")
+	mock.mu.Unlock()
+	time.Sleep(2 * time.Millisecond)
+	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", true))
+	if h := groupIconHash(t, a, "g-thumb"); h != "" {
+		t.Fatalf("removed icon still cached: %s", h)
+	}
+	if av, _ := a.Store.GetContactAvatar("sms", "conv:g-thumb", "", ""); av != nil && len(av.ImageData) > 0 {
+		t.Fatal("removed icon still served")
+	}
+	if a.Store.AvatarVersion() <= v2 {
+		t.Fatal("clearing must bump AvatarVersion")
+	}
+}
+
+func TestFetchGoogleGroupAvatarDueAfterTTLAndStaleURLCheck(t *testing.T) {
+	icon := append(append([]byte{}, testAvatarPNG...), 0x07)
+	mock := &mockGMClient{participantThumbnails: map[string][]byte{"8": icon}}
+	a := newTestApp(t, mock)
+	// Never checked: fetched without force.
+	a.fetchGoogleGroupAvatar(thumbGroupCandidate("8", false))
+	if groupIconHash(t, a, "8") == "" {
+		t.Fatal("first thumbnail check should cache the icon")
+	}
+	mock.mu.Lock()
+	calls := mock.participantThumbCalls["8"]
+	mock.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("thumbnail calls = %d, want 1", calls)
+	}
+	// Force re-downloads even when the URL hash matches.
+	const u = "https://lh3.googleusercontent.com/same"
+	mock.mu.Lock()
+	mock.avatarDownloads = map[string][]byte{u: testAvatarPNG}
+	mock.mu.Unlock()
+	a.fetchGoogleGroupAvatar(groupCandidate("8", u))
+	c := groupCandidate("8", u)
+	c.Force = true
+	a.fetchGoogleGroupAvatar(c)
+	mock.mu.Lock()
+	dl := mock.avatarDownloadCalls[u]
+	mock.mu.Unlock()
+	if dl != 2 {
+		t.Fatalf("downloads = %d, want 2 (forced refresh re-downloads)", dl)
+	}
+}

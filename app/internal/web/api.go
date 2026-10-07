@@ -91,19 +91,23 @@ type UnpairFunc func() error
 
 // APIOptions holds optional callbacks for the API handler.
 type APIOptions struct {
-	Auth                  *ControlAuth
-	V2                    *V2Options
-	V2IngestCounters      func() map[string]ingest.CounterSnapshot
-	Reads                 readsource.ReadSource
-	V2Primary             bool
-	Client                func() *client.Client
-	Events                *EventBroker
-	EventHeartbeat        time.Duration
-	IdentityName          string
-	IsConnected           StatusChecker
-	GoogleStatus          func() any
-	RecordGoogleSend      func(success bool) // tracks Google send outcomes for stuck-session detection
-	RecordGoogleSendError func(error)        // tracks auth/dead-session send errors for needs_repair
+	Auth             *ControlAuth
+	V2               *V2Options
+	V2IngestCounters func() map[string]ingest.CounterSnapshot
+	Reads            readsource.ReadSource
+	V2Primary        bool
+	Client           func() *client.Client
+	Events           *EventBroker
+	EventHeartbeat   time.Duration
+	IdentityName     string
+	IsConnected      StatusChecker
+	GoogleStatus     func() any
+	RecordGoogleSend func(success bool) // tracks Google send outcomes for stuck-session detection
+	// MarkReadOnGoogle (optional) marks a conversation read on the phone via
+	// Google Messages; used by POST /api/mark-read when the web app asks
+	// ("google": true, sent only for a chat actually viewed).
+	MarkReadOnGoogle      func(conversationID string) (string, error)
+	RecordGoogleSendError func(error) // tracks auth/dead-session send errors for needs_repair
 	GooglePhoneResponding func() bool
 	MarkGoogleAuthExpired func(error) bool
 	ReconnectGoogle       func() error
@@ -2350,6 +2354,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 		}
 		var req struct {
 			ConversationID string `json:"conversation_id"`
+			Google         bool   `json:"google"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httpError(w, "invalid JSON: "+err.Error(), 400)
@@ -2358,6 +2363,12 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 		if req.ConversationID == "" {
 			httpError(w, "conversation_id is required", 400)
 			return
+		}
+		scope := "local"
+		if req.Google && opts.MarkReadOnGoogle != nil {
+			if s, err := opts.MarkReadOnGoogle(req.ConversationID); err == nil {
+				scope = s
+			}
 		}
 		if err := store.MarkConversationRead(req.ConversationID); err != nil {
 			httpError(w, "mark read: "+err.Error(), 500)
@@ -2373,7 +2384,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			}
 		}
 		publishConversations()
-		writeJSON(w, map[string]string{"status": "ok"})
+		writeJSON(w, map[string]string{"status": "ok", "scope": scope})
 	})
 
 	mux.HandleFunc("/api/drafts", func(w http.ResponseWriter, r *http.Request) {

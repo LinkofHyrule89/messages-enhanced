@@ -17,8 +17,9 @@ func TestGroupAvatarCandidate(t *testing.T) {
 	if !ok || c.ParticipantID != "conv:5" || c.GroupAvatarURL != iconURL || c.SourcePlatform != "sms" || c.Source != "live" || c.DisplayName != "Fam" {
 		t.Fatalf("group with icon: %+v, %v", c, ok)
 	}
-	if _, ok := GroupAvatarCandidate(&gmproto.Conversation{ConversationID: "5", IsGroupChat: true}, "live"); ok {
-		t.Fatal("group without icon URL must not produce a candidate")
+	// Google often omits the URL; the icon is then fetched by thumbnail.
+	if c, ok := GroupAvatarCandidate(&gmproto.Conversation{ConversationID: "5", IsGroupChat: true}, "live"); !ok || !c.GroupIcon || c.GroupAvatarURL != "" || c.ParticipantID != "conv:5" {
+		t.Fatalf("group without icon URL: %+v, %v", c, ok)
 	}
 	if _, ok := GroupAvatarCandidate(&gmproto.Conversation{ConversationID: "6", GroupAvatarURL: iconURL}, "live"); ok {
 		t.Fatal("1:1 conversation must not produce a group candidate")
@@ -83,5 +84,20 @@ func TestStoreConversationEmitsGroupIconCandidateFirst(t *testing.T) {
 	})
 	if len(got) != 2 || got[0].ParticipantID != "conv:test-live-grp" || got[0].GroupAvatarURL == "" || got[1].ParticipantID != "p1" {
 		t.Fatalf("candidates = %+v", got)
+	}
+}
+
+func TestGroupIconEventStatus(t *testing.T) {
+	if !GroupIconEventStatus(gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CHANGED_GLOBAL) ||
+		!GroupIconEventStatus(gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CLEARED_GLOBAL) ||
+		GroupIconEventStatus(gmproto.MessageStatusType_INCOMING_COMPLETE) {
+		t.Fatal("GroupIconEventStatus mismatch")
+	}
+	c, ok := GroupIconCandidate("9", "live", true)
+	if !ok || !c.Force || !c.GroupIcon || c.ParticipantID != "conv:9" {
+		t.Fatalf("GroupIconCandidate = %+v, %v", c, ok)
+	}
+	if _, ok := GroupIconCandidate(" ", "live", true); ok {
+		t.Fatal("empty conversation ID must not produce a candidate")
 	}
 }

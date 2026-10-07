@@ -90,3 +90,25 @@ func (s *Store) MarkGroupAvatarChecked(candidate ContactAvatarCandidate, urlHash
 	_, err := s.db.Exec(`UPDATE contact_avatars SET source_url_hash = ? WHERE avatar_id = ?`, urlHash, ContactAvatarID(candidate))
 	return err
 }
+
+// ClearGroupAvatar drops a cached group icon that Google says no longer
+// exists (removed on the phone). The row is kept, empty, with updated_at_ms
+// bumped so AvatarVersion changes and clients drop their cached copy.
+// Returns whether an image was cleared.
+func (s *Store) ClearGroupAvatar(candidate ContactAvatarCandidate, nowMS int64) (bool, error) {
+	avatarID := ContactAvatarID(candidate)
+	if avatarID == "" {
+		return false, nil
+	}
+	res, err := s.db.Exec(`
+		UPDATE contact_avatars
+		SET image_data = NULL, image_hash = '', source_url_hash = '',
+			updated_at_ms = ?, last_checked_at_ms = ?
+		WHERE avatar_id = ? AND image_hash != ''
+	`, nowMS, nowMS, avatarID)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}

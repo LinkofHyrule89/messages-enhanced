@@ -178,6 +178,16 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 	if ms := msg.GetMessageStatus(); ms != nil {
 		status = ms.GetStatus().String()
 	}
+	// A new "group icon changed/removed" event: re-check the group's icon
+	// now rather than at the next periodic check (checked before any of the
+	// early returns below, which may skip storing the event itself).
+	if h.OnGoogleAvatarCandidates != nil && GroupIconEventStatus(msg.GetMessageStatus().GetStatus()) {
+		if exists, err := h.Store.MessageExists(msg.GetMessageID()); err == nil && !exists {
+			if c, ok := GroupIconCandidate(msg.GetConversationID(), "live", true); ok {
+				h.OnGoogleAvatarCandidates([]db.ContactAvatarCandidate{c})
+			}
+		}
+	}
 
 	dbMsg := &db.Message{
 		MessageID:      msg.GetMessageID(),

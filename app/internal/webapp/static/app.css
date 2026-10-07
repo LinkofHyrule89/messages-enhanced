@@ -762,6 +762,8 @@ html.desk .react-more { font-size: 24px; }
   background: rgba(0, 0, 0, .28); font-size: 26px; line-height: 1.4; }
 .reaction-count { font-size: 18px; color: rgba(255, 255, 255, .8); }
 html.desk .reaction { font-size: 18px; padding: 1px 8px; }
+.reaction-custom { display: inline-grid; place-items: center; width: 1.15em; height: 1.4em; }
+.reaction-custom svg { width: 1.05em; height: 1.05em; fill: currentColor; opacity: .9; }
 .bubble.longpress { transform: scale(.98); transition: transform .15s; }
 
 /* ---------- search ---------- */

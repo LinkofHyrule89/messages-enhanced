@@ -148,3 +148,11 @@ func TestRepairTapbacks(t *testing.T) {
 		t.Error("unmatched tapback should be kept as a normal message")
 	}
 }
+
+func TestMergeReactionKeepsCustomImageReaction(t *testing.T) {
+	in := `[{"emoji":"11111111-2222-4333-8444-555555555555","count":1,"actors":["p2"],"custom":{"uuid":"11111111-2222-4333-8444-555555555555","type":"EMOTIFY"}}]`
+	out, changed, err := mergeReaction(in, "❤️", "me", false)
+	if err != nil || !changed || !strings.Contains(out, `"custom":{"uuid":"11111111-2222-4333-8444-555555555555","type":"EMOTIFY"}`) || !strings.Contains(out, "❤️") {
+		t.Fatalf("merge: %s changed=%v err=%v", out, changed, err)
+	}
+}
