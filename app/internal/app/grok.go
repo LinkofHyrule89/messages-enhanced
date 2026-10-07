@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata" // GROK_TIMEZONE works even without system zoneinfo
 
 	"github.com/maxghenis/openmessage/internal/db"
 )
@@ -35,7 +36,10 @@ const (
 	grokContextMessages  = 12
 	grokContextChars     = 300
 	grokReplyMaxChars    = 600
-	grokRequestTimeout   = 60 * time.Second
+	grokRequestTimeout   = 45 * time.Second // live search can take a while
+	grokImageReqTimeout  = 45 * time.Second
+	grokDefaultImgModel  = "grok-4.20-non-reasoning" // picture lookups: one Wikimedia search, ~3-8 s, ~$0.02
+	grokMaxSearchTurns   = 3                         // bounds search calls (billed per call)
 	grokDefaultModel     = "grok-4.7"
 	grokDefaultBaseURL   = "https://api.x.ai/v1"
 	grokTriggerMe        = "me"
@@ -72,7 +76,7 @@ type grokState struct {
 var grokStates sync.Map // *App -> *grokState
 
 func (a *App) grok() *grokState {
-	v, _ := grokStates.LoadOrStore(a, &grokState{handled: map[string]time.Time{}, lastChat: map[string]time.Time{}, client: &http.Client{Timeout: grokRequestTimeout}})
+	v, _ := grokStates.LoadOrStore(a, &grokState{handled: map[string]time.Time{}, lastChat: map[string]time.Time{}, client: &http.Client{Timeout: grokImageReqTimeout + 5*time.Second}})
 	return v.(*grokState)
 }
 
@@ -83,6 +87,15 @@ func grokModel() string {
 		return m
 	}
 	return grokDefaultModel
+}
+
+// grokImageModel: a non-reasoning model for picture requests (the
+// reasoning model kept re-searching to verify images: ~55 s, ~$0.40).
+func grokImageModel() string {
+	if m := strings.TrimSpace(os.Getenv("XAI_IMAGE_MODEL")); m != "" {
+		return m
+	}
+	return grokDefaultImgModel
 }
 
 func grokBaseURL() string {
@@ -241,15 +254,37 @@ func (a *App) HandleLiveMessageForGrok(m *db.Message) {
 
 func (a *App) grokReply(m *db.Message) {
 	log := a.Logger.With().Str("conv_id", m.ConversationID).Logger()
-	ctx, cancel := context.WithTimeout(context.Background(), grokRequestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), grokTimeout(grokWantsImage(m.Body)))
 	defer cancel()
 	prompt := a.grokContext(m)
-	reply, err := a.grokComplete(ctx, prompt)
+	started := time.Now()
+	ans, err := a.grokComplete(ctx, prompt, grokWantsImage(m.Body))
 	if err != nil {
-		log.Warn().Str("error", grokSafeErr(err)).Msg("@Grok reply failed")
+		log.Warn().Str("error", grokSafeErr(err)).Dur("took", time.Since(started)).Msg("@Grok reply failed")
 		return
 	}
-	reply = grokTrimReply(reply)
+	reply := grokTrimReply(ans.Text)
+	// At most one image: downloaded and validated before anything is sent;
+	// if that fails, the text carries the link instead.
+	var img []byte
+	var imgMime, imgName string
+	if ans.ImageURL != "" {
+		var ierr error
+		img, imgMime, imgName, ierr = fetchGrokImage(context.Background(), ans.ImageURL)
+		if ierr != nil {
+			log.Warn().Str("error", ierr.Error()).Msg("@Grok image rejected; sending text only")
+			img = nil
+			if errors.Is(ierr, errGrokImageTooLarge) { // real but too big for MMS: the link helps
+				reply = grokWithSource(reply, ans.ImageURL)
+			}
+		}
+	}
+	if img == nil && reply != "" {
+		reply = grokWithSource(reply, ans.Source)
+	}
+	if reply == "" && img != nil {
+		reply = "Here you go."
+	}
 	if reply == "" {
 		log.Warn().Msg("@Grok returned an empty reply")
 		return
@@ -258,7 +293,14 @@ func (a *App) grokReply(m *db.Message) {
 		log.Warn().Err(err).Msg("@Grok reply send failed")
 		return
 	}
-	log.Info().Int("reply_chars", len([]rune(reply))).Msg("@Grok replied")
+	if img != nil {
+		if _, err := a.SendMediaToConversation(m.ConversationID, img, imgName, imgMime, "", ""); err != nil {
+			log.Warn().Err(err).Msg("@Grok image send failed")
+		} else {
+			log.Info().Str("mime", imgMime).Int("bytes", len(img)).Msg("@Grok sent an image")
+		}
+	}
+	log.Info().Int("reply_chars", len([]rune(reply))).Int("search_calls", ans.Searches).Float64("cost_usd", ans.CostUSD).Dur("took", time.Since(started)).Msg("@Grok replied")
 }
 
 // grokContext: the recent messages, oldest first, short.
@@ -302,7 +344,7 @@ func grokLine(m *db.Message) string {
 }
 
 func grokTrimReply(s string) string {
-	s = strings.TrimSpace(s)
+	s = grokPlainText(s)
 	s = strings.TrimPrefix(s, strings.TrimSpace(GrokReplyPrefix))
 	s = strings.TrimSpace(s)
 	if r := []rune(s); len(r) > grokReplyMaxChars {
@@ -311,55 +353,280 @@ func grokTrimReply(s string) string {
 	return s
 }
 
-const grokSystemPrompt = "You are Grok, replying inside a text-message conversation because someone wrote @Grok. " +
-	"Answer the latest message that mentions @Grok, using the recent messages for context. " +
-	"Reply in plain text like a text message: one to three short sentences, no markdown, no preamble."
+var (
+	grokMDImage     = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
+	grokMDLink      = regexp.MustCompile(`\[([^\]]+)\]\((https?://[^)\s]+)\)`)
+	grokCiteMarker  = regexp.MustCompile(`\s*\[\[?\d+\]?\](\([^)]*\))?`)
+	grokMDEmphasis  = regexp.MustCompile(`(\*\*|__|\*|~~|` + "`" + `)`)
+	grokMDHeading   = regexp.MustCompile(`(?m)^\s{0,3}#{1,6}\s+`)
+	grokMDBullet    = regexp.MustCompile(`(?m)^\s*[-*+]\s+`)
+	grokBareURL     = regexp.MustCompile(`\(?https?://[^\s)]*[^\s).,;:!?'"]\)?`)
+	grokSpaces      = regexp.MustCompile(`[ \t]+`)
+	grokBlankLines  = regexp.MustCompile(`\n{3,}`)
+	grokSpaceBefore = regexp.MustCompile(`\s+([.,;:!?])`)
+)
+
+// grokPlainText turns a markdown answer into SMS-friendly plain text:
+// no emphasis, headings, images, citation markers or inline URLs (links keep
+// their text), bullets as "• ".
+func grokPlainText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = grokMDImage.ReplaceAllString(s, "")
+	s = grokCiteMarker.ReplaceAllString(s, "")
+	s = grokMDLink.ReplaceAllString(s, "$1")
+	s = grokBareURL.ReplaceAllString(s, "")
+	s = grokMDHeading.ReplaceAllString(s, "")
+	s = grokMDBullet.ReplaceAllString(s, "• ")
+	s = grokMDEmphasis.ReplaceAllString(s, "")
+	s = grokSpaces.ReplaceAllString(s, " ")
+	s = grokSpaceBefore.ReplaceAllString(s, "$1")
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimSpace(l)
+	}
+	s = grokBlankLines.ReplaceAllString(strings.Join(lines, "\n"), "\n\n")
+	return strings.TrimSpace(s)
+}
+
+// grokWithSource appends one short source link when it fits the cap.
+func grokWithSource(reply, source string) string {
+	if source == "" || len(source) > 80 || strings.ContainsAny(source, " \n") {
+		return reply
+	}
+	out := reply + "\n" + source
+	if len([]rune(out)) > grokReplyMaxChars+1 {
+		return reply
+	}
+	return out
+}
+
+// grokZone: GROK_TIMEZONE (an IANA name such as America/New_York), else the
+// server's local zone.
+func grokZone() *time.Location {
+	if tz := strings.TrimSpace(os.Getenv("GROK_TIMEZONE")); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			return loc
+		}
+	}
+	return time.Local
+}
+
+// grokSystemPrompt carries the current local date and time so "tonight",
+// "this month" etc. resolve correctly, plus the optional owner name
+// (GROK_USER_NAME) and home area (GROK_USER_LOCATION) for "near me"
+// questions. Nothing personal is built in. Picture
+// requests get a lean prompt (one Wikimedia search, the URL on a last line);
+// mixing them with the "search for anything current" and "no URLs" rules
+// made the model loop on searches.
+func grokSystemPrompt(now time.Time, wantImage bool) string {
+	loc := grokZone()
+	lt := now.In(loc)
+	owner := strings.TrimSpace(os.Getenv("GROK_USER_NAME"))
+	if owner == "" {
+		owner = "the phone's owner"
+	}
+	home := strings.TrimSpace(os.Getenv("GROK_USER_LOCATION"))
+	base := "You are Grok, replying inside a text-message conversation because someone wrote @Grok. " +
+		"Right now it is " + lt.Format("Monday, January 2, 2006, 3:04 PM MST") + " (" + loc.String() + " time). " +
+		"Messages marked \"Me\" are from " + owner
+	if home != "" {
+		base += ", who lives in the " + home + " area"
+	}
+	if wantImage {
+		return base + ". They want a picture: do one web search on Wikimedia Commons, pick a real existing photo from the results (never generate, guess or invent one), " +
+			"reply with one short plain-text sentence describing it, then put that photo's Commons file page URL (a jpg, png, gif or webp file, exactly as in the search results) alone on the last line as: IMAGE: https://commons.wikimedia.org/wiki/File:<file name>"
+	}
+	if home != "" {
+		base += "; use that for local questions (weather, showtimes, events, \"near me\") unless another place is named"
+	}
+	return base + ". Answer the latest message that mentions @Grok, using the recent messages for context. " +
+		"For anything current (news, releases, schedules, prices, scores, weather, events) search the web or X first and give concrete, dated facts. " +
+		"Reply in plain text like a text message: at most about 500 characters, no markdown, no headings, no citations or URLs, no preamble."
+}
 
 var errGrokHTTP = errors.New("xAI API error")
 
-func (a *App) grokComplete(ctx context.Context, conversation string) (string, error) {
+// grokAnswer is Grok's reply text plus the first cited URL, if any.
+type grokAnswer struct {
+	Text     string
+	Source   string
+	ImageURL string  // a real image found by search ("IMAGE: <url>" line)
+	Searches int     // server-side tool calls (web/X search), billed per call
+	CostUSD  float64 // xAI's reported cost for the request (tokens + tools)
+}
+
+// grokTimeout: picture requests get longer (image search is slower).
+func grokTimeout(wantImage bool) time.Duration {
+	if wantImage {
+		return grokImageReqTimeout
+	}
+	return grokRequestTimeout
+}
+
+// grokComplete asks Grok through the Responses API with xAI's server-side
+// web_search and x_search tools (live data; the tool calls run on xAI's
+// side and are billed per call).
+func (a *App) grokComplete(ctx context.Context, conversation string, wantImage bool) (grokAnswer, error) {
 	key := grokAPIKey()
 	if key == "" {
-		return "", errors.New("XAI_API_KEY not set")
+		return grokAnswer{}, errors.New("XAI_API_KEY not set")
+	}
+	// Picture requests: a web search limited to Wikimedia with a fast
+	// non-reasoning model. xAI's image search returns no URLs to the model
+	// (it guessed dead links), and the reasoning model looped on it (~55 s,
+	// ~$0.40); Wikimedia results carry real upload.wikimedia.org file URLs.
+	tools := []map[string]any{{"type": "web_search"}, {"type": "x_search"}}
+	turns := grokMaxSearchTurns
+	model := grokModel()
+	if wantImage {
+		tools = []map[string]any{{"type": "web_search", "filters": map[string]any{
+			"allowed_domains": grokImageDomains}}}
+		turns = 2
+		model = grokImageModel()
 	}
 	body := map[string]any{
-		"model": grokModel(),
-		"messages": []map[string]string{
-			{"role": "system", "content": grokSystemPrompt},
+		"model": model,
+		"input": []map[string]string{
+			{"role": "system", "content": grokSystemPrompt(time.Now(), wantImage)},
 			{"role": "user", "content": "Recent messages (oldest first):\n" + conversation},
 		},
-		"stream": false,
+		"tools":     tools,
+		"max_turns": turns,
+		"store":     false,
+		"stream":    false,
+	}
+	if wantImage {
+		body["tool_choice"] = "required" // a real image from search, not memory
+	} else {
+		body["reasoning"] = map[string]string{"effort": "low"}
 	}
 	b, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, grokBaseURL()+"/chat/completions", bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, grokBaseURL()+"/responses", bytes.NewReader(b))
 	if err != nil {
-		return "", err
+		return grokAnswer{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
 	resp, err := a.grok().client.Do(req)
 	if err != nil {
-		return "", err
+		return grokAnswer{}, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%w: HTTP %d", errGrokHTTP, resp.StatusCode)
+		var e struct {
+			Error any    `json:"error"`
+			Code  string `json:"code"`
+		}
+		_ = json.Unmarshal(raw, &e)
+		detail := ""
+		if m, ok := e.Error.(map[string]any); ok {
+			detail, _ = m["message"].(string)
+		} else if s, ok := e.Error.(string); ok {
+			detail = s
+		}
+		if r := []rune(detail); len(r) > 200 {
+			detail = string(r[:200])
+		}
+		return grokAnswer{}, fmt.Errorf("%w: HTTP %d %s", errGrokHTTP, resp.StatusCode, detail)
 	}
+	return parseGrokResponse(raw)
+}
+
+func parseGrokResponse(raw []byte) (grokAnswer, error) {
 	var out struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
+		Output []struct {
+			Type    string `json:"type"`
+			Content []struct {
+				Type        string `json:"type"`
+				Text        string `json:"text"`
+				Annotations []struct {
+					Type string `json:"type"`
+					URL  string `json:"url"`
+				} `json:"annotations"`
+			} `json:"content"`
+		} `json:"output"`
+		Citations []string `json:"citations"`
+		Usage     struct {
+			CostTicks int64 `json:"cost_in_usd_ticks"`
+			Tools     struct {
+				Web int `json:"web_search_calls"`
+				X   int `json:"x_search_calls"`
+			} `json:"server_side_tool_usage_details"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return "", fmt.Errorf("decode xAI response: %w", err)
+		return grokAnswer{}, fmt.Errorf("decode xAI response: %w", err)
 	}
-	if len(out.Choices) == 0 {
-		return "", errors.New("xAI response had no choices")
+	var ans grokAnswer
+	var texts []string
+	for _, item := range out.Output {
+		if strings.HasSuffix(item.Type, "_call") {
+			ans.Searches++
+		}
+		if item.Type != "message" {
+			continue
+		}
+		for _, c := range item.Content {
+			if c.Type != "output_text" {
+				continue
+			}
+			texts = append(texts, c.Text)
+			for _, an := range c.Annotations {
+				if ans.Source == "" && an.Type == "url_citation" && strings.HasPrefix(an.URL, "https://") {
+					ans.Source = an.URL
+				}
+			}
+		}
 	}
-	return out.Choices[0].Message.Content, nil
+	if ans.Source == "" {
+		for _, u := range out.Citations {
+			if strings.HasPrefix(u, "https://") {
+				ans.Source = u
+				break
+			}
+		}
+	}
+	if n := out.Usage.Tools.Web + out.Usage.Tools.X; n > 0 {
+		ans.Searches = n
+	}
+	ans.CostUSD = float64(out.Usage.CostTicks) / 1e10
+	ans.Text, ans.ImageURL = grokExtractImage(strings.Join(texts, "\n"))
+	if strings.TrimSpace(ans.Text) == "" && ans.ImageURL == "" {
+		return ans, errors.New("xAI response had no text")
+	}
+	return ans, nil
+}
+
+// GrokTestAnswer runs the real request path (no message is sent) and
+// returns the SMS-ready reply; used by the "grok-test" command.
+func (a *App) GrokTestAnswer(question string) (string, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), grokTimeout(grokWantsImage(question)))
+	defer cancel()
+	ans, err := a.grokComplete(ctx, "Me: "+question, grokWantsImage(question))
+	if err != nil {
+		return "", 0, errors.New(grokSafeErr(err))
+	}
+	// Same text/link rules as grokReply; nothing is sent.
+	reply, note := grokTrimReply(ans.Text), ""
+	imgOK := false
+	if ans.ImageURL != "" {
+		data, mime, name, err := fetchGrokImage(context.Background(), ans.ImageURL)
+		if err != nil {
+			note = "\n[image " + ans.ImageURL + " rejected: " + err.Error() + "; text only]"
+			if errors.Is(err, errGrokImageTooLarge) {
+				reply = grokWithSource(reply, ans.ImageURL)
+			}
+		} else {
+			imgOK = true
+			note = fmt.Sprintf("\n[image %s OK: %s, %d bytes, would send as MMS %s after the text]", ans.ImageURL, mime, len(data), name)
+		}
+	}
+	if !imgOK && reply != "" {
+		reply = grokWithSource(reply, ans.Source)
+	}
+	out := GrokReplyPrefix + reply + fmt.Sprintf("\n[xAI cost $%.3f]", ans.CostUSD) + note
+	return out, ans.Searches, nil
 }
 
 // grokSafeErr describes an error without anything secret (the key is only
@@ -369,5 +636,7 @@ func grokSafeErr(err error) string {
 	if k := grokAPIKey(); k != "" {
 		s = strings.ReplaceAll(s, k, "[key]")
 	}
-	return s
+	return grokKeyLikeRe.ReplaceAllString(s, "[key]") // e.g. a partially echoed key
 }
+
+var grokKeyLikeRe = regexp.MustCompile(`xai-[A-Za-z0-9*_.-]{4,}`)

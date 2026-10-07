@@ -60,6 +60,8 @@ func main() {
 		err = cmd.RunServe(logger, os.Args[2:]...)
 	case "demo":
 		err = cmd.RunDemo(logger)
+	case "grok-test":
+		err = cmd.RunGrokTest(logger, os.Args[2:]...)
 	case "stt-proxy":
 		err = cmd.RunSTTProxy(logger, os.Args[2:]...)
 	case "backup":

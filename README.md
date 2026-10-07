@@ -98,9 +98,11 @@ select more, info
   - conversations open at the first unread message; incoming messages only
     scroll the view if you're at the bottom, otherwise a "New messages" pill
     appears; your own sends always scroll down
-  - optional @Grok replies (off by default, needs an xAI API key): write
-    "@Grok" in a conversation and Grok answers there, rate limited, with a
-    "who can trigger" setting
+  - optional @Grok replies (off by default, needs `XAI_API_KEY`): write
+    "@Grok" in a conversation and Grok answers there with live web and X
+    search, knowing the current date and time; ask for a picture and it sends
+    a real photo from Wikimedia Commons. Short plain-text replies, rate
+    limited, with a "who can trigger" setting
   - remote MCP connector at `/mcp` (OAuth 2.1 with PKCE, or a bearer token)
     so AI assistants can read and send messages
   - gzip, long-lived caching for versioned assets, and security headers
@@ -142,6 +144,8 @@ included here):
 | `MESSAGES_STT_PROVIDER` | Server speech-to-text provider. |
 | `MESSAGES_MCP_TOKEN` | Turns on the remote MCP connector at `/mcp` (32+ characters). |
 | `XAI_API_KEY` | Enables the optional @Grok replies (then turn them on in Settings). |
+| `GROK_TIMEZONE` | Optional IANA time zone for @Grok's notion of "now" (e.g. `America/New_York`; default: server local time). |
+| `GROK_USER_NAME`, `GROK_USER_LOCATION` | Optional: your name and home area, so @Grok can answer "near me" questions. |
 
 Variable names from earlier versions are still read as a fallback. More options are documented in [`app/GUIDE.md`](app/GUIDE.md).
 

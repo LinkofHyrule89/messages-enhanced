@@ -3471,7 +3471,7 @@
   }
   function showSettings(open) {
     $("settingsView").hidden = !open;
-    if (open) { applySettings(); renderMicCheck(); renderSttInfo(); if (window.TMPWA) window.TMPWA.refresh(); }
+    if (open) { applySettings(); renderMicCheck(); renderSttInfo(); if (window.TMPWA) window.TMPWA.refresh(); loadGrok(); }
   }
 
   // Where dictated text goes: the box's selection if it has focus, else
@@ -5349,7 +5349,7 @@
     $("attachBtn").addEventListener("click", onAttachTap);
     $("fileInput").addEventListener("change", onFilePicked);
     initPlusSheet();
-    $("settingsBtn").addEventListener("click", function () { showSettings(true); loadGrok(); });
+    $("settingsBtn").addEventListener("click", function () { showSettings(true); });
     $("settingsClose").addEventListener("click", function () { showSettings(false); });
     $("settingsView").addEventListener("click", function (e) { if (e.target === $("settingsView")) showSettings(false); });
     $("setCarMode").addEventListener("change", function () { setCarMode(this.checked); });
