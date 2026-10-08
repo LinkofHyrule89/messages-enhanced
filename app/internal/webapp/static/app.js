@@ -725,7 +725,7 @@
     var google = sourcePlatformOf(c) === "sms";
     var fname = state.folder && state.folder.name;
     $("convMenuTitle").textContent = convName(c);
-    // Order: Chat theme, Group/Contact details, Pin/Unpin, Archive, Move to trash.
+    // Order: Chat theme, Group/Contact details, Refresh, Pin/Unpin, Archive, Move to trash.
     $("convMenuTheme").hidden = !(btn.id === "convMenuBtn" && state.current === c.ConversationID && !state.folder);
     $("convMenuDetailsLabel").textContent = c.IsGroup ? "Group details" : "Contact details";
     // Pinned on the phone: nothing to do here, so no Pin item at all.
@@ -749,6 +749,8 @@
     $("convMenuArchiveLabel").textContent = archived ? "Unarchive" : "Archive";
     arch.dataset.archived = archived ? "1" : "";
     $("convMenuTrash").hidden = !google;
+    // Refresh: Google Messages conversations stored here (not live-only folder rows).
+    $("convMenuRefresh").hidden = !google || (!!state.folder && !c.local);
     // Non-car: the header's mute bell lives in this menu too.
     var inHeader = btn.id === "convMenuBtn" && isDesk();
     $("convMenuMute").hidden = !inHeader;
@@ -855,6 +857,46 @@
       toast(archived ? "Archived. Find it in Settings → Folders → Archived." : "Moved back to the inbox");
       if (!state.folder) loadConversations();
     }).catch(function (e) { toast((archived ? "Couldn't archive: " : "Couldn't unarchive: ") + e.message, "error"); });
+  }
+  // Refresh one conversation from Google (⋮ → Refresh): name, members,
+  // group icon, photos and the latest messages; then repaint just it.
+  var convRefreshing = {};
+  function forgetConvAvatars(c) {
+    avatarLookups(c).forEach(function (r) {
+      var e = avatarCache[r.key];
+      if (!e || e.pending) return;
+      if (e.url) { var u = e.url; setTimeout(function () { try { URL.revokeObjectURL(u); } catch (x) {} }, 30000); }
+      delete avatarCache[r.key];
+    });
+  }
+  function refreshConversation(c) {
+    var id = c.ConversationID;
+    if (convRefreshing[id]) { toast("Already refreshing…"); return Promise.resolve(); }
+    convRefreshing[id] = true;
+    toast("Refreshing “" + convName(c) + "”…");
+    return postJSON("/api/app/conversations/refresh", { conversation_id: id }).then(function (res) {
+      if (res && res.deleted) {
+        dropConversation(id);
+        if (state.current === id) closeThread();
+        toast("This conversation was deleted on your phone");
+        return loadConversations(true);
+      }
+      forgetConvAvatars(c);
+      return loadConversations(true).then(function () {
+        var fresh = state.convs.find(function (x) { return x.ConversationID === id; });
+        if (fresh && fresh !== c) forgetConvAvatars(fresh);
+        noteAvatarVersion(res && res.avatar_version);
+        if (state.current === id) {
+          loadConvMeta(id);
+          return loadMessages(false, true).then(function () { renderCurrent(false); });
+        }
+      }).then(function () {
+        if (!state.folder) renderConversations();
+        toast("Refreshed");
+      });
+    }).catch(function (e) {
+      if (e.message !== "login required") toast("Couldn't refresh: " + e.message, "error");
+    }).then(function () { delete convRefreshing[id]; });
   }
   var trashFor = null;
   function askTrash(c) {
@@ -5525,6 +5567,11 @@
       var f = state.convMenuFor, archived = this.dataset.archived === "1";
       closeConvMenu();
       if (f) setConvArchived(f.conv, !archived);
+    });
+    $("convMenuRefresh").addEventListener("click", function () {
+      var f = state.convMenuFor;
+      closeConvMenu();
+      if (f) refreshConversation(f.conv);
     });
     $("convMenuTrash").addEventListener("click", function () {
       var f = state.convMenuFor;

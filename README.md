@@ -99,6 +99,10 @@ select more, info
   - end-to-end encrypted (MLS) RCS group icons are downloaded and decrypted
     the same way Google Messages for Web does; groups without an icon show a
     collage of members' photos
+  - "Refresh" in a conversation's ⋮ menu (also in Car Mode and on a long
+    press in the list) re-reads just that chat or group from Google: name,
+    members, group icon, members' photos and the latest messages
+    (rate limited per conversation)
   - reading a chat (open and visible, or scrolled to the newest message)
     marks it read in Google Messages, which clears the phone's notifications
   - group details list only current members, plus you with your Google

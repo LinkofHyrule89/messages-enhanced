@@ -27,6 +27,7 @@ type fakeCar struct {
 	convPins  map[string]bool
 	archived  map[string]bool
 	trashed   []string
+	refreshed []string
 }
 
 func (f *fakeCar) ArchiveConversation(id string, archived bool) (any, error) {
@@ -362,5 +363,58 @@ func TestCarMuteReadMetaEndpoints(t *testing.T) {
 		if rr := authedReq(t, h, c, tc.method, tc.path, "application/json", body); rr.Code != tc.want {
 			t.Fatalf("%s %s %s: %d want %d", tc.method, tc.path, tc.body, rr.Code, tc.want)
 		}
+	}
+}
+
+func (f *fakeCar) RefreshConversation(id string) (any, int, error) {
+	switch id {
+	case "busy":
+		return nil, 17, nil
+	case "offline":
+		return nil, 0, statusErr{503, "Google Messages isn't connected"}
+	}
+	f.refreshed = append(f.refreshed, id)
+	return map[string]any{"conversation_id": id, "messages": 3, "avatar_version": 42}, 0, nil
+}
+
+func TestCarConversationRefreshEndpoint(t *testing.T) {
+	car := &fakeCar{}
+	h, _, _ := newTestServer(t, func(_ *Config, d *Deps) { d.Car = car })
+	const p = "/api/app/conversations/refresh"
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "http://car.example"+p, strings.NewReader(`{"conversation_id":"c1"}`)))
+	if rr.Code != http.StatusUnauthorized || len(car.refreshed) != 0 {
+		t.Fatalf("without login: %d", rr.Code)
+	}
+	c := login(t, h)
+	if rr := authedReq(t, h, c, http.MethodGet, p, "", nil); rr.Code != 405 {
+		t.Fatalf("GET: %d", rr.Code)
+	}
+	for body, want := range map[string]int{
+		`{}`:                            400,
+		`{"conversation_id":" "}`:       400,
+		`not json`:                      400,
+		`{"conversation_id":"offline"}`: 503,
+	} {
+		if rr := authedReq(t, h, c, http.MethodPost, p, "application/json", strings.NewReader(body)); rr.Code != want {
+			t.Fatalf("%s: got %d want %d", body, rr.Code, want)
+		}
+	}
+	rr = authedReq(t, h, c, http.MethodPost, p, "application/json", strings.NewReader(`{"conversation_id":"busy"}`))
+	if rr.Code != http.StatusTooManyRequests || rr.Header().Get("Retry-After") != "17" || !strings.Contains(rr.Body.String(), "17s") {
+		t.Fatalf("rate limited: %d %q %s", rr.Code, rr.Header().Get("Retry-After"), rr.Body.String())
+	}
+	rr = authedReq(t, h, c, http.MethodPost, p, "application/json", strings.NewReader(`{"conversation_id":"c1"}`))
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"avatar_version":42`) || len(car.refreshed) != 1 || car.refreshed[0] != "c1" {
+		t.Fatalf("refresh: %d %s %v", rr.Code, rr.Body.String(), car.refreshed)
+	}
+	// Cross-origin writes are refused by the gate.
+	req := httptest.NewRequest(http.MethodPost, "http://car.example"+p, strings.NewReader(`{"conversation_id":"c2"}`))
+	req.AddCookie(c)
+	req.Header.Set("Origin", "https://evil.example")
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden || len(car.refreshed) != 1 {
+		t.Fatalf("cross-origin refresh: %d", rr.Code)
 	}
 }

@@ -36,6 +36,16 @@ func (b webCarBackend) MarkConversationRead(id string) (any, error) {
 func (b webCarBackend) ConversationMeta(id string) (any, error) {
 	return b.a.CarConversationMeta(id)
 }
+func (b webCarBackend) RefreshConversation(id string) (any, int, error) {
+	res, retry, err := b.a.RefreshConversation(id)
+	if retry > 0 {
+		return nil, retry, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	return res, 0, nil
+}
 
 // webRefreshBackend adapts *app.App to webapp.RefreshBackend.
 type webRefreshBackend struct{ a *app.App }

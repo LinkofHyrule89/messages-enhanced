@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,9 @@ type CarBackend interface {
 	MarkConversationRead(conversationID string) (any, error)
 	// ConversationMeta: protocol (RCS/SMS), end-to-end encryption, muted.
 	ConversationMeta(conversationID string) (any, error)
+	// RefreshConversation re-reads one conversation from Google (members,
+	// icon, photos, latest messages). retryAfter > 0: rate limited.
+	RefreshConversation(conversationID string) (v any, retryAfter int, err error)
 }
 
 func (s *Server) registerCarRoutes(mux *http.ServeMux) {
@@ -48,6 +52,7 @@ func (s *Server) registerCarRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/app/conversations/read", s.handleCarConversationRead)
 	mux.HandleFunc("/api/app/conversations/meta", s.handleCarConversationMeta)
 	mux.HandleFunc("/api/app/refresh", s.handleRefresh)
+	mux.HandleFunc("/api/app/conversations/refresh", s.handleCarConversationRefresh)
 	mux.HandleFunc("/api/app/grok", s.handleGrok)
 	s.registerProfileRoutes(mux)
 }
@@ -73,6 +78,35 @@ func (s *Server) handleCarConversationMute(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	v, err := b.MuteConversation(req.ConversationID, *req.Muted)
+	writeCarResult(w, v, err)
+}
+
+// POST /api/app/conversations/refresh {"conversation_id": "..."}: refresh
+// one conversation from Google. 429 + Retry-After when rate limited.
+func (s *Server) handleCarConversationRefresh(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	b := s.carBackend(w)
+	if b == nil {
+		return
+	}
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.ConversationID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "conversation_id is required"})
+		return
+	}
+	v, retry, err := b.RefreshConversation(req.ConversationID)
+	if retry > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "Refreshed recently. Try again in " + strconv.Itoa(retry) + "s", "retry_after_sec": retry})
+		return
+	}
 	writeCarResult(w, v, err)
 }
 
