@@ -96,6 +96,9 @@ select more, info
     hours, contact photos and group icons refresh when they change (group
     pictures are re-read from Google, also when one is changed or removed on
     the phone), and Settings has a "Refresh everything" button with progress
+  - end-to-end encrypted (MLS) RCS group icons are downloaded and decrypted
+    the same way Google Messages for Web does; groups without an icon show a
+    collage of members' photos
   - reading a chat (open and visible, or scrolled to the newest message)
     marks it read in Google Messages, which clears the phone's notifications
   - group details list only current members, plus you with your Google

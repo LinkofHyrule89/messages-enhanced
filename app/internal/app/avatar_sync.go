@@ -117,6 +117,8 @@ func (a *App) googleAvatarSyncLoop() {
 			if candidate.GroupAvatarURL != "" {
 				// A changed icon URL is a new item, even within the hour.
 				key += "#" + db.GroupAvatarURLHash(candidate.GroupAvatarURL)
+			} else if candidate.EncryptedGroupIcon != nil {
+				key += "#" + candidate.EncryptedGroupIcon.SourceHash()
 			}
 			window := time.Hour
 			if candidate.Force {

@@ -11,48 +11,28 @@ import (
 )
 
 // GroupAvatarCandidate returns the avatar-sync candidate for a Google group
-// conversation's icon, or ok=false when the conversation isn't a group. The
-// candidate carries Conversation.groupAvatarURL when Google sends one; it is
-// returned without a URL too, since Google often omits the field and serves
-// the (current) icon only through GetParticipantThumbnail(conversationID).
+// conversation's icon, or ok=false when the conversation isn't a group. It
+// carries Conversation.groupAvatarURL when Google sends one, else the
+// end-to-end encrypted icon reference of an MLS group (field 39), else
+// neither: the group has no icon, and the sync drops any cached one so
+// clients show the default group avatar.
 func GroupAvatarCandidate(conv *gmproto.Conversation, source string) (db.ContactAvatarCandidate, bool) {
 	if conv == nil || !conv.GetIsGroupChat() {
 		return db.ContactAvatarCandidate{}, false
 	}
-	c, ok := GroupIconCandidate(conv.GetConversationID(), source, false)
-	if !ok {
-		return c, false
-	}
-	c.DisplayName = conv.GetName()
-	c.GroupAvatarURL = strings.TrimSpace(conv.GetGroupAvatarURL())
-	return c, true
-}
-
-// GroupIconCandidate returns a group-icon candidate for a conversation ID
-// (no URL); force re-checks Google even if the cached icon is fresh.
-func GroupIconCandidate(conversationID, source string, force bool) (db.ContactAvatarCandidate, bool) {
-	participantID := db.GroupAvatarParticipantID(conversationID)
+	participantID := db.GroupAvatarParticipantID(conv.GetConversationID())
 	if participantID == "" {
 		return db.ContactAvatarCandidate{}, false
 	}
 	return db.ContactAvatarCandidate{
-		SourcePlatform: "sms",
-		ParticipantID:  participantID,
-		Source:         source,
-		GroupIcon:      true,
-		Force:          force,
+		SourcePlatform:     "sms",
+		ParticipantID:      participantID,
+		DisplayName:        conv.GetName(),
+		Source:             source,
+		GroupAvatarURL:     strings.TrimSpace(conv.GetGroupAvatarURL()),
+		GroupIcon:          true,
+		EncryptedGroupIcon: EncryptedGroupIcon(conv),
 	}, true
-}
-
-// GroupIconEventStatus reports whether a message status is Google's "group
-// icon changed" / "group icon removed" event.
-func GroupIconEventStatus(status gmproto.MessageStatusType) bool {
-	switch status {
-	case gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CHANGED_GLOBAL,
-		gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CLEARED_GLOBAL:
-		return true
-	}
-	return false
 }
 
 // groupAvatarPresenceLogged remembers, per group conversation ID, the last
@@ -71,11 +51,20 @@ func LogGroupAvatarPresence(logger zerolog.Logger, conv *gmproto.Conversation) {
 		return
 	}
 	present := strings.TrimSpace(conv.GetGroupAvatarURL()) != ""
-	if prev, loaded := groupAvatarPresenceLogged.Swap(convID, present); loaded && prev.(bool) == present {
+	encrypted := EncryptedGroupIcon(conv) != nil
+	state := 0
+	if present {
+		state |= 1
+	}
+	if encrypted {
+		state |= 2
+	}
+	if prev, loaded := groupAvatarPresenceLogged.Swap(convID, state); loaded && prev.(int) == state {
 		return
 	}
 	logger.Info().
 		Str("conv_id", convID).
 		Bool("group_avatar_url_present", present).
+		Bool("encrypted_icon_present", encrypted).
 		Msg("Google group conversation icon")
 }

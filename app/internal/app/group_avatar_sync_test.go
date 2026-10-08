@@ -2,6 +2,8 @@ package app
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -113,13 +115,13 @@ func TestStoreConversationQueuesGroupIconFirst(t *testing.T) {
 	t.Fatal("group icon from storeConversation was not cached")
 }
 
-func thumbGroupCandidate(convID string, force bool) db.ContactAvatarCandidate {
+func noURLGroupCandidate(convID string, force bool) db.ContactAvatarCandidate {
 	return db.ContactAvatarCandidate{SourcePlatform: "sms", ParticipantID: db.GroupAvatarParticipantID(convID), Source: "live", GroupIcon: true, Force: force}
 }
 
 func groupIconHash(t *testing.T, a *App, convID string) string {
 	t.Helper()
-	st, err := a.Store.GetGroupAvatarState(thumbGroupCandidate(convID, false))
+	st, err := a.Store.GetGroupAvatarState(noURLGroupCandidate(convID, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,94 +131,105 @@ func groupIconHash(t *testing.T, a *App, convID string) string {
 	return st.ImageHash
 }
 
-// Google omits groupAvatarURL after the icon is changed on the phone and
-// serves the new icon only via GetParticipantThumbnail(conversationID): the
-// old cached icon must be replaced, AvatarVersion bumped, and the icon
-// removed when Google has none.
-func TestFetchGoogleGroupAvatarByThumbnailReplacesAndClears(t *testing.T) {
-	const oldURL = "https://lh3.googleusercontent.com/old-icon"
-	newIcon := append(append([]byte{}, testAvatarPNG...), 0x01, 0x02)
-	mock := &mockGMClient{avatarDownloads: map[string][]byte{oldURL: testAvatarPNG}, participantThumbnails: map[string][]byte{}}
+// Without groupAvatarURL Google has no fetchable icon: the cached one is
+// cleared (clients show the default group avatar) and no thumbnail lookup by
+// conversation ID is made (it returns the photo of the member whose
+// participant ID equals the conversation ID).
+func TestFetchGoogleGroupAvatarWithoutURLClearsAndNeverUsesThumbnail(t *testing.T) {
+	const iconURL = "https://lh3.googleusercontent.com/old-icon"
+	memberPhoto := append(append([]byte{}, testAvatarPNG...), 0x01)
+	mock := &mockGMClient{avatarDownloads: map[string][]byte{iconURL: testAvatarPNG}, participantThumbnails: map[string][]byte{"g9": memberPhoto}}
 	a := newTestApp(t, mock)
 
-	a.fetchGoogleGroupAvatar(groupCandidate("g-thumb", oldURL))
-	oldHash := groupIconHash(t, a, "g-thumb")
-	if oldHash == "" {
-		t.Fatal("old icon not cached")
+	a.fetchGoogleGroupAvatar(groupCandidate("g9", iconURL))
+	if groupIconHash(t, a, "g9") == "" {
+		t.Fatal("icon from URL not cached")
 	}
 	v1 := a.Store.AvatarVersion()
-
-	// Icon changed on the phone: no URL any more, new thumbnail.
+	time.Sleep(2 * time.Millisecond)
+	a.fetchGoogleGroupAvatar(noURLGroupCandidate("g9", false))
+	if h := groupIconHash(t, a, "g9"); h != "" {
+		t.Fatalf("icon without URL should be cleared, got %s", h)
+	}
+	if av, _ := a.Store.GetContactAvatar("sms", "conv:g9", "", ""); av != nil && len(av.ImageData) > 0 {
+		t.Fatal("cleared icon still served")
+	}
+	if a.Store.AvatarVersion() <= v1 {
+		t.Fatal("clearing must bump AvatarVersion so clients refetch")
+	}
+	a.fetchGoogleGroupAvatar(noURLGroupCandidate("g9", true))
 	mock.mu.Lock()
-	mock.participantThumbnails["g-thumb"] = newIcon
+	thumbs := len(mock.participantThumbCalls)
 	mock.mu.Unlock()
-	// Routine check within the TTL: not re-checked.
-	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", false))
-	if groupIconHash(t, a, "g-thumb") != oldHash {
-		t.Fatal("routine check within TTL should not refetch")
-	}
-	// Forced (Refresh everything / icon-changed event): picks up the new icon.
-	time.Sleep(2 * time.Millisecond)
-	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", true))
-	newHash := groupIconHash(t, a, "g-thumb")
-	if newHash == "" || newHash == oldHash {
-		t.Fatalf("icon not replaced: old=%s new=%s", oldHash, newHash)
-	}
-	v2 := a.Store.AvatarVersion()
-	if v2 <= v1 {
-		t.Fatalf("AvatarVersion not bumped: %d -> %d", v1, v2)
-	}
-	// Same icon again: no version bump.
-	time.Sleep(2 * time.Millisecond)
-	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", true))
-	if a.Store.AvatarVersion() != v2 {
-		t.Fatal("unchanged icon must not bump AvatarVersion")
-	}
-	// Removed on the phone: no URL, empty thumbnail -> cleared, version bumped.
-	mock.mu.Lock()
-	delete(mock.participantThumbnails, "g-thumb")
-	mock.mu.Unlock()
-	time.Sleep(2 * time.Millisecond)
-	a.fetchGoogleGroupAvatar(thumbGroupCandidate("g-thumb", true))
-	if h := groupIconHash(t, a, "g-thumb"); h != "" {
-		t.Fatalf("removed icon still cached: %s", h)
-	}
-	if av, _ := a.Store.GetContactAvatar("sms", "conv:g-thumb", "", ""); av != nil && len(av.ImageData) > 0 {
-		t.Fatal("removed icon still served")
-	}
-	if a.Store.AvatarVersion() <= v2 {
-		t.Fatal("clearing must bump AvatarVersion")
+	if thumbs != 0 {
+		t.Fatalf("group icon sync must not call GetParticipantThumbnail (%d calls)", thumbs)
 	}
 }
 
-func TestFetchGoogleGroupAvatarDueAfterTTLAndStaleURLCheck(t *testing.T) {
-	icon := append(append([]byte{}, testAvatarPNG...), 0x07)
-	mock := &mockGMClient{participantThumbnails: map[string][]byte{"8": icon}}
+func TestFetchGoogleGroupAvatarRefusesPersonPhotoAndForceRedownloads(t *testing.T) {
+	const iconURL = "https://lh3.googleusercontent.com/same-icon"
+	mock := &mockGMClient{avatarDownloads: map[string][]byte{iconURL: testAvatarPNG}}
 	a := newTestApp(t, mock)
-	// Never checked: fetched without force.
-	a.fetchGoogleGroupAvatar(thumbGroupCandidate("8", false))
-	if groupIconHash(t, a, "8") == "" {
-		t.Fatal("first thumbnail check should cache the icon")
+	// A member's photo with the same bytes is cached.
+	person := db.ContactAvatarCandidate{SourcePlatform: "sms", ParticipantID: "p1"}
+	sum := sha256.Sum256(testAvatarPNG)
+	if err := a.Store.UpsertContactAvatar(person, testAvatarPNG, "image/png", hex.EncodeToString(sum[:]), 1); err != nil {
+		t.Fatal(err)
 	}
-	mock.mu.Lock()
-	calls := mock.participantThumbCalls["8"]
-	mock.mu.Unlock()
-	if calls != 1 {
-		t.Fatalf("thumbnail calls = %d, want 1", calls)
+	a.fetchGoogleGroupAvatar(groupCandidate("g8", iconURL))
+	if h := groupIconHash(t, a, "g8"); h != "" {
+		t.Fatal("a person's photo must never be cached as a group icon")
 	}
-	// Force re-downloads even when the URL hash matches.
-	const u = "https://lh3.googleusercontent.com/same"
+
+	// Force (Refresh everything) re-downloads an unchanged URL.
+	other := append(append([]byte{}, testAvatarPNG...), 0x07)
 	mock.mu.Lock()
-	mock.avatarDownloads = map[string][]byte{u: testAvatarPNG}
+	mock.avatarDownloads = map[string][]byte{iconURL: other}
 	mock.mu.Unlock()
-	a.fetchGoogleGroupAvatar(groupCandidate("8", u))
-	c := groupCandidate("8", u)
+	a.fetchGoogleGroupAvatar(groupCandidate("g7", iconURL))
+	a.fetchGoogleGroupAvatar(groupCandidate("g7", iconURL))
+	c := groupCandidate("g7", iconURL)
 	c.Force = true
 	a.fetchGoogleGroupAvatar(c)
 	mock.mu.Lock()
-	dl := mock.avatarDownloadCalls[u]
+	dl := mock.avatarDownloadCalls[iconURL]
 	mock.mu.Unlock()
-	if dl != 2 {
-		t.Fatalf("downloads = %d, want 2 (forced refresh re-downloads)", dl)
+	if dl != 3 { // g8 once, g7 once + forced once
+		t.Fatalf("downloads = %d, want 3", dl)
+	}
+}
+
+func TestRepairGroupAvatarsClearsWrongIcons(t *testing.T) {
+	a := newTestApp(t, &mockGMClient{})
+	put := func(c db.ContactAvatarCandidate, img []byte, urlHash string) {
+		t.Helper()
+		sum := sha256.Sum256(img)
+		if err := a.Store.UpsertGroupAvatar(c, urlHash, img, "image/png", hex.EncodeToString(sum[:]), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	member := append(append([]byte{}, testAvatarPNG...), 0x01)
+	good := append(append([]byte{}, testAvatarPNG...), 0x02)
+	noURL := append(append([]byte{}, testAvatarPNG...), 0x03)
+	sum := sha256.Sum256(member)
+	if err := a.Store.UpsertContactAvatar(db.ContactAvatarCandidate{SourcePlatform: "sms", ParticipantID: "p4"}, member, "image/png", hex.EncodeToString(sum[:]), 1); err != nil {
+		t.Fatal(err)
+	}
+	put(noURLGroupCandidate("g1", false), member, "u1") // same bytes as a member photo
+	put(noURLGroupCandidate("g2", false), noURL, "")    // no source URL (thumbnail lookup)
+	put(noURLGroupCandidate("g3", false), good, "u3")   // real icon
+	v1 := a.Store.AvatarVersion()
+	a.RepairGroupAvatars()
+	if groupIconHash(t, a, "g1") != "" || groupIconHash(t, a, "g2") != "" {
+		t.Fatal("wrong group icons not cleared")
+	}
+	if groupIconHash(t, a, "g3") == "" {
+		t.Fatal("real group icon must be kept")
+	}
+	if av, _ := a.Store.GetContactAvatar("sms", "p4", "", ""); av == nil || len(av.ImageData) == 0 {
+		t.Fatal("member photo must be kept")
+	}
+	if a.Store.AvatarVersion() <= v1 {
+		t.Fatal("repair must bump AvatarVersion")
 	}
 }

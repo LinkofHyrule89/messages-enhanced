@@ -100,10 +100,14 @@ type ContactAvatarCandidate struct {
 	// GroupAvatarParticipantID(conversationID).
 	GroupAvatarURL string
 	// GroupIcon (in memory only) marks a group conversation's icon candidate
-	// (ParticipantID "conv:<id>"), with or without GroupAvatarURL: Google
-	// often leaves the URL out and serves the icon only through
-	// GetParticipantThumbnail(conversationID).
+	// (ParticipantID "conv:<id>"), with or without GroupAvatarURL /
+	// EncryptedGroupIcon; with neither, any cached icon is dropped (see
+	// app.fetchGoogleGroupAvatar).
 	GroupIcon bool
+	// EncryptedGroupIcon (in memory only, never persisted, logged or served):
+	// the end-to-end encrypted group icon Google sends instead of
+	// GroupAvatarURL for MLS (encrypted RCS) groups.
+	EncryptedGroupIcon *EncryptedGroupIcon
 	// Force (in memory only) re-downloads even if the cached copy is fresh
 	// ("Refresh everything" in Settings).
 	Force bool

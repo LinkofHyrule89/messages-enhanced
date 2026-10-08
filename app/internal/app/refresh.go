@@ -159,7 +159,7 @@ func (a *App) refreshFromGoogle(scope string) error {
 	candSeen := map[string]bool{}
 	addCands := func(cs []db.ContactAvatarCandidate) {
 		for _, c := range cs {
-			k := db.ContactAvatarID(c) + "#" + c.GroupAvatarURL
+			k := db.ContactAvatarID(c) + "#" + c.GroupAvatarURL + "#" + c.EncryptedGroupIcon.SourceHash()
 			if candSeen[k] {
 				continue
 			}

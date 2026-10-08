@@ -785,6 +785,7 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 			controlAuth.SetEnforce(true)
 			webAppGated = true
 			httpHandler = webHandler
+			a.RepairGroupAvatars()
 			a.StartPeriodicGoogleRefresh()
 			// Keep the header's Google account photo fresh (AccountPhoto
 			// refreshes in the background when the cache is stale).

@@ -86,18 +86,3 @@ func TestStoreConversationEmitsGroupIconCandidateFirst(t *testing.T) {
 		t.Fatalf("candidates = %+v", got)
 	}
 }
-
-func TestGroupIconEventStatus(t *testing.T) {
-	if !GroupIconEventStatus(gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CHANGED_GLOBAL) ||
-		!GroupIconEventStatus(gmproto.MessageStatusType_MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CLEARED_GLOBAL) ||
-		GroupIconEventStatus(gmproto.MessageStatusType_INCOMING_COMPLETE) {
-		t.Fatal("GroupIconEventStatus mismatch")
-	}
-	c, ok := GroupIconCandidate("9", "live", true)
-	if !ok || !c.Force || !c.GroupIcon || c.ParticipantID != "conv:9" {
-		t.Fatalf("GroupIconCandidate = %+v, %v", c, ok)
-	}
-	if _, ok := GroupIconCandidate(" ", "live", true); ok {
-		t.Fatal("empty conversation ID must not produce a candidate")
-	}
-}
