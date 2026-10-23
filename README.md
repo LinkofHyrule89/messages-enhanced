@@ -191,6 +191,10 @@ example with a self-signed debug or release key), set the server's
 comma-separated), and `MESSAGES_ANDROID_PACKAGE` if you change the package
 name. Without a match, Android shows a URL bar instead of full screen.
 
+## Native Android app
+
+A native Kotlin Android app for tablets and phones (split layout, Material You, notifications with inline reply, in-app updates) lives in its own repo: [messages-enhanced-native](https://github.com/LinkofHyrule89/messages-enhanced-native). Download the APK from its [releases page](https://github.com/LinkofHyrule89/messages-enhanced-native/releases). It connects to this server.
+
 ## License
 
 OpenMessage is released under the Unlicense (public domain); see

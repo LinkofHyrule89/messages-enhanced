@@ -14,9 +14,12 @@ func webPushSource(a *app.App) webapp.PushSource {
 			return pc, nil, err
 		}
 		if conv != nil {
-			pc = webapp.PushConversation{ID: conv.ConversationID, Name: conv.Name, IsGroup: conv.IsGroup, NotificationMode: conv.NotificationMode}
+			pc = webapp.PushConversation{ID: conv.ConversationID, Name: conv.Name, IsGroup: conv.IsGroup, NotificationMode: conv.NotificationMode, Unread: conv.UnreadCount}
 		}
 		pc.ID = convID
+		if limit <= 0 {
+			return pc, nil, nil
+		}
 		msgs, err := a.Store.GetMessagesByConversation(convID, limit)
 		if err != nil {
 			return pc, nil, err

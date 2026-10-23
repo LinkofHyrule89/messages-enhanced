@@ -189,10 +189,13 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 	publishOverallStatus := func() {
 		events.PublishStatus(isConnected())
 	}
-	a.OnConversationsChange = events.PublishConversations
 	// Web Push for the web app UI: the hub is created now so it sees every
 	// message change; it stays idle until the web app UI opens it below.
 	webPush := webapp.NewPushHub()
+	a.OnConversationsChange = func() {
+		events.PublishConversations()
+		webPush.ConversationsChanged()
+	}
 	a.OnMessagesChange = func(conversationID string) {
 		events.PublishMessages(conversationID)
 		webPush.MessagesChanged(conversationID)

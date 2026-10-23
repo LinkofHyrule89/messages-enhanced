@@ -279,6 +279,13 @@
         <button id="zoomIn" class="zoom-btn" type="button" aria-label="Larger"><span data-icon="plus"></span></button>
       </div>
       <div id="zoomSteps" class="zoom-steps" role="group" aria-label="UI zoom presets"></div>
+      <div class="sheet-label">Appearance</div>
+      <div id="setThemeRow" class="setting-row setting-col">
+        <span id="setThemeName" class="setting-name">Theme</span>
+        <span class="setting-desc">App-wide colors on every signed-in device. A conversation can still use its own chat theme.</span>
+        <div id="setTheme" class="theme-choices" role="radiogroup" aria-labelledby="setThemeName"></div>
+      </div>
+      <p class="setting-note">Appearance is dark.</p>
       <div class="sheet-label">Folders</div>
       <div class="folder-rows">
         <button class="setting-row folder-row" type="button" data-folder="archived">
@@ -604,6 +611,7 @@
 <script src="/app/emoji-data.js"></script>
 <script src="/app/live-stt.js"></script>
 <script src="/app/composer.js"></script>
+<script src="/app/pinch.js"></script>
 <script src="/app/app.js"></script>
 <script src="/app/pwa.js"></script>
 </body>

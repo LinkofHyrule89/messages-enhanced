@@ -11,6 +11,12 @@
   var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
   var swOK = "serviceWorker" in navigator && window.isSecureContext;
   var pushOK = swOK && "PushManager" in window && "Notification" in window && "showNotification" in (window.ServiceWorkerRegistration ? ServiceWorkerRegistration.prototype : {});
+  // The Android app's built-in viewer (a WebView: no Web Push) delivers
+  // notifications natively through Firebase Cloud Messaging. Its bridge is
+  // window.MEAndroid; results come back as "me-android" events.
+  var nativeOK = !!(window.MEAndroid && typeof window.MEAndroid.version === "function");
+  var pushAvail = pushOK || nativeOK;
+  var NATIVE_KEY = "tm.nativePush";
   var HIDE_KEY = "tm.notifHideText";
   var st = { reg: null, cfg: null, sub: null, busy: false, prompt: null, msg: "" };
   window.TMPWA = { refresh: refresh, state: st, updateSW: function () { return st.reg ? st.reg.update().catch(function () {}) : Promise.resolve(); } };
@@ -89,20 +95,84 @@
   function hideLocal() { try { return localStorage.getItem(HIDE_KEY) === "1"; } catch (e) { return false; } }
   function setHideLocal(v) { try { localStorage.setItem(HIDE_KEY, v ? "1" : "0"); } catch (e) {} }
 
-  // Inside the Messages Enhanced Android app (TWA, or its Custom Tab fallback)
-  // the launch referrer is android-app://<package>; remembered for the tab.
+  // Inside the Messages Enhanced Android app: its built-in viewer adds
+  // "MessagesEnhancedApp/" to the user agent; the TWA (or its Custom Tab
+  // fallback) launches with an android-app://<package> referrer. Remembered for the tab.
   var ANDROID_PKG = "com.ubermicrostudios.messagesenhanced";
   function inAndroidApp() {
     try {
-      if (document.referrer.indexOf("android-app://" + ANDROID_PKG) === 0) sessionStorage.setItem("me_android_twa", "1");
+      if (/ MessagesEnhancedApp\//.test(navigator.userAgent) || document.referrer.indexOf("android-app://" + ANDROID_PKG) === 0) sessionStorage.setItem("me_android_twa", "1");
       return sessionStorage.getItem("me_android_twa") === "1";
     } catch (e) { return false; }
   }
-  function permission() { return pushOK ? Notification.permission : "unsupported"; }
+  function permission() {
+    if (nativeOK) { try { return String(window.MEAndroid.permission() || "default"); } catch (e) { return "default"; } }
+    return pushOK ? Notification.permission : "unsupported";
+  }
+
+  // ----- Android app (native FCM) -----
+  function nativeOn() { try { return localStorage.getItem(NATIVE_KEY) === "1"; } catch (e) { return false; } }
+  function setNativeOn(v) { try { localStorage.setItem(NATIVE_KEY, v ? "1" : "0"); } catch (e) {} }
+  // Calls a bridge method and waits for its "me-android" result event.
+  function nativeCall(method, arg, type) {
+    return new Promise(function (resolve) {
+      function on(e) {
+        var d = e.detail || {};
+        if (d.type !== type) return;
+        window.removeEventListener("me-android", on);
+        resolve(d);
+      }
+      window.addEventListener("me-android", on);
+      try { arg === undefined ? window.MEAndroid[method]() : window.MEAndroid[method](arg); }
+      catch (e) { window.removeEventListener("me-android", on); resolve({ type: type, error: String(e && e.message || e) }); }
+    });
+  }
+  function nativeToken(cfg) {
+    return nativeCall("getToken", JSON.stringify(cfg.fcm), "token").then(function (d) {
+      if (d.error || !d.value) throw new Error(d.error || "The app got no notification token.");
+      return { endpoint: "fcm:" + d.value };
+    });
+  }
+  function nativeSave(sub, hide) {
+    return post("/api/app/push/subscribe", { endpoint: sub.endpoint, hide_text: hide, label: "Messages Enhanced app (Android)" });
+  }
+  function nativeSync() {
+    return getCfg().then(function (cfg) {
+      if (!cfg.available || !cfg.fcm || !nativeOn() || permission() !== "granted") { st.sub = null; return; }
+      return nativeToken(cfg).then(function (sub) {
+        return nativeSave(sub).then(function (res) { st.sub = sub; setHideLocal(!!res.hide_text); });
+      }).catch(function (e) { st.sub = null; st.lastError = errText(e); });
+    });
+  }
+  function nativeEnable() {
+    step("Asking for notification permission", function () {
+      if (permission() === "granted") return { value: "granted" };
+      return nativeCall("requestPermission", undefined, "permission");
+    }, 120000).then(function (d) {
+      if (d.value !== "granted") {
+        st.needApp = true;
+        throw new Error("Android hasn't allowed notifications for the app. Tap \u201cAllow notifications for the app\u201d below.");
+      }
+      st.needApp = false;
+      return step("Checking the server", function () { return getCfg(); }, 15000);
+    }).then(function (cfg) {
+      if (!cfg.available) throw new Error("Not available on this server.");
+      if (!cfg.fcm) throw new Error("The server isn't set up for app notifications (Firebase Cloud Messaging).");
+      return step("Registering this device", function () { return nativeToken(cfg); }, 30000);
+    }).then(function (sub) {
+      return step("Saving on the server", function () { return nativeSave(sub, hideLocal()); }, 20000).then(function (res) {
+        st.sub = sub; setNativeOn(true); setHideLocal(!!res.hide_text); st.msg = "";
+      });
+    }).catch(function (e) {
+      st.lastError = (st.step ? st.step + ": " : "") + errText(e);
+      st.msg = "Couldn't turn on. " + st.lastError;
+    }).then(function () { st.busy = false; st.step = ""; render(); });
+  }
 
   // Re-checks this device's subscription against the server (and re-sends
   // it, so the server list heals after a data reset or key change).
   function sync() {
+    if (nativeOK) return nativeSync();
     if (!pushOK) return Promise.resolve();
     return Promise.all([regReady, getCfg()]).then(function (v) {
       var reg = v[0], cfg = v[1];
@@ -125,13 +195,16 @@
     var en = $("notifEnable"), dis = $("notifDisable"), hide = $("notifHide"), test = $("notifTest");
     var text, on = false, canEnable = false;
     var perm = permission(), app = inAndroidApp();
-    if (!pushOK) {
+    if (!pushAvail) {
       text = isIOS && !standalone
         ? "On iPhone or iPad, add Messages Enhanced to your Home Screen first (Share → Add to Home Screen), then turn notifications on from the installed app."
         : !window.isSecureContext ? "Needs a secure (https) connection."
+        : app ? "This version of the app can't show notifications. Update the Messages Enhanced app, or long-press the app icon → Server and turn on “Open in Chrome instead”."
         : "Not supported in this browser" + (isCar ? " (the car browser can't show notifications yet)." : ".");
     } else if (st.cfg && !st.cfg.available) {
       text = "Not available on this server.";
+    } else if (nativeOK && st.cfg && !st.cfg.fcm) {
+      text = "Not set up on this server for the app yet (the server needs Firebase Cloud Messaging).";
     } else if (perm === "denied") {
       text = app
         ? "Blocked: Android hasn't allowed notifications for the Messages Enhanced app. Tap “Allow notifications for the app” below, allow them, then come back here and tap Turn on."
@@ -146,13 +219,13 @@
     if (st.busy && st.step) text = "Turning on\u2026 " + st.step + "\u2026";
     if (st.msg) text += " " + st.msg;
     status.textContent = text;
-    $("notifRow").dataset.state = !pushOK ? "unsupported" : perm === "denied" ? "blocked" : on ? "enabled" : "off";
+    $("notifRow").dataset.state = !pushAvail ? "unsupported" : perm === "denied" ? "blocked" : on ? "enabled" : "off";
     en.hidden = !canEnable; en.disabled = st.busy;
     dis.hidden = !on; dis.disabled = st.busy;
     hide.hidden = !on; test.hidden = !on; test.disabled = st.busy;
     renderDebug();
     var appBtn = $("notifAppSettings");
-    if (appBtn) appBtn.hidden = !(app && pushOK && !on && (perm === "denied" || st.needApp));
+    if (appBtn) appBtn.hidden = !(app && pushAvail && !on && (perm === "denied" || st.needApp));
     var h = hideLocal();
     hide.classList.toggle("on", h);
     hide.setAttribute("aria-checked", h ? "true" : "false");
@@ -170,8 +243,9 @@
           (navigator.serviceWorker.controller ? " · controls this page" : " · not controlling this page");
     }
     var host = "none";
-    if (st.sub && st.sub.endpoint) { try { host = new URL(st.sub.endpoint).host; } catch (e) { host = "?"; } }
+    if (st.sub && st.sub.endpoint) { try { host = st.sub.endpoint.indexOf("fcm:") === 0 ? "Firebase (app)" : new URL(st.sub.endpoint).host; } catch (e) { host = "?"; } }
     var rows = [
+      ["App notifications (FCM)", nativeOK ? "app " + window.MEAndroid.version() + (st.cfg ? (st.cfg.fcm ? " · server ready" : " · server not set up") : "") : "no"],
       ["Web Push support", pushOK ? "yes" : "no (" + ["serviceWorker", "PushManager", "Notification"].filter(function (k) { return k === "serviceWorker" ? !swOK : !(k in window); }).join(", ") + " missing)"],
       ["Permission", permission()],
       ["Service worker", sw],
@@ -219,8 +293,9 @@
   function enable() {
     if (st.busy) return;
     st.lastClick = new Date().toLocaleTimeString();
-    if (!pushOK) { st.msg = "Couldn't turn on: this browser has no Web Push support."; st.lastError = st.msg; render(); return; }
+    if (!pushAvail) { st.msg = "Couldn't turn on: this browser has no Web Push support."; st.lastError = st.msg; render(); return; }
     st.busy = true; st.msg = ""; st.lastError = ""; render();
+    if (nativeOK) { nativeEnable(); return; }
     // Ask for permission only here, on the user's tap.
     step("Asking for notification permission", function () {
       if (Notification.permission === "granted") return "granted";
@@ -273,7 +348,13 @@
     st.busy = true; render();
     var sub = st.sub;
     var done = function () { st.sub = null; st.busy = false; st.msg = ""; render(); };
+    if (nativeOK) setNativeOn(false);
     if (!sub) { done(); return; }
+    if (nativeOK) {
+      post("/api/app/push/unsubscribe", { endpoint: sub.endpoint }).catch(function () {})
+        .then(function () { return nativeCall("deleteToken", undefined, "token-deleted"); }).then(done);
+      return;
+    }
     post("/api/app/push/unsubscribe", { endpoint: sub.endpoint }).catch(function () {})
       .then(function () { return sub.unsubscribe().catch(function () {}); }).then(done);
   }
@@ -306,10 +387,17 @@
       $("notifHide").addEventListener("click", toggleHide);
       $("notifTest").addEventListener("click", test);
       $("installBtn").addEventListener("click", onInstall);
+      var appSet = $("notifAppSettings");
+      if (appSet && nativeOK) appSet.addEventListener("click", function (e) {
+        e.preventDefault();
+        try { window.MEAndroid.openNotificationSettings(); } catch (err) {}
+      });
       render();
       renderInstall();
       // Quietly keep an existing subscription registered with the server.
-      if (pushOK && Notification.permission === "granted") sync().then(render, render);
+      if (pushAvail && permission() === "granted") sync().then(render, render);
+      // The app reports permission changes (prompt answered, back from settings).
+      window.addEventListener("me-android", function (e) { if (e.detail && e.detail.type === "permission") render(); });
       // Back from Android's notification settings / permission prompt.
       document.addEventListener("visibilitychange", function () {
         if (document.visibilityState === "visible") { if (permission() === "granted") st.needApp = false; refresh(); }

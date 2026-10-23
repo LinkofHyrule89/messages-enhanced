@@ -72,6 +72,7 @@ type Server struct {
 	admin    *template.Template
 	static   http.Handler
 	themes   *ThemeStore // nil if the data dir couldn't be prepared
+	settings *SettingsStore
 	health   *HealthMonitor
 	stars    *StarStore // nil if the data dir couldn't be prepared
 	version  string     // hash of the static files (version.go)
@@ -135,6 +136,11 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	} else {
 		s.themes = ts
 	}
+	if ss, err := OpenSettingsStore(d.DataDir); err != nil {
+		d.Logger.Warn().Err(err).Msg("App settings storage unavailable")
+	} else {
+		s.settings = ss
+	}
 
 	protected := http.NewServeMux()
 	protected.HandleFunc("/app/", s.serveStatic)
@@ -148,6 +154,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	protected.HandleFunc("/admin/cookies/clear", s.handleAdminCookiesClear)
 	s.registerCarRoutes(protected)
 	s.registerThemeRoutes(protected)
+	s.registerSettingsRoutes(protected)
 	s.registerPushRoutes(protected)
 	protected.HandleFunc("/api/app/health", s.handleHealth)
 	protected.HandleFunc("/api/app/stars", s.handleStars)
@@ -225,6 +232,13 @@ func (s *Server) serveStatic(w http.ResponseWriter, r *http.Request) {
 	if (r.URL.Path == "/app/" || r.URL.Path == "/app/index.html") && len(s.index) > 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("X-App-Version", s.version)
+		// The page only changes with the build: answer revalidation with 304.
+		etag := `"idx-` + s.version + `"`
+		w.Header().Set("ETag", etag)
+		if inm := r.Header.Get("If-None-Match"); inm != "" && strings.Contains(inm, strings.Trim(etag, `"`)) {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		_, _ = w.Write(s.index)
 		return
 	}

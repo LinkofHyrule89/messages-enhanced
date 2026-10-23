@@ -160,7 +160,20 @@
     if (d.toDateString() === y.toDateString()) return "Yesterday";
     return fontSafe(d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }));
   }
-  function convName(c) { return c.unified_name || c.Name || c.ConversationID; }
+  // Display-only phone formatting (values sent to the server stay raw).
+  // US/NANP +1XXXXXXXXXX or 10 digits -> (801) 555-1234; other +numbers stay
+  // in international form; short codes, emails and names unchanged.
+  function fmtPhone(v) {
+    if (v == null) return v;
+    var s = String(v).trim();
+    if (!/^\+?[\d\s().-]{7,}$/.test(s)) return v;
+    var d = s.replace(/\D/g, "");
+    if (d.length === 11 && d.charAt(0) === "1") d = d.slice(1);
+    else if (s.charAt(0) === "+") return v; // non-NANP: keep international E.164
+    if (d.length !== 10) return v;
+    return "(" + d.slice(0, 3) + ") " + d.slice(3, 6) + "-" + d.slice(6);
+  }
+  function convName(c) { return fmtPhone(c.unified_name || c.Name || c.ConversationID); }
   var PLATFORM = { whatsapp: "WhatsApp", signal: "Signal", gchat: "Chat", imessage: "iMessage", telegram: "Telegram" };
 
   // ---------- contact photos ----------
@@ -506,7 +519,7 @@
       t = /^image\//.test(mt) ? "Photo" : /^video\//.test(mt) ? "Video" : /^audio\//.test(mt) ? "Audio" : "Attachment";
     }
     if (m.IsFromMe) return "You: " + t;
-    if (conv && conv.IsGroup && m.SenderName) return String(m.SenderName).split(" ")[0] + ": " + t;
+    if (conv && conv.IsGroup && m.SenderName) return String(fmtPhone(m.SenderName)).split(" ")[0] + ": " + t;
     return t;
   }
   function patchConv(convID, m) {
@@ -814,7 +827,7 @@
     $("detailsName").textContent = convName(c);
     var sub;
     if (c.IsGroup) sub = people.length ? (others.length + 1) + " people, including you" : "Group conversation";
-    else sub = (others[0] && others[0].number && others[0].number !== convName(c)) ? others[0].number : (others[0] && others[0].number ? "" : "No number available");
+    else sub = (others[0] && others[0].number && fmtPhone(others[0].number) !== convName(c)) ? fmtPhone(others[0].number) : (others[0] && others[0].number ? "" : "No number available");
     $("detailsSub").textContent = sub;
     var list = $("detailsMembers");
     list.textContent = "";
@@ -826,12 +839,12 @@
       rows.forEach(function (p) {
         var row = el("div", "details-member");
         var mine = isMe(p), myName = mine ? (p.name || p.first_name || selfName()) : "";
-        var name = mine ? (myName ? myName + " (you)" : "You") : (p.name || p.number || "Unknown");
+        var name = mine ? (myName ? myName + " (you)" : "You") : fmtPhone(p.name || p.number || "Unknown");
         row.appendChild(mine ? selfAvatar(p, "avatar details-member-avatar") :
           contactAvatar({ name: name, number: p.number, participant_id: p.id, contact_id: p.contact_id }, "avatar details-member-avatar"));
         var txt = el("div", "details-member-text");
         txt.appendChild(el("div", "details-member-name", name));
-        if (p.number && p.number !== name) txt.appendChild(el("div", "details-member-num", p.number));
+        if (p.number && p.number !== name) txt.appendChild(el("div", "details-member-num", fmtPhone(p.number)));
         row.appendChild(txt);
         list.appendChild(row);
       });
@@ -1486,13 +1499,17 @@
     state.nodes[key] = wrap;
     return wrap;
   }
-  // Full-screen photo viewer: tap anywhere or press Escape to close.
+  // Full-screen photo viewer: pinch/pan/double-tap zoom on the photo (pinch.js);
+  // the big X, a tap on the backdrop, or Escape closes it.
+  var imageZoom = null; // pinch.js: pinch/pan/double-tap zoom
   function openImageViewer(m) {
     var v = $("imageViewer"), img = $("imageViewerImg");
     img.src = mediaURL(m);
     var cap = imageCaption(m);
     $("imageViewerCaption").textContent = cap;
     $("imageViewerCaption").hidden = !cap;
+    if (!imageZoom && window.MEPinch) imageZoom = window.MEPinch.attach(img);
+    if (imageZoom) imageZoom.reset();
     v.hidden = false;
     $("imageViewerClose").focus();
   }
@@ -1500,6 +1517,7 @@
     var v = $("imageViewer");
     if (v.hidden) return false;
     v.hidden = true;
+    if (imageZoom) imageZoom.reset();
     $("imageViewerImg").removeAttribute("src");
     return true;
   }
@@ -1673,7 +1691,7 @@
   }
   function msgAuthor(m) {
     if (m.IsFromMe) return "You";
-    if (m.SenderName) return m.SenderName;
+    if (m.SenderName) return fmtPhone(m.SenderName);
     var c = state.convs.find(function (x) { return x.ConversationID === state.current; });
     return c && !c.IsGroup ? convName(c) : "Them";
   }
@@ -1810,7 +1828,7 @@
       var nextSame = idx < msgs.length - 1 && sameRun(m, msgs[idx + 1]);
       row.classList.add(prevSame ? (nextSame ? "grp-mid" : "grp-last") : (nextSame ? "grp-first" : "grp-solo"));
       if (scrollState.unreadFromID && m.MessageID === scrollState.unreadFromID && scrollState.conv === state.current) box.appendChild(el("div", "unread-sep", "Unread"));
-      if (groupChat && !m.IsFromMe && !prevSame) box.appendChild(el("div", "run-sender", m.SenderName || m.SenderNumber || "Unknown"));
+      if (groupChat && !m.IsFromMe && !prevSame) box.appendChild(el("div", "run-sender", fmtPhone(m.SenderName || m.SenderNumber || "Unknown")));
       row.dataset.id = m.MessageID;
       var bubble = el("div", "bubble");
       if (m.ReplyToID) bubble.appendChild(replyQuote(m, byID));
@@ -2455,7 +2473,7 @@
     var people = c ? conversationParticipants(c) : [];
     return actors.map(function (id) {
       var p = people.find(function (q) { return q && String(q.id) === String(id); });
-      return p ? (isMe(p) ? "You" : (p.name || p.number || "")) : "";
+      return p ? (isMe(p) ? "You" : fmtPhone(p.name || p.number || "")) : "";
     }).filter(Boolean);
   }
   function reactionsNode(m) {
@@ -2587,7 +2605,7 @@
       var ql = q.toLowerCase();
       // Name matches (server + the loaded list), then message hits.
       var byID = {}, named = [];
-      state.convs.forEach(function (c) { byID[c.ConversationID] = c; if (convName(c).toLowerCase().indexOf(ql) >= 0) named.push(c); });
+      state.convs.forEach(function (c) { byID[c.ConversationID] = c; if ((convName(c) + " " + (c.unified_name || c.Name || "")).toLowerCase().indexOf(ql) >= 0) named.push(c); });
       convs.forEach(function (c) {
         if (named.some(function (x) { return x.ConversationID === c.ConversationID; })) return;
         if (String(c.Name || c.unified_name || "").toLowerCase().indexOf(ql) >= 0 || String(c.Participants || "").toLowerCase().indexOf(ql) >= 0) named.push(c);
@@ -2613,10 +2631,10 @@
           var b = el("button", "conv search-hit");
           b.type = "button";
           var mid = el("div", "conv-mid");
-          mid.appendChild(el("div", "conv-name", c ? convName(c) : (m.SenderName || "Conversation")));
+          mid.appendChild(el("div", "conv-name", c ? convName(c) : fmtPhone(m.SenderName || "Conversation")));
           var pv = el("div", "conv-preview");
           if (m.IsFromMe) pv.appendChild(document.createTextNode("You: "));
-          else if (c && c.IsGroup && m.SenderName) pv.appendChild(document.createTextNode(m.SenderName + ": "));
+          else if (c && c.IsGroup && m.SenderName) pv.appendChild(document.createTextNode(fmtPhone(m.SenderName) + ": "));
           pv.appendChild(highlight(m.Body || "", q));
           mid.appendChild(pv);
           b.appendChild(mid);
@@ -2857,7 +2875,7 @@
       var st = sentStatus(m.Status);
       add("Status", String(m.status_text || "").trim() || (st && st.text) || String(m.Status || "").replace(/^OUTGOING_/, "").replace(/_/g, " ").toLowerCase() || "unknown");
     } else {
-      add("From", (m.SenderName || (c ? convName(c) : "")) + (m.SenderNumber && m.SenderNumber !== m.SenderName ? " (" + m.SenderNumber + ")" : ""));
+      add("From", fmtPhone(m.SenderName || (c ? convName(c) : "")) + (m.SenderNumber && m.SenderNumber !== m.SenderName ? " (" + fmtPhone(m.SenderNumber) + ")" : ""));
       add("Received", full);
       add("Status", /READ|DISPLAYED/i.test(m.Status || "") ? "Read" : "Received");
     }
@@ -2888,7 +2906,7 @@
   function renderFwdList() {
     var box = $("fwdList"), q = $("fwdSearch").value.trim().toLowerCase();
     box.textContent = "";
-    var list = state.convs.filter(function (c) { return !q || convName(c).toLowerCase().indexOf(q) >= 0; }).slice(0, 80);
+    var list = state.convs.filter(function (c) { return !q || (convName(c) + " " + (c.unified_name || c.Name || "")).toLowerCase().indexOf(q) >= 0; }).slice(0, 80);
     if (!list.length) { box.appendChild(el("div", "conv-empty", "No matching conversations")); return; }
     list.forEach(function (c) {
       var b = el("button", "conv");
@@ -3378,7 +3396,115 @@
     if (typeof s.showAttach !== "boolean") s.showAttach = !isCarBrowser();
     return s;
   }
-  function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {} }
+  function saveSettings(s) {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+    queueSettingsPut(s);
+  }
+  // Theme and appearance are shared (GET/PUT /api/app/settings). Everything
+  // else in tm.settings stays on this device. On start, a field the server
+  // already has wins; a field only this browser has is uploaded once.
+  var SETTINGS_SYNC_KEYS = ["theme", "appearance"];
+  var serverSettings = null;
+  var lastSyncedJSON = null;
+  function syncSlice(s) {
+    var o = {};
+    SETTINGS_SYNC_KEYS.forEach(function (k) {
+      if (s && Object.prototype.hasOwnProperty.call(s, k)) o[k] = s[k];
+    });
+    return o;
+  }
+  function settingsObject(res) {
+    var remote = res && res.settings;
+    if (!remote || typeof remote !== "object" || Array.isArray(remote)) return {};
+    return remote;
+  }
+  function queueSettingsPut(s) {
+    if (!serverSettings) return;
+    var slice = syncSlice(s);
+    var key = JSON.stringify(slice);
+    if (key === lastSyncedJSON) return;
+    var next = {};
+    Object.keys(serverSettings).forEach(function (k) { next[k] = serverSettings[k]; });
+    SETTINGS_SYNC_KEYS.forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(slice, k)) next[k] = slice[k];
+    });
+    lastSyncedJSON = key;
+    api("/api/app/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) })
+      .then(function (saved) { serverSettings = settingsObject(saved); })
+      .catch(function () { lastSyncedJSON = null; });
+  }
+  function applyGlobalTheme(s) {
+    s = s || loadSettings();
+    var p = paletteByID(s.theme || "");
+    var root = document.documentElement;
+    if (p) paintThemeVars(root, p);
+    else clearThemeVars(root);
+  }
+  function renderAppTheme() {
+    var box = $("setTheme");
+    if (!box) return;
+    var cur = loadSettings().theme || "";
+    if (!box.firstChild) {
+      [{ id: "", name: "Default", me: THEME_DEFAULT.me }].concat(PALETTES).forEach(function (p) {
+        var b = el("button", "theme-choice");
+        b.type = "button";
+        b.dataset.theme = p.id;
+        b.setAttribute("role", "radio");
+        var sw = el("span", "theme-swatch");
+        sw.style.background = p.me;
+        b.appendChild(sw);
+        b.appendChild(document.createTextNode(p.name));
+        b.addEventListener("click", function () { setAppTheme(p.id); });
+        box.appendChild(b);
+      });
+    }
+    Array.prototype.forEach.call(box.children, function (b) {
+      var on = (b.dataset.theme || "") === cur;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-checked", on ? "true" : "false");
+    });
+  }
+  function setAppTheme(id) {
+    var s = loadSettings();
+    s.theme = id || "";
+    if (typeof s.appearance !== "string" || !s.appearance) s.appearance = "dark";
+    saveSettings(s);
+    applySettings();
+  }
+  function loadServerSettings() {
+    return api("/api/app/settings").then(function (res) {
+      var remote = settingsObject(res);
+      serverSettings = remote;
+      var s = loadSettings();
+      var changedLocal = false;
+      var migrate = {};
+      SETTINGS_SYNC_KEYS.forEach(function (k) {
+        if (Object.prototype.hasOwnProperty.call(remote, k)) {
+          if (s[k] !== remote[k]) { s[k] = remote[k]; changedLocal = true; }
+        } else if (Object.prototype.hasOwnProperty.call(s, k)) {
+          migrate[k] = s[k];
+        }
+      });
+      if (changedLocal) {
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+      }
+      applyGlobalTheme(s);
+      var migKeys = Object.keys(migrate);
+      if (!migKeys.length) {
+        lastSyncedJSON = JSON.stringify(syncSlice(s));
+        if (changedLocal) applySettings(); else renderAppTheme();
+        return;
+      }
+      var next = {};
+      Object.keys(remote).forEach(function (k) { next[k] = remote[k]; });
+      migKeys.forEach(function (k) { next[k] = migrate[k]; });
+      lastSyncedJSON = JSON.stringify(syncSlice(s));
+      return api("/api/app/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) })
+        .then(function (saved) { serverSettings = settingsObject(saved); })
+        .catch(function () { lastSyncedJSON = null; })
+        .then(function () { if (changedLocal) applySettings(); else renderAppTheme(); });
+    }).catch(function () { applyGlobalTheme(loadSettings()); });
+  }
   // UI zoom: per device (the car and a tablet may want different sizes).
   // The CSS is px-based, so the whole page is scaled with CSS zoom on <html>;
   // vh/vw-based sizes divide by --z so full-height layouts and overlays fit.
@@ -3480,6 +3606,8 @@
 
   function applySettings() {
     var s = loadSettings();
+    applyGlobalTheme(s);
+    renderAppTheme();
     applyZoom();
     $("attachBtn").hidden = !s.showAttach;
     var showEm = s.showEmoji !== false, es2 = $("setEmoji");
@@ -4659,12 +4787,13 @@
     return !p.cookies_saved && !st.fake;
   }
   // Inside the Messages Enhanced Android app (a TWA), offer its native cookie
-  // sender. The TWA marks itself via the android-app:// referrer on launch;
+  // sender. The built-in viewer adds "MessagesEnhancedApp/" to the user agent;
+  // the TWA marks itself via the android-app:// referrer on launch;
   // remember it so it survives the login redirect and in-app navigation.
   (function () {
     var KEY = "me_android_twa";
     try {
-      if (document.referrer.indexOf("android-app://com.ubermicrostudios.messagesenhanced") === 0) sessionStorage.setItem(KEY, "1");
+      if (/ MessagesEnhancedApp\//.test(navigator.userAgent) || document.referrer.indexOf("android-app://com.ubermicrostudios.messagesenhanced") === 0) sessionStorage.setItem(KEY, "1");
       if (sessionStorage.getItem(KEY) === "1") $("androidCookiesBtn").hidden = false;
     } catch (e) { /* storage blocked */ }
   })();
@@ -5244,8 +5373,8 @@
     b.type = "button";
     b.appendChild(contactAvatar(c, "avatar"));
     var mid = el("div", "contact-mid");
-    mid.appendChild(el("div", "contact-name", c.name || c.number));
-    if (c.name && c.name !== c.number) mid.appendChild(el("div", "contact-num", c.number));
+    mid.appendChild(el("div", "contact-name", fmtPhone(c.name || c.number)));
+    if (c.name && c.name !== c.number) mid.appendChild(el("div", "contact-num", fmtPhone(c.number)));
     b.appendChild(mid);
     if (nc.group) { var ck = el("span", "contact-check"); ck.appendChild(icon("check")); b.appendChild(ck); }
     b.addEventListener("click", function () { pickContact(c); });
@@ -5268,7 +5397,7 @@
       var chip = el("button", "newchat-chip");
       chip.type = "button";
       chip.setAttribute("aria-label", "Remove " + (c.name || c.number));
-      chip.appendChild(document.createTextNode(c.name || c.number));
+      chip.appendChild(document.createTextNode(fmtPhone(c.name || c.number)));
       var cx = el("b"); cx.appendChild(icon("close")); chip.appendChild(cx);
       chip.addEventListener("click", function () { toggleChip(c); });
       chips.appendChild(chip);
@@ -5307,7 +5436,7 @@
         var b = el("button", "top-contact" + (nc.group && isChip(c) ? " selected" : ""));
         b.type = "button";
         b.appendChild(contactAvatar(c, "avatar"));
-        b.appendChild(el("div", "top-contact-name", c.name || c.number));
+        b.appendChild(el("div", "top-contact-name", fmtPhone(c.name || c.number)));
         b.addEventListener("click", function () { pickContact(c); });
         grid.appendChild(b);
       });
@@ -5522,6 +5651,7 @@
     $("zoomOut").addEventListener("click", function () { stepZoom(-1); });
     $("zoomIn").addEventListener("click", function () { stepZoom(1); });
     applySettings();
+    loadServerSettings();
     // Sign out lives in Settings; it asks first, then POSTs /logout.
     $("refreshAllBtn").addEventListener("click", refreshEverything);
     $("grokEnable").addEventListener("click", function () {
@@ -5694,8 +5824,10 @@
       $("debugFold").open = true;
       $("cookiesBtn").scrollIntoView({ block: "center" });
     });
-    // full-size photo viewer: any tap closes it
+    // full-size photo viewer: X or a tap on the backdrop closes it (the photo
+    // itself takes zoom gestures; pinch.js stops its clicks)
     $("imageViewer").addEventListener("click", function () { closeImageViewer(); });
+    $("imageViewerClose").addEventListener("click", function (e) { e.stopPropagation(); closeImageViewer(); });
     // start chat
     $("newChatBtn").addEventListener("click", openNewChat);
     $("newChatBack").addEventListener("click", closeNewChat);
@@ -5768,7 +5900,7 @@
         openConversation(decodeURIComponent(m[1]));
         if (reply) focusComposer();
       }
-    });
+    }).then(appReady, appReady);
     loadThemes();
     fetchTyping();
     refreshPairing();
@@ -5778,6 +5910,12 @@
     route();
     initNav();
     autosize();
+  }
+  // Tells the Android app's built-in viewer that the first data is on screen,
+  // so it can drop its splash (after the next paint).
+  function appReady() {
+    if (!window.MEAndroid || typeof window.MEAndroid.ready !== "function") return;
+    requestAnimationFrame(function () { setTimeout(function () { try { window.MEAndroid.ready(); } catch (e) {} }, 0); });
   }
   init();
 })();

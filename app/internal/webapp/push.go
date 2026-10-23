@@ -61,6 +61,7 @@ type PushConversation struct {
 	Name             string
 	IsGroup          bool
 	NotificationMode string // "", all, mentions, muted
+	Unread           int
 }
 
 // PushSource loads the newest messages (newest first) of a conversation.
@@ -102,6 +103,12 @@ type PushHub struct {
 	// allowHTTP permits http:// endpoints (tests only).
 	allowHTTP bool
 	wg        sync.WaitGroup
+	// fcm delivers to Android app devices ("fcm:<token>" endpoints).
+	fcm *fcmSender
+	// notified: conversations with a notification possibly still showing
+	// (conv id -> when), so it can be cleared on the app once read.
+	notified     map[string]time.Time
+	convsPending *time.Timer
 }
 
 type vapidFile struct {
@@ -120,8 +127,9 @@ func NewPushHub() *PushHub {
 		debounce: pushDebounce,
 		subject:  pushDefaultSubj,
 		logger:   zerolog.Nop(),
+		notified: map[string]time.Time{},
 	}
-	h.send = h.webpushSend
+	h.send = h.sendAny
 	return h
 }
 
@@ -163,6 +171,12 @@ func (h *PushHub) Open(dataDir string, source PushSource, logger zerolog.Logger)
 	}
 	_ = os.Chmod(vp, 0o600)
 	h.pub, h.priv = vf.Public, vf.Private
+	if f, err := loadFCM(); err != nil {
+		logger.Warn().Err(err).Msg("App notifications (FCM) are off")
+	} else if f != nil {
+		h.fcm = f
+		logger.Info().Msg("App notifications (FCM) are on")
+	}
 	if b, err := os.ReadFile(filepath.Join(dataDir, pushSubsFile)); err == nil {
 		var list []*PushSubscription
 		if json.Unmarshal(b, &list) == nil {
@@ -214,6 +228,16 @@ func (h *PushHub) saveLocked() error {
 // endpoint (no IP literals / localhost, so this can't be aimed at the LAN)
 // and well-formed P-256 / auth keys.
 func (h *PushHub) validateSubscription(s *PushSubscription) error {
+	if strings.HasPrefix(s.Endpoint, fcmPrefix) {
+		if h.fcm == nil {
+			return errors.New("app notifications (FCM) are not set up on this server")
+		}
+		if t := strings.TrimPrefix(s.Endpoint, fcmPrefix); len(t) < 20 || len(t) > 4096 || !fcmTokenRE.MatchString(t) {
+			return errors.New("invalid app token")
+		}
+		s.Keys = webpush.Keys{}
+		return nil
+	}
 	if len(s.Endpoint) > 2048 {
 		return errors.New("endpoint too long")
 	}
@@ -370,8 +394,11 @@ type notification struct {
 	Tag   string `json:"tag"`
 	URL   string `json:"url"`
 	Conv  string `json:"conv,omitempty"`
-	TS    int64  `json:"ts"`
-	Test  bool   `json:"test,omitempty"`
+	// Type: message, alert, test, clear (the Android app uses it; "clear"
+	// only goes to app devices).
+	Type string `json:"type,omitempty"`
+	TS   int64  `json:"ts"`
+	Test bool   `json:"test,omitempty"`
 }
 
 func (h *PushHub) markSeenLocked(id string) bool {
@@ -414,7 +441,16 @@ func (h *PushHub) check(convID string) {
 			fresh = append(fresh, m)
 		}
 	}
+	clear := false
+	if len(fresh) == 0 {
+		clear = h.shouldClearLocked(conv)
+	} else {
+		h.notified[conv.ID] = h.now()
+	}
 	h.mu.Unlock()
+	if clear {
+		h.sendClear(conv.ID)
+	}
 	if len(fresh) == 0 {
 		return
 	}
@@ -480,7 +516,82 @@ func buildNotification(conv PushConversation, m PushMessage, count int, hide boo
 		Tag:   pushTag(conv.ID),
 		URL:   "/app/?c=" + url.QueryEscape(conv.ID),
 		Conv:  conv.ID,
+		Type:  "message",
 		TS:    now.UnixMilli(),
+	}
+}
+
+// pushClearGrace: a just-notified chat isn't cleared for a moment, in case
+// its unread count lags behind the new message.
+const pushClearGrace = 10 * time.Second
+
+func (h *PushHub) shouldClearLocked(conv PushConversation) bool {
+	at, ok := h.notified[conv.ID]
+	if !ok || conv.Unread > 0 || h.now().Sub(at) < pushClearGrace {
+		return false
+	}
+	delete(h.notified, conv.ID)
+	return true
+}
+
+// ConversationsChanged is chained onto the app's OnConversationsChange
+// (read state changes arrive there): a debounced check of the chats that
+// were notified, clearing the app notification of any that are now read.
+func (h *PushHub) ConversationsChanged() {
+	if h == nil {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.source == nil || h.fcm == nil || len(h.notified) == 0 {
+		return
+	}
+	if h.convsPending != nil {
+		h.convsPending.Reset(time.Second)
+		return
+	}
+	h.convsPending = time.AfterFunc(time.Second, func() {
+		h.mu.Lock()
+		h.convsPending = nil
+		ids := make([]string, 0, len(h.notified))
+		for id := range h.notified {
+			ids = append(ids, id)
+		}
+		h.mu.Unlock()
+		for _, id := range ids {
+			conv, _, err := h.source(id, 0)
+			if err != nil {
+				continue
+			}
+			conv.ID = id
+			h.mu.Lock()
+			clear := h.shouldClearLocked(conv)
+			h.mu.Unlock()
+			if clear {
+				h.sendClear(id)
+			}
+		}
+	})
+}
+
+// sendClear removes a chat's notification from app (FCM) devices.
+func (h *PushHub) sendClear(convID string) {
+	h.mu.Lock()
+	var targets []PushSubscription
+	for _, s := range h.subs {
+		if strings.HasPrefix(s.Endpoint, fcmPrefix) {
+			targets = append(targets, *s)
+		}
+	}
+	h.mu.Unlock()
+	n := notification{Type: "clear", Tag: pushTag(convID), Conv: convID, TS: h.now().UnixMilli()}
+	for i := range targets {
+		sub := targets[i]
+		h.wg.Add(1)
+		go func() {
+			defer h.wg.Done()
+			_, _ = h.deliver(&sub, n)
+		}()
 	}
 }
 
@@ -510,7 +621,9 @@ func (h *PushHub) deliver(sub *PushSubscription, n notification) (int, error) {
 	defer cancel()
 	status, err := h.send(ctx, sub, payload)
 	host := ""
-	if u, perr := url.Parse(sub.Endpoint); perr == nil {
+	if strings.HasPrefix(sub.Endpoint, fcmPrefix) {
+		host = "fcm"
+	} else if u, perr := url.Parse(sub.Endpoint); perr == nil {
 		host = u.Host
 	}
 	switch {
@@ -542,7 +655,7 @@ func (h *PushHub) SendAlert(title, body, tag string) {
 		targets = append(targets, *s)
 	}
 	h.mu.Unlock()
-	n := notification{Title: title, Body: body, Tag: tag, URL: "/app/", TS: h.now().UnixMilli()}
+	n := notification{Title: title, Body: body, Tag: tag, URL: "/app/", Type: "alert", TS: h.now().UnixMilli()}
 	for i := range targets {
 		sub := targets[i]
 		h.wg.Add(1)
@@ -564,8 +677,19 @@ func (h *PushHub) SendTest(endpoint string) (int, error) {
 		body = "Notifications are working (message text hidden)."
 	}
 	return h.deliver(sub, notification{
-		Title: "Messages Enhanced", Body: body, Tag: "test", URL: "/app/", TS: h.now().UnixMilli(), Test: true,
+		Title: "Messages Enhanced", Body: body, Tag: "test", URL: "/app/", Type: "test", TS: h.now().UnixMilli(), Test: true,
 	})
+}
+
+// sendAny routes app devices to FCM and everything else to Web Push.
+func (h *PushHub) sendAny(ctx context.Context, sub *PushSubscription, payload []byte) (int, error) {
+	if strings.HasPrefix(sub.Endpoint, fcmPrefix) {
+		if h.fcm == nil {
+			return 0, errors.New("FCM is not set up")
+		}
+		return h.fcm.send(ctx, strings.TrimPrefix(sub.Endpoint, fcmPrefix), payload)
+	}
+	return h.webpushSend(ctx, sub, payload)
 }
 
 func (h *PushHub) webpushSend(ctx context.Context, sub *PushSubscription, payload []byte) (int, error) {
@@ -614,7 +738,11 @@ func (s *Server) handlePushConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"available": false})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"available": true, "public_key": h.PublicKey(), "devices": h.Count()})
+	out := map[string]any{"available": true, "public_key": h.PublicKey(), "devices": h.Count()}
+	if h.fcm != nil {
+		out["fcm"] = h.fcm.client
+	}
+	writeJSON(w, 200, out)
 }
 
 type pushReq struct {
