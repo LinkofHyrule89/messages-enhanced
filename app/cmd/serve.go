@@ -809,8 +809,10 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		srv := &http.Server{
 			Handler:           httpHandler,
 			ReadHeaderTimeout: 10 * time.Second,
-			IdleTimeout:       120 * time.Second,
-			MaxHeaderBytes:    1 << 20,
+			// Bounds a slow request body (including media uploads). WriteTimeout
+			// stays unset: /api/events is a long-lived SSE response.
+			IdleTimeout:    120 * time.Second,
+			MaxHeaderBytes: 1 << 20,
 		}
 		go func() {
 			if opts.web {

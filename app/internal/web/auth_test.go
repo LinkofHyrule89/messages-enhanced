@@ -16,6 +16,16 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func TestSecureEqualHashesBeforeCompare(t *testing.T) {
+	token := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if !secureEqual(token, token) {
+		t.Fatal("equal secrets did not match")
+	}
+	if secureEqual("short", token) || secureEqual(token+"x", token) || secureEqual("", token) || secureEqual("", "") {
+		t.Fatal("unequal or empty secrets matched")
+	}
+}
+
 func TestControlTokenMintLoadAndPermissions(t *testing.T) {
 	dir := t.TempDir()
 	first, err := NewControlAuth(dir, zerolog.Nop())

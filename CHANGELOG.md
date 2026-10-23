@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-23
+
+- **Faster photos:** `/api/media` responses are cached for a year with an ETag, so repeat views return 304 instead of downloading again.
+- **Faster lists:** new database indexes for the conversation list, drafts and scheduled messages.
+- **Security hardening:** JSON request bodies capped at 1 MiB (uploads keep their own limit), login and OAuth forms capped before parsing, and constant-time secret checks that don't leak length.
+- No API changes; the native app works unchanged.
+
 ## 2026-10-22
 
 - **Group icons:** stale group pictures are fixed, a member's photo is never used as the group icon, end-to-end encrypted (MLS) RCS group icons now show like Google Messages for Web, and groups without an icon get a default avatar.

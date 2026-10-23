@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"encoding/hex"
@@ -47,7 +48,17 @@ var staticFS embed.FS
 // production.
 var maxUploadBytes int64 = messaging.DefaultMaxMediaBytes
 
+// maxJSONBodyBytes caps every non-upload API body. Upload routes keep
+// maxUploadBytes; listing them by path (not Content-Type) stops a client from
+// raising the cap by claiming multipart on a JSON endpoint.
+const maxJSONBodyBytes int64 = 1 << 20
+
 const maxTranscriptRequestBytes = db.MaxTranscriptBytes + db.MaxTranscriptModelBytes + 4096
+
+// mediaCacheControl: attachment bytes are immutable for a message id, so a
+// long private cache plus an ETag (304) is safe. private keeps them out of
+// shared caches.
+const mediaCacheControl = "private, max-age=31536000"
 
 const sseWriteTimeout = 5 * time.Second
 
@@ -2016,7 +2027,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 				httpError(w, "v2 media not available", http.StatusServiceUnavailable)
 				return
 			}
-			if err := writeV2MessageMediaResponse(r.Context(), w, opts.V2, msgID); err != nil {
+			if err := writeV2MessageMediaResponse(r.Context(), w, r, opts.V2, msgID); err != nil {
 				code, message := v1ErrorResponse(err)
 				httpError(w, message, code)
 			}
@@ -2036,7 +2047,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 				httpError(w, "v2 media not available", 404)
 				return
 			}
-			if err := writeV2BlobMediaResponse(w, opts.V2.Blobs, msg); err != nil {
+			if err := writeV2BlobMediaResponse(w, r, opts.V2.Blobs, msg); err != nil {
 				httpError(w, "v2 media not available", 404)
 			}
 			return
@@ -2054,7 +2065,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			if mimeType == "" {
 				mimeType = msg.MimeType
 			}
-			writeMediaResponse(w, data, "", mimeType)
+			writeMediaResponse(w, r, data, "", mimeType)
 			return
 		}
 		if msg.SourcePlatform == "signal" || strings.HasPrefix(msg.MessageID, "signal:") || strings.HasPrefix(msg.MediaID, "signalatt:") {
@@ -2070,7 +2081,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			if mimeType == "" {
 				mimeType = msg.MimeType
 			}
-			writeMediaResponse(w, data, "", mimeType)
+			writeMediaResponse(w, r, data, "", mimeType)
 			return
 		}
 		cli := getClient()
@@ -2090,7 +2101,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			httpError(w, googleAPIErrorMessage("download media", err), 502)
 			return
 		}
-		writeMediaResponse(w, data, "", msg.MimeType)
+		writeMediaResponse(w, r, data, "", msg.MimeType)
 	})
 
 	mux.HandleFunc("/api/react", func(w http.ResponseWriter, r *http.Request) {
@@ -3034,7 +3045,27 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 	if opts.Auth != nil {
 		handler = opts.Auth.Handler(handler)
 	}
-	return ProtectLocalControl(handler)
+	return ProtectLocalControl(limitRequestBody(handler))
+}
+
+// limitRequestBody installs MaxBytesReader before any handler reads the body.
+// Upload paths keep the media cap; everything else is a small JSON cap.
+func limitRequestBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, requestBodyLimit(r.URL.Path))
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func requestBodyLimit(path string) int64 {
+	switch path {
+	case "/api/send-media", "/api/schedule-media", "/api/v1/outbox/media":
+		return maxUploadBytes
+	default:
+		return maxJSONBodyBytes
+	}
 }
 
 // ProtectLocalControl rejects cross-origin browser access to local control
@@ -3496,6 +3527,7 @@ func scheduledID() string {
 func writeV2MessageMediaResponse(
 	ctx context.Context,
 	w http.ResponseWriter,
+	r *http.Request,
 	v2 *V2Options,
 	messageID string,
 ) error {
@@ -3520,7 +3552,7 @@ func writeV2MessageMediaResponse(
 		return err
 	}
 	defer reader.Close()
-	writeDescriptorMediaResponse(w, reader, descriptor)
+	writeDescriptorMediaResponse(w, r, reader, descriptor)
 	return nil
 }
 
@@ -3597,7 +3629,7 @@ func sanitizeMediaFilename(name string) string {
 // else — HTML, SVG, XML, unknown — is forced to an inert octet-stream download.
 // nosniff, a sandbox CSP, and same-origin CORP apply to every media response as
 // defense in depth. This is the single choke point for /api/media/ serving.
-func writeMediaResponse(w http.ResponseWriter, data []byte, filename, declaredMIME string) {
+func writeMediaResponse(w http.ResponseWriter, r *http.Request, data []byte, filename, declaredMIME string) {
 	resolved := normalizeMIME(declaredMIME)
 	if resolved == "" {
 		resolved = "application/octet-stream"
@@ -3607,7 +3639,6 @@ func writeMediaResponse(w http.ResponseWriter, data []byte, filename, declaredMI
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
-	w.Header().Set("Cache-Control", "private, max-age=86400")
 
 	safe := sanitizeMediaFilename(filename)
 	if inline {
@@ -3617,7 +3648,61 @@ func writeMediaResponse(w http.ResponseWriter, data []byte, filename, declaredMI
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+safe+`"`)
 	}
+	sum := sha256.Sum256(data)
+	if mediaNotModified(w, r, `"`+hex.EncodeToString(sum[:])+`"`) {
+		return
+	}
 	_, _ = w.Write(data)
+}
+
+// mediaNotModified sets the immutable-media cache headers and, when the
+// client already has this ETag, answers 304 without a body.
+func mediaNotModified(w http.ResponseWriter, r *http.Request, etag string) bool {
+	w.Header().Set("Cache-Control", mediaCacheControl)
+	if etag == "" {
+		return false
+	}
+	w.Header().Set("ETag", etag)
+	if r != nil && etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
+	return false
+}
+
+func etagMatches(header, etag string) bool {
+	if header == "" || etag == "" {
+		return false
+	}
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		if part == "*" {
+			return true
+		}
+		part = strings.TrimPrefix(part, "W/")
+		part = strings.TrimSpace(part)
+		if part == etag {
+			return true
+		}
+	}
+	return false
+}
+
+// quotedHexETag builds a strong ETag from a content hash. Non-hex input is
+// rejected so a stored hash cannot break the header.
+func quotedHexETag(hexHash string) string {
+	h := strings.TrimSpace(hexHash)
+	if h == "" || len(h) > 128 {
+		return ""
+	}
+	for _, c := range h {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return ""
+		}
+	}
+	return `"` + strings.ToLower(h) + `"`
 }
 
 // parseBoundedMultipartForm caps the request body before parsing a multipart

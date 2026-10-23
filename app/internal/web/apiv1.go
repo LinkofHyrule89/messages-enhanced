@@ -353,7 +353,7 @@ func (a *v1API) outboxMedia(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, err)
 		return
 	}
-	writeMediaResponse(w, data, attachment.Filename, attachment.MIME)
+	writeMediaResponse(w, r, data, attachment.Filename, attachment.MIME)
 }
 
 func (a *v1API) messageAttachment(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +394,7 @@ func (a *v1API) messageAttachment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer reader.Close()
-	writeDescriptorMediaResponse(w, reader, descriptor)
+	writeDescriptorMediaResponse(w, r, reader, descriptor)
 }
 
 func (a *v1API) v2Deps() v2wire.Deps {
@@ -555,7 +555,7 @@ func pendingResponse(delivery messaging.PendingDelivery) v1PendingResponse {
 	return response
 }
 
-func writeV2BlobMediaResponse(w http.ResponseWriter, blobs *blob.BlobStore, message *db.Message) error {
+func writeV2BlobMediaResponse(w http.ResponseWriter, r *http.Request, blobs *blob.BlobStore, message *db.Message) error {
 	hash := strings.TrimPrefix(message.MediaID, "v2blob:")
 	reader, err := blobs.Open(blob.BlobRef{Hash: hash})
 	if err != nil {
@@ -566,7 +566,7 @@ func writeV2BlobMediaResponse(w http.ResponseWriter, blobs *blob.BlobStore, mess
 	if err != nil {
 		return err
 	}
-	writeMediaResponse(w, data, "", message.MimeType)
+	writeMediaResponse(w, r, data, "", message.MimeType)
 	return nil
 }
 
@@ -583,16 +583,18 @@ func mirrorV2ReadCursor(
 	return v2wire.MirrorReadCursor(ctx, legacy, v2, conversationID, atMS)
 }
 
-func writeDescriptorMediaResponse(w http.ResponseWriter, reader io.Reader, descriptor media.Descriptor) {
+func writeDescriptorMediaResponse(w http.ResponseWriter, r *http.Request, reader io.Reader, descriptor media.Descriptor) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
-	w.Header().Set("Cache-Control", "private, max-age=86400")
 	w.Header().Set("Content-Type", descriptor.MIME)
 	w.Header().Set(
 		"Content-Disposition",
 		string(descriptor.Disposition)+`; filename="`+sanitizeMediaFilename(descriptor.Filename)+`"`,
 	)
+	if mediaNotModified(w, r, quotedHexETag(descriptor.Ref.Hash)) {
+		return
+	}
 	if descriptor.Size >= 0 {
 		w.Header().Set("Content-Length", strconv.FormatInt(descriptor.Size, 10))
 	}

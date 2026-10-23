@@ -5,6 +5,30 @@ import (
 	"time"
 )
 
+func TestHotListIndexesExist(t *testing.T) {
+	store, err := New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	for _, name := range []string{
+		"idx_messages_conv_ts",
+		"idx_conversations_last_ts",
+		"idx_conversations_platform_ts",
+		"idx_drafts_conv_created",
+		"idx_scheduled_conv",
+		"idx_scheduled_due",
+	} {
+		var n int
+		if err := store.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = ?`, name).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 {
+			t.Errorf("index %s missing", name)
+		}
+	}
+}
+
 func TestNewDB(t *testing.T) {
 	store, err := New(":memory:")
 	if err != nil {

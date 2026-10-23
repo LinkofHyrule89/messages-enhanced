@@ -448,6 +448,13 @@ func (s *Store) migrate() error {
 	// Index for the contacts.number = messages.sender_number JOIN in metadata search
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_contacts_number ON contacts(number)`)
 
+	// Conversation list and platform filters sort by last_message_ts. Drafts
+	// are loaded per conversation. messages(conversation_id, timestamp_ms)
+	// already exists as idx_messages_conv_ts.
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_conversations_last_ts ON conversations(last_message_ts)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_conversations_platform_ts ON conversations(source_platform, last_message_ts)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_drafts_conv_created ON drafts(conversation_id, created_at)`)
+
 	if _, err := s.db.Exec(`
 		DROP INDEX IF EXISTS idx_contact_avatars_source_participant;
 		DROP INDEX IF EXISTS idx_contact_avatars_source_contact;
@@ -504,6 +511,7 @@ func (s *Store) migrate() error {
 		media_mime TEXT NOT NULL DEFAULT ''
 	)`)
 	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled_messages(status, send_at)`)
+	s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_scheduled_conv ON scheduled_messages(conversation_id, status, send_at)`)
 	// Add media columns to scheduled_messages on already-created DBs.
 	s.db.Exec(`ALTER TABLE scheduled_messages ADD COLUMN media_data BLOB`)
 	s.db.Exec(`ALTER TABLE scheduled_messages ADD COLUMN media_filename TEXT NOT NULL DEFAULT ''`)

@@ -421,7 +421,11 @@ func (s *Server) handleOAuthAuthorize(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_ = oauthConsentTmpl.Execute(w, map[string]string{"Name": c.Name, "Host": host, "TX": tx})
 	case http.MethodPost:
-		_ = r.ParseForm()
+		r.Body = http.MaxBytesReader(w, r.Body, oauthMaxBodySize)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "invalid form", http.StatusBadRequest)
+			return
+		}
 		st.mu.Lock()
 		p := st.pending[r.PostForm.Get("tx")]
 		delete(st.pending, r.PostForm.Get("tx"))

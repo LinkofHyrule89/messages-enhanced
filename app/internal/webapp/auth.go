@@ -78,6 +78,17 @@ func (a *Auth) Authenticated(r *http.Request) bool {
 	return err == nil && a.Valid(c.Value)
 }
 
+// secretEqual hashes both sides so a wrong-length guess does not return
+// early from ConstantTimeCompare and reveal the secret's length.
+func secretEqual(got string, want []byte) bool {
+	if len(want) == 0 {
+		return false
+	}
+	g := sha256.Sum256([]byte(got))
+	w := sha256.Sum256(want)
+	return subtle.ConstantTimeCompare(g[:], w[:]) == 1
+}
+
 func (a *Auth) secureCookie(r *http.Request) bool {
 	switch a.secure {
 	case "1", "true", "yes", "on":
@@ -104,6 +115,15 @@ func (a *Auth) setCookie(w http.ResponseWriter, r *http.Request, value string, m
 
 // HandleLogin serves GET (form) and POST (check secret) on /login.
 func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	// Cap the body before FormValue/ParseForm. FormValue reads the body, so a
+	// limit installed later would not apply.
+	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, 8<<10)
+	}
+	if err := r.ParseForm(); err != nil && r.Method == http.MethodPost {
+		http.Error(w, "invalid login form", http.StatusBadRequest)
+		return
+	}
 	next := safeNext(r.FormValue("next"))
 	switch r.Method {
 	case http.MethodGet:
@@ -123,7 +143,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		got := r.PostFormValue("secret")
-		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(got)), a.secret) != 1 {
+		if !secretEqual(strings.TrimSpace(got), a.secret) {
 			a.limiter.fail(ip, a.now())
 			time.Sleep(300 * time.Millisecond)
 			a.renderLogin(w, next, "Wrong secret.", http.StatusUnauthorized)

@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2792,6 +2794,87 @@ func TestGetMediaUsesWhatsAppDownloader(t *testing.T) {
 	}
 	if string(data) != "png-data" {
 		t.Fatalf("body = %q, want png-data", string(data))
+	}
+}
+
+func TestMediaIsPrivatelyCacheableByContent(t *testing.T) {
+	const payload = "png-data"
+	ts := newTestServerWithOptions(t, APIOptions{
+		DownloadWhatsAppMedia: func(msg *db.Message) ([]byte, string, error) {
+			return []byte(payload), "image/png", nil
+		},
+	})
+	if err := ts.store.UpsertMessage(&db.Message{
+		MessageID:      "whatsapp:m-cache",
+		ConversationID: "whatsapp:15551234567@s.whatsapp.net",
+		MediaID:        "wa:cache-ref",
+		MimeType:       "image/png",
+		SourcePlatform: "whatsapp",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.Get(ts.server.URL + "/api/media/whatsapp:m-cache")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	sum := sha256.Sum256([]byte(payload))
+	etag := `"` + hex.EncodeToString(sum[:]) + `"`
+	if got := resp.Header.Get("ETag"); got != etag {
+		t.Fatalf("ETag = %q, want %q", got, etag)
+	}
+	cc := resp.Header.Get("Cache-Control")
+	if !strings.Contains(cc, "private") || !strings.Contains(cc, "max-age=31536000") {
+		t.Fatalf("Cache-Control = %q, want private long max-age", cc)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(body) != payload {
+		t.Fatalf("body = %q", body)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.server.URL+"/api/media/whatsapp:m-cache", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("If-None-Match", "W/"+etag)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode != http.StatusNotModified {
+		raw, _ := io.ReadAll(resp2.Body)
+		t.Fatalf("revalidation status = %d, want 304: %s", resp2.StatusCode, raw)
+	}
+	if n, _ := io.Copy(io.Discard, resp2.Body); n != 0 {
+		t.Fatalf("304 body = %d bytes", n)
+	}
+	if got := resp2.Header.Get("ETag"); got != etag {
+		t.Fatalf("304 ETag = %q, want %q", got, etag)
+	}
+}
+
+func TestSendRejectsOversizedJSON(t *testing.T) {
+	ts := newTestServer(t)
+	body := `{"conversation_id":"c1","message":"` + strings.Repeat("a", int(maxJSONBodyBytes)+64) + `"}`
+	resp, err := http.Post(ts.server.URL+"/api/send", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 400 or 413: %s", resp.StatusCode, raw)
+	}
+	if !strings.Contains(strings.ToLower(string(raw)), "too large") && !strings.Contains(string(raw), "request body too large") {
+		t.Fatalf("body = %s, want a size-limit error", raw)
 	}
 }
 

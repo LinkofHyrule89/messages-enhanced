@@ -2,6 +2,7 @@ package web
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
@@ -188,8 +189,16 @@ func (a *ControlAuth) classify(r *http.Request) string {
 	return "missing"
 }
 
+// secureEqual compares secrets in constant time. Both sides are hashed first
+// so a length mismatch (which ConstantTimeCompare returns on immediately)
+// cannot leak the secret's length.
 func secureEqual(got, want string) bool {
-	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+	if want == "" {
+		return false
+	}
+	g := sha256.Sum256([]byte(got))
+	w := sha256.Sum256([]byte(want))
+	return subtle.ConstantTimeCompare(g[:], w[:]) == 1
 }
 
 func (a *ControlAuth) warnOnce(r *http.Request, classification, fetchSite string) {
