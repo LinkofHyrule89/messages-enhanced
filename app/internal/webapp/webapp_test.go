@@ -663,3 +663,21 @@ func TestSameOriginWriteUsesFetchMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestAppGoogleCookiesSavesAndStartsPairing(t *testing.T) {
+	h, s, _ := newTestServer(t, func(c *Config, d *Deps) { c.FakePairing = "🦊" })
+	c := login(t, h)
+	rr := authedReq(t, h, c, http.MethodPost, "/api/app/google/cookies", "application/json", strings.NewReader(`{"cookies":{"SID":"x"}}`))
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "HSID") {
+		t.Fatalf("missing: %d %s", rr.Code, rr.Body.String())
+	}
+	body := `{"cookies":{"SID":"s1","HSID":"h1","SSID":"s2","OSID":"o1","APISID":"a1","SAPISID":"sa1"}}`
+	rr = authedReq(t, h, c, http.MethodPost, "/api/app/google/cookies", "application/json", strings.NewReader(body))
+	if rr.Code != http.StatusAccepted || strings.Contains(rr.Body.String(), "sa1") {
+		t.Fatalf("save: %d %s", rr.Code, rr.Body.String())
+	}
+	if got, _, err := s.vault.Load(); err != nil || got["SID"] != "s1" {
+		t.Fatalf("vault: %v", err)
+	}
+	authedReq(t, h, c, http.MethodPost, "/api/app/pairing/cancel", "", nil)
+}

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-30
+
+- **Reconnect Google from the native app:** `POST /api/app/google/cookies` (authenticated, same CSRF rules as other `/api/app` writes) accepts a JSON object of Google cookies, stores them in the encrypted cookie vault (never logs values), and starts Google-account pairing. Status (including the confirmation emoji) is available from the existing `GET /api/app/pairing`. Body size capped at 64 KiB.
+
 ## 2026-10-23
 
 - **Faster photos:** `/api/media` responses are cached for a year with an ETag, so repeat views return 304 instead of downloading again.

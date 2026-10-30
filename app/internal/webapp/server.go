@@ -150,6 +150,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	protected.HandleFunc("/api/app/pairing", s.handlePairingStatus)
 	protected.HandleFunc("/api/app/pairing/start", s.handlePairingStart)
 	protected.HandleFunc("/api/app/pairing/cancel", s.handlePairingCancel)
+	protected.HandleFunc("/api/app/google/cookies", s.handleAppGoogleCookies)
 	protected.HandleFunc("/admin/cookies", s.handleAdminCookies)
 	protected.HandleFunc("/admin/cookies/clear", s.handleAdminCookiesClear)
 	s.registerCarRoutes(protected)
@@ -435,6 +436,46 @@ func (s *Server) handlePairingCancel(w http.ResponseWriter, r *http.Request) {
 	}
 	s.pairer.Cancel()
 	writeJSON(w, 200, s.pairingPayload())
+}
+
+// handleAppGoogleCookies lets the native app hand over Google cookies read
+// from its sign-in WebView: they go into the same encrypted vault as
+// /admin/cookies, then Google-account pairing starts. Body:
+// {"cookies":{"SID":"…",…}}. Cookie values are never logged or echoed.
+func (s *Server) handleAppGoogleCookies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	var body struct {
+		Cookies map[string]string `json:"cookies"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.Cookies) == 0 {
+		writeJSON(w, 400, map[string]string{"error": "expected {\"cookies\":{...}}"})
+		return
+	}
+	raw, _ := json.Marshal(body.Cookies)
+	cookies, missing, err := ParseGoogleCookies(string(raw))
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": "could not read cookies"})
+		return
+	}
+	if len(missing) > 0 {
+		writeJSON(w, 400, map[string]any{"error": "Missing required Google cookies: " + strings.Join(missing, ", ") + ". Finish signing in and try again.", "missing": missing})
+		return
+	}
+	if err := s.vault.Save(cookies); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "could not save cookies"})
+		return
+	}
+	s.deps.Logger.Info().Int("count", len(cookies)).Msg("Google cookies received from native app; starting pairing")
+	if err := s.pairer.Start(); err != nil {
+		writeJSON(w, 409, map[string]any{"error": err.Error(), "pairing": s.pairer.Status()})
+		return
+	}
+	writeJSON(w, 202, s.pairingPayload())
 }
 
 func (s *Server) handleAdminCookies(w http.ResponseWriter, r *http.Request) {

@@ -20,7 +20,7 @@ func TestEveryRouteRequiresLoginEvenFromLoopbackTunnel(t *testing.T) {
 		"/api/avatar?id=1", "/api/media/abc", "/api/link-preview-image?url=x", "/api/whatsapp/avatar?jid=x",
 		"/api/send", "/api/send-media", "/api/unpair", "/api/google/reconnect", "/api/contacts", "/api/people",
 		"/api/v1/outbox", "/api/v1/messages/1/attachments/0",
-		"/api/app/config", "/api/app/pairing", "/api/app/pairing/start", "/api/app/wallpapers",
+		"/api/app/config", "/api/app/pairing", "/api/app/pairing/start", "/api/app/google/cookies", "/api/app/wallpapers",
 		wallpaperURLPrefix + "x.jpg", "/api/app/themes", "/api/app/theme", "/api/app/theme/background",
 		"/api/app/typing", "/api/app/contacts", "/api/app/folder", "/api/app/settings", "/api/transcribe",
 		"/mcp", "/mcp/sse", "/mcp/message", "/auth/bootstrap?t=x",
