@@ -1778,6 +1778,7 @@
 
   var RUN_GAP_MS = 15 * 60 * 1000;
   function runKey(m) { return m.IsFromMe ? "me" : String(m.SenderNumber || m.SenderName || "them"); }
+  // sameRun does not consider ReplyToID — replies group like any other message.
   function sameRun(a, b) {
     return !!a && !!b && runKey(a) === runKey(b) && Math.abs((b.TimestampMS || 0) - (a.TimestampMS || 0)) < RUN_GAP_MS &&
       new Date(a.TimestampMS).toDateString() === new Date(b.TimestampMS).toDateString();
@@ -1828,6 +1829,9 @@
       var nextSame = idx < msgs.length - 1 && sameRun(m, msgs[idx + 1]);
       row.classList.add(prevSame ? (nextSame ? "grp-mid" : "grp-last") : (nextSame ? "grp-first" : "grp-solo"));
       if (scrollState.unreadFromID && m.MessageID === scrollState.unreadFromID && scrollState.conv === state.current) box.appendChild(el("div", "unread-sep", "Unread"));
+      // Sender name above the bubble at the start of each run. ReplyToID is
+      // ignored here — a reply that starts a run still shows the reply author
+      // (Google Messages). Consecutive replies from the same person hide it.
       if (groupChat && !m.IsFromMe && !prevSame) box.appendChild(el("div", "run-sender", fmtPhone(m.SenderName || m.SenderNumber || "Unknown")));
       row.dataset.id = m.MessageID;
       var bubble = el("div", "bubble");
@@ -3400,6 +3404,56 @@
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
     queueSettingsPut(s);
   }
+
+  function autoRepairEnabled(settings) {
+    if (!settings || settings.auto_google_repair === undefined || settings.auto_google_repair === null) return true;
+    var v = settings.auto_google_repair;
+    if (v === false || v === 0 || v === "0" || v === "false" || v === "off") return false;
+    return true;
+  }
+  function applyAutoRepairToggle(on) {
+    var b = $("setAutoRepair");
+    if (!b) return;
+    b.classList.toggle("on", !!on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  }
+  function wireAutoRepairSettings() {
+    var b = $("setAutoRepair");
+    if (!b || b.dataset.wired) return;
+    b.dataset.wired = "1";
+    b.addEventListener("click", function () {
+      var next = !b.classList.contains("on");
+      applyAutoRepairToggle(next);
+      function putMerged(base) {
+        var body = {};
+        Object.keys(base || {}).forEach(function (k) { body[k] = base[k]; });
+        body.auto_google_repair = next;
+        return api("/api/app/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+          .then(function (saved) {
+            serverSettings = settingsObject(saved);
+            toast(next ? "Auto re-pair on" : "Auto re-pair off");
+          });
+      }
+      var ready = serverSettings
+        ? Promise.resolve(serverSettings)
+        : api("/api/app/settings").then(function (res) { return settingsObject(res); });
+      ready.then(putMerged).catch(function (e) {
+        applyAutoRepairToggle(!next);
+        toast(e.message || "Could not save", "error");
+      });
+    });
+    var f = $("forgetGoogleSession");
+    if (f && !f.dataset.wired) {
+      f.dataset.wired = "1";
+      f.addEventListener("click", function () {
+        if (!confirm("Forget the saved Google session on the server? You will need to sign in again to reconnect.")) return;
+        postJSON("/api/app/google/cookies/forget")
+          .then(function (p) { toast("Saved Google session forgotten"); refreshPairing(); updatePairingBanner(p); })
+          .catch(function (e) { toast(e.message || "Could not forget session", "error"); });
+      });
+    }
+  }
+
   // Theme and appearance are shared (GET/PUT /api/app/settings). Everything
   // else in tm.settings stays on this device. On start, a field the server
   // already has wins; a field only this browser has is uploaded once.
@@ -3473,6 +3527,8 @@
   }
   function loadServerSettings() {
     return api("/api/app/settings").then(function (res) {
+      applyAutoRepairToggle(autoRepairEnabled(settingsObject(res)));
+
       var remote = settingsObject(res);
       serverSettings = remote;
       var s = loadSettings();
@@ -4872,6 +4928,24 @@
     } else if (connecting) setConn("Connecting", "warn");
     else setConn("Disconnected", "bad");
     if (p && p.pairing && p.pairing.state === "emoji" && $("pairView").hidden && !state.pairAutoShown) { state.pairAutoShown = true; openPair(); }
+    updatePairingBanner(p);
+  }
+  // Confirm-on-phone emoji / sign-in-again from auto re-pair (pairing payload).
+  function updatePairingBanner(p) {
+    var b = $("healthBanner");
+    if (!b) return;
+    var st = (p && p.pairing) || {};
+    var lines = [];
+    if (st.state === "emoji" && st.emoji) {
+      lines.push("Confirm on your phone: tap " + st.emoji + " in Google Messages.");
+    } else if (p && p.sign_in_needed) {
+      lines.push("Google sign-in expired. Sign in again to reconnect Google Messages.");
+    }
+    // Don't wipe a VPN/Google-down banner from pollHealth unless we have pairing copy.
+    if (lines.length) {
+      b.textContent = lines.join(" ");
+      b.hidden = false;
+    }
   }
 
   // ---------- live updates ----------
@@ -5591,6 +5665,7 @@
     initReactions();
     initSearch();
     initHealth();
+    wireAutoRepairSettings();
     initMsgSheet();
     initSwipe();
     initDock();

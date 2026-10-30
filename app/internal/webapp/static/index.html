@@ -263,6 +263,20 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
+
+      <button id="setAutoRepair" class="setting-row on" type="button" role="switch" aria-checked="true">
+        <span class="setting-text">
+          <span class="setting-name">Auto re-pair Google</span>
+          <span class="setting-desc">When Google signs out, reconnect using the saved session (you only confirm the emoji on your phone)</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
+      <button id="forgetGoogleSession" class="setting-row" type="button">
+        <span class="setting-text">
+          <span class="setting-name">Forget saved Google session</span>
+          <span class="setting-desc">Clears the encrypted cookies on the server. You will need to sign in again to reconnect.</span>
+        </span>
+      </button>
       <div id="quickRepliesEditRow" class="setting-row setting-col">
         <label for="quickRepliesEdit" class="setting-name">Quick reply texts</label>
         <textarea id="quickRepliesEdit" class="setting-textarea" rows="4" spellcheck="true" aria-describedby="quickRepliesHint"></textarea>

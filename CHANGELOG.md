@@ -4,6 +4,10 @@
 
 - **Reconnect Google from the native app:** `POST /api/app/google/cookies` (authenticated, same CSRF rules as other `/api/app` writes) accepts a JSON object of Google cookies, stores them in the encrypted cookie vault (never logs values), and starts Google-account pairing. Status (including the confirmation emoji) is available from the existing `GET /api/app/pairing`. Body size capped at 64 KiB.
 
+- **Group reply sender headers:** In group chats, a reply that starts a sender run still shows that person's name (and avatar) above the bubble, like Google Messages. Consecutive messages from the same person still hide the repeated header. Reply status does not change run grouping.
+
+- **Automatic Google re-pair:** when Google auth expires and encrypted vault cookies exist, the server starts Gaia pairing on its own (15‑minute pacing), pushes “Confirm on your phone” with the emoji, and surfaces `sign_in_needed` when the saved session was rejected. Settings key `auto_google_repair` (default on). `POST /api/app/google/cookies/forget` clears the vault.
+
 ## 2026-10-23
 
 - **Faster photos:** `/api/media` responses are cached for a year with an ETag, so repeat views return 304 instead of downloading again.

@@ -69,6 +69,7 @@ type Server struct {
 	liveGate *partialGate
 	vault    *CookieVault
 	pairer   *Pairer
+	autoRepair *AutoRepairer
 	admin    *template.Template
 	static   http.Handler
 	themes   *ThemeStore // nil if the data dir couldn't be prepared
@@ -122,12 +123,6 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	s.version = staticVersion(sub)
 	s.index = versionedIndex(sub, s.version)
 
-	s.health = NewHealthMonitor(cfg, d.GoogleStatus, d.Push)
-	s.health.SetLogger(d.Logger)
-	if s.health.Enabled() && !d.NoHealthMonitor {
-		go s.health.Run(context.Background())
-	}
-
 	if st, err := OpenStarStore(d.DataDir); err == nil {
 		s.stars = st
 	}
@@ -142,6 +137,16 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 		s.settings = ss
 	}
 
+	s.health = NewHealthMonitor(cfg, d.GoogleStatus, d.Push)
+	s.autoRepair = NewAutoRepairer(s.pairer, vault, s.settings, d.SessionPath, d.Push, d.GoogleStatus, d.Logger)
+	s.health.SetLogger(d.Logger)
+	if s.health.Enabled() && !d.NoHealthMonitor {
+		go s.health.Run(context.Background())
+	}
+	if s.autoRepair != nil && !d.NoHealthMonitor {
+		go s.autoRepair.Run(context.Background().Done())
+	}
+
 	protected := http.NewServeMux()
 	protected.HandleFunc("/app/", s.serveStatic)
 	protected.HandleFunc("/api/transcribe", s.handleTranscribe)
@@ -151,6 +156,7 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 	protected.HandleFunc("/api/app/pairing/start", s.handlePairingStart)
 	protected.HandleFunc("/api/app/pairing/cancel", s.handlePairingCancel)
 	protected.HandleFunc("/api/app/google/cookies", s.handleAppGoogleCookies)
+	protected.HandleFunc("/api/app/google/cookies/forget", s.handleAppGoogleCookiesForget)
 	protected.HandleFunc("/admin/cookies", s.handleAdminCookies)
 	protected.HandleFunc("/admin/cookies/clear", s.handleAdminCookiesClear)
 	s.registerCarRoutes(protected)
@@ -410,6 +416,11 @@ func (s *Server) pairingPayload() map[string]any {
 	if s.deps.GoogleStatus != nil {
 		out["google"] = s.deps.GoogleStatus()
 	}
+	if s.autoRepair != nil {
+		for k, v := range s.autoRepair.Snapshot() {
+			out[k] = v
+		}
+	}
 	return out
 }
 
@@ -435,6 +446,26 @@ func (s *Server) handlePairingCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.pairer.Cancel()
+	writeJSON(w, 200, s.pairingPayload())
+}
+
+
+// handleAppGoogleCookiesForget deletes the encrypted Google cookie vault so
+// automatic re-pair stops until the user signs in again.
+func (s *Server) handleAppGoogleCookiesForget(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]string{"error": "method not allowed"})
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if err := s.vault.Clear(); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "could not forget session"})
+		return
+	}
+	if s.autoRepair != nil {
+		s.autoRepair.MarkSignInNeeded()
+	}
+	s.deps.Logger.Info().Msg("Google cookie vault cleared by client")
 	writeJSON(w, 200, s.pairingPayload())
 }
 
@@ -469,6 +500,9 @@ func (s *Server) handleAppGoogleCookies(w http.ResponseWriter, r *http.Request) 
 	if err := s.vault.Save(cookies); err != nil {
 		writeJSON(w, 500, map[string]string{"error": "could not save cookies"})
 		return
+	}
+	if s.autoRepair != nil {
+		s.autoRepair.ClearSignInNeeded()
 	}
 	s.deps.Logger.Info().Int("count", len(cookies)).Msg("Google cookies received from native app; starting pairing")
 	if err := s.pairer.Start(); err != nil {
