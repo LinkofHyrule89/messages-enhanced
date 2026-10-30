@@ -2,6 +2,8 @@
 
 ## 2026-10-30
 
+- **Go to newest, sooner:** the button now shows whenever you are not at the bottom of a thread (about two messages up), whether the newest messages are read, unread, or your own. The badge still counts only new incoming messages.
+
 - **Go to newest message:** conversation threads show a round down-arrow button at the bottom-right when you scroll up more than a screen, with an unread badge for messages that arrive meanwhile. Tap to smooth-scroll to the newest message (jumps when far). Incoming messages never yank your scroll position. Car Mode keeps its large "New messages" pill.
 
 - **Pairing serialization:** manual cookie pairing, QR pairing, and automatic Gaia re-pair share one gate. Auto re-pair skips while any pairing is in progress or just completed, and re-checks live Google status before starting. A new pair fully stops the old Google client/listeners first, persists new keys atomically, and reconnects once — so only one long-poll exists and HMAC mismatches from overlapping sessions stop.

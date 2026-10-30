@@ -2044,7 +2044,7 @@
     var b = $("jumpNewest"), box = $("messages");
     if (!b || !box) return;
     var dist = box.scrollHeight - box.scrollTop - box.clientHeight;
-    var show = !!state.current && (dist > box.clientHeight || (scrollState.pill > 0 && dist > 120));
+    var show = !!state.current && dist > 120;
     var n = scrollState.pill || 0, badge = $("jumpNewestBadge");
     badge.textContent = n > 99 ? "99+" : String(n); badge.hidden = !n;
     b.style.top = Math.max(0, box.offsetTop + box.clientHeight - 72) + "px";
