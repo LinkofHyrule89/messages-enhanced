@@ -39,18 +39,24 @@ type PairingStatus struct {
 // session.json); tests and the dev flag swap in a fake.
 type PairingRunner func(ctx context.Context, cookies map[string]string, onEmoji func(string)) error
 
+// How long auto re-pair must wait after a successful pair before trying again.
+// Covers the reconnect window where Google status can still look expired.
+const PairRecentSuccessSkip = 2 * time.Minute
+
 // Pairer runs one pairing attempt at a time and exposes its state.
 type Pairer struct {
-	mu       sync.Mutex
-	status   PairingStatus
-	cancel   context.CancelFunc
-	vault    *CookieVault
-	run      PairingRunner
-	fake     string
-	onPaired func() error
-	ntfyURL  string
-	logger   zerolog.Logger
-	http     *http.Client
+	mu             sync.Mutex
+	status         PairingStatus
+	cancel         context.CancelFunc
+	vault          *CookieVault
+	run            PairingRunner
+	fake           string
+	onPaired       func() error
+	preparePairing func() error // tear down live Google client before a new pair
+	ntfyURL        string
+	logger         zerolog.Logger
+	http           *http.Client
+	completedAt    time.Time // wall clock of last PairSuccess
 }
 
 func NewPairer(vault *CookieVault, run PairingRunner, fakeEmoji string, onPaired func() error, ntfyURL string, logger zerolog.Logger) *Pairer {
@@ -66,6 +72,40 @@ func NewPairer(vault *CookieVault, run PairingRunner, fakeEmoji string, onPaired
 	}
 }
 
+// SetPreparePairing registers a hook that stops the live Google client and
+// listeners before Gaia/QR pairing starts, so only one long-poll exists.
+func (p *Pairer) SetPreparePairing(fn func() error) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.preparePairing = fn
+	p.mu.Unlock()
+}
+
+// InProgress reports whether a pairing attempt is currently running.
+func (p *Pairer) InProgress() bool {
+	if p == nil {
+		return false
+	}
+	st := p.Status()
+	return st.State == PairStarting || st.State == PairShowEmoji
+}
+
+// RecentlyCompleted is true when a pair succeeded within the given window
+// (used so auto re-pair does not immediately start a second attempt).
+func (p *Pairer) RecentlyCompleted(within time.Duration) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.completedAt.IsZero() {
+		return false
+	}
+	return time.Since(p.completedAt) < within
+}
+
 func (p *Pairer) Status() PairingStatus {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -79,7 +119,8 @@ func (p *Pairer) set(update func(*PairingStatus)) {
 	p.mu.Unlock()
 }
 
-// Start begins a pairing attempt in the background.
+// Start begins a pairing attempt in the background. Only one attempt may run
+// at a time (manual cookies, QR, and auto re-pair all share this gate).
 func (p *Pairer) Start() error {
 	p.mu.Lock()
 	if p.status.State == PairStarting || p.status.State == PairShowEmoji {
@@ -90,6 +131,7 @@ func (p *Pairer) Start() error {
 	p.cancel = cancel
 	now := time.Now().UnixMilli()
 	p.status = PairingStatus{State: PairStarting, StartedAt: now, UpdatedAt: now, Fake: p.fake != ""}
+	prepare := p.preparePairing
 	p.mu.Unlock()
 
 	if p.fake != "" {
@@ -114,6 +156,18 @@ func (p *Pairer) Start() error {
 	}
 	go func() {
 		defer cancel()
+		// Tear down the live client first so the pairing client is the only
+		// long-poll. Otherwise old keys keep listening and HMAC mismatches.
+		if prepare != nil {
+			if err := prepare(); err != nil {
+				p.logger.Warn().Err(err).Msg("Failed to stop live Google client before pairing")
+				p.set(func(s *PairingStatus) {
+					s.State = PairError
+					s.Message = "Could not stop the existing Google connection before pairing. Try again."
+				})
+				return
+			}
+		}
 		err := p.run(ctx, cookies, p.showEmoji)
 		if err != nil {
 			p.logger.Warn().Str("error_kind", pairingErrorKind(err)).Msg("Web pairing failed")
@@ -126,7 +180,10 @@ func (p *Pairer) Start() error {
 				msg = "Paired, but reconnect failed; restart the server."
 			}
 		}
-		p.set(func(s *PairingStatus) { s.State = PairSuccess; s.Emoji = ""; s.EmojiSVG = ""; s.Message = msg })
+		p.mu.Lock()
+		p.completedAt = time.Now()
+		p.status = PairingStatus{State: PairSuccess, Message: msg, UpdatedAt: time.Now().UnixMilli()}
+		p.mu.Unlock()
 	}()
 	return nil
 }
@@ -215,20 +272,31 @@ func friendlyPairingError(err error) string {
 }
 
 // OpenMessageGooglePairing is OpenMessage's `pair --google` flow (see
-// cmd/pair.go runGoogleAccountPairing), reused as-is: set cookies on a fresh
-// libgm client, DoGaiaPairing, then save session.json.
+// cmd/pair.go runGoogleAccountPairing): set cookies on a fresh libgm client,
+// run Gaia pairing, then atomically save session.json. Uses Start/Finish
+// (not DoGaiaPairing) so the pairing client does not start its own long-poll;
+// the server reconnects once via onPaired after keys are persisted.
 func OpenMessageGooglePairing(logger zerolog.Logger, sessionPath string) PairingRunner {
 	return func(ctx context.Context, cookies map[string]string, onEmoji func(string)) error {
 		cli := client.NewForPairing(logger)
 		defer cli.GM.Disconnect()
 		cli.GM.AuthData.Cookies = cookies
-		if err := cli.GM.DoGaiaPairing(ctx, onEmoji); err != nil {
+		emoji, ps, err := cli.GM.StartGaiaPairing(ctx)
+		if err != nil {
+			return err
+		}
+		if onEmoji != nil {
+			onEmoji(emoji)
+		}
+		if _, err := cli.GM.FinishGaiaPairing(ctx, ps); err != nil {
 			return err
 		}
 		data, err := cli.SessionData()
 		if err != nil {
 			return fmt.Errorf("get session data: %w", err)
 		}
+		// Atomic write replaces the old session/keys so the next Connect uses
+		// only the new crypto (no lingering HMAC mismatch from the prior pair).
 		return client.SaveSession(sessionPath, data)
 	}
 }

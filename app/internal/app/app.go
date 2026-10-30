@@ -809,16 +809,28 @@ func (a *App) AnyConnected() bool {
 	return false
 }
 
-func (a *App) ReconnectGoogleMessages() error {
-	if a.Connected.Load() && a.GetClient() != nil {
-		a.googleAuthExpired.Store(false)
-		a.setGoogleLastError("")
-		return nil
-	}
+// PrepareGooglePairing disconnects the live Google client so a new Gaia pair
+// does not share the process with an old long-poll (HMAC mismatch).
+func (a *App) PrepareGooglePairing() error {
+	a.Connected.Store(false)
+	a.emitStatusChange(false)
 	if cli := a.GetClient(); cli != nil {
 		cli.GM.Disconnect()
 		a.setClient(nil)
 	}
+	return nil
+}
+
+func (a *App) ReconnectGoogleMessages() error {
+	// Always drop the old client and reload session.json so a freshly paired
+	// key set replaces any stale listeners (never no-op while "connected").
+	a.googleAuthExpired.Store(false)
+	a.setGoogleLastError("")
+	if cli := a.GetClient(); cli != nil {
+		cli.GM.Disconnect()
+		a.setClient(nil)
+	}
+	a.Connected.Store(false)
 	return a.LoadAndConnect()
 }
 

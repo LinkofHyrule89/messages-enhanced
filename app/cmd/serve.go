@@ -648,11 +648,13 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 	markGoogleAuthExpired := a.HandleGoogleAuthExpiredError
 	reconnectGoogle := a.ReconnectGoogleMessages
 	unpairGoogle := a.Unpair
+	prepareGooglePairing := a.PrepareGooglePairing
 	if googleControl != nil {
 		reconnectGoogle = googleControl.Reconnect
 		unpairGoogle = func() error {
 			return googleControl.StopAndUnpair(a.Unpair)
 		}
+		prepareGooglePairing = googleControl.PrepareForPairing
 	}
 	connectWhatsApp := a.StartWhatsAppConnect
 	pairWhatsAppPhone := a.PairWhatsAppPhone
@@ -772,6 +774,7 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 				// control token (no accept-and-log hole behind the gate).
 				InnerAuthorize: controlAuth.Authorize,
 				Reconnect:      reconnectGoogle,
+				PreparePairing: prepareGooglePairing,
 				GoogleStatus:   googleStatus,
 				Logger:         logger,
 				Car:            webCarBackend{a: a},

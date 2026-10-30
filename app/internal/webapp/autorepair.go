@@ -151,11 +151,19 @@ func (a *AutoRepairer) tick() {
 	}
 	a.mu.Unlock()
 
-	if !a.authExpired() {
+	// Serialize with manual cookie / QR pairing: never start while another
+	// attempt is in flight, and skip the reconnect window after a success
+	// where Google status can still look expired.
+	if a.pairer != nil && (a.pairer.InProgress() || a.pairer.RecentlyCompleted(PairRecentSuccessSkip)) {
 		return
 	}
 	st := a.pairer.Status()
-	if st.State == PairStarting || st.State == PairShowEmoji {
+	if st.State == PairSuccess && st.UpdatedAt > 0 &&
+		time.Since(time.UnixMilli(st.UpdatedAt)) < PairRecentSuccessSkip {
+		return
+	}
+
+	if !a.authExpired() {
 		return
 	}
 	if !a.HasSavedSession() {
@@ -172,16 +180,23 @@ func (a *AutoRepairer) tick() {
 		a.mu.Unlock()
 		return
 	}
+	// Claim the pacing slot before re-checking live state so concurrent ticks
+	// cannot both pass the gap check.
 	a.lastAttempt = time.Now()
 	a.mu.Unlock()
 
-	a.log.Info().Msg("Google auth expired; starting automatic Gaia re-pair from saved session")
+	// Re-check live client state under the same gates before admitting Start.
+	if a.pairer.InProgress() || a.pairer.RecentlyCompleted(PairRecentSuccessSkip) || !a.authExpired() {
+		return
+	}
+
 	if err := a.pairer.Start(); err != nil {
 		if !strings.Contains(err.Error(), "already in progress") {
 			a.log.Warn().Str("error_kind", "start_failed").Msg("Auto re-pair could not start")
 		}
 		return
 	}
+	a.log.Info().Msg("Google auth expired; starting automatic Gaia re-pair from saved session")
 	// Watch for terminal failure in the background (pairer owns the work).
 	go a.watchAttempt()
 }

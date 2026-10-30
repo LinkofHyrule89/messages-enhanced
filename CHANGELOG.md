@@ -2,6 +2,8 @@
 
 ## 2026-10-30
 
+- **Pairing serialization:** manual cookie pairing, QR pairing, and automatic Gaia re-pair share one gate. Auto re-pair skips while any pairing is in progress or just completed, and re-checks live Google status before starting. A new pair fully stops the old Google client/listeners first, persists new keys atomically, and reconnects once — so only one long-poll exists and HMAC mismatches from overlapping sessions stop.
+
 - **Reconnect Google from the native app:** `POST /api/app/google/cookies` (authenticated, same CSRF rules as other `/api/app` writes) accepts a JSON object of Google cookies, stores them in the encrypted cookie vault (never logs values), and starts Google-account pairing. Status (including the confirmation emoji) is available from the existing `GET /api/app/pairing`. Body size capped at 64 KiB.
 
 - **Group reply sender headers:** In group chats, a reply that starts a sender run still shows that person's name (and avatar) above the bubble, like Google Messages. Consecutive messages from the same person still hide the repeated header. Reply status does not change run grouping.

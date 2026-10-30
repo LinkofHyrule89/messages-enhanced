@@ -612,3 +612,97 @@ func awaitGooglePacedRepairCount(
 		}
 	}
 }
+
+
+func TestGoogleSupervisorPrepareForPairingStopsThenReconnectRebuilds(t *testing.T) {
+	sessionPath := filepath.Join(t.TempDir(), "session.json")
+	if err := os.WriteFile(sessionPath, []byte("session-v1"), 0o600); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+	lifecycle := &googleRepairTestLifecycle{}
+	var supervisorCount atomic.Int32
+	newSupervisor := func() (*bridge.Supervisor, error) {
+		supervisorCount.Add(1)
+		return bridge.NewSupervisor(
+			googleAccountID,
+			bridge.PlatformGoogle,
+			lifecycle,
+			googleSupervisorPolicy(),
+			googleWallClock{},
+			googleRandom{},
+		)
+	}
+	supervisor, err := newSupervisor()
+	if err != nil {
+		t.Fatalf("NewSupervisor: %v", err)
+	}
+	control := newGoogleSupervisorControl(supervisor, sessionPath, newSupervisor)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = control.Stop(ctx)
+	})
+
+	if err := control.Reconnect(); err != nil {
+		t.Fatalf("initial Reconnect: %v", err)
+	}
+	awaitGoogleSupervisorGenerationState(t, supervisor, bridge.StateOnline, 1)
+
+	if err := control.PrepareForPairing(); err != nil {
+		t.Fatalf("PrepareForPairing: %v", err)
+	}
+	// Simulate successful pair writing new session keys.
+	if err := os.WriteFile(sessionPath, []byte("session-v2-new-keys"), 0o600); err != nil {
+		t.Fatalf("rewrite session: %v", err)
+	}
+	if err := control.Reconnect(); err != nil {
+		t.Fatalf("Reconnect after pair: %v", err)
+	}
+	if got := supervisorCount.Load(); got < 2 {
+		t.Fatalf("supervisor rebuilds = %d, want >= 2", got)
+	}
+}
+
+func TestGoogleSupervisorReconnectReloadsChangedSessionWhileOnline(t *testing.T) {
+	sessionPath := filepath.Join(t.TempDir(), "session.json")
+	if err := os.WriteFile(sessionPath, []byte("session-v1"), 0o600); err != nil {
+		t.Fatalf("write session: %v", err)
+	}
+	lifecycle := &googleRepairTestLifecycle{}
+	var supervisorCount atomic.Int32
+	newSupervisor := func() (*bridge.Supervisor, error) {
+		supervisorCount.Add(1)
+		return bridge.NewSupervisor(
+			googleAccountID,
+			bridge.PlatformGoogle,
+			lifecycle,
+			googleSupervisorPolicy(),
+			googleWallClock{},
+			googleRandom{},
+		)
+	}
+	supervisor, err := newSupervisor()
+	if err != nil {
+		t.Fatalf("NewSupervisor: %v", err)
+	}
+	control := newGoogleSupervisorControl(supervisor, sessionPath, newSupervisor)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = control.Stop(ctx)
+	})
+	if err := control.Reconnect(); err != nil {
+		t.Fatalf("initial Reconnect: %v", err)
+	}
+	awaitGoogleSupervisorGenerationState(t, supervisor, bridge.StateOnline, 1)
+
+	if err := os.WriteFile(sessionPath, []byte("session-after-pair"), 0o600); err != nil {
+		t.Fatalf("rewrite session: %v", err)
+	}
+	if err := control.Reconnect(); err != nil {
+		t.Fatalf("Reconnect with new session while online: %v", err)
+	}
+	if got := supervisorCount.Load(); got < 2 {
+		t.Fatalf("supervisor rebuilds = %d, want >= 2 (session swap while online)", got)
+	}
+}

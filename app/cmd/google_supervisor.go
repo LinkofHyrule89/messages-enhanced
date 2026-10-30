@@ -298,9 +298,14 @@ func (c *googleSupervisorControl) Reconnect() error {
 		return nil
 	case bridge.StateOnline, bridge.StateConnecting, bridge.StateDegraded,
 		bridge.StateBackoff, bridge.StateRepairingCredentials:
-		// A reconnect or repair is already owned by this supervisor. Treat a
-		// duplicate button press as successful admission, never a second owner.
-		return nil
+		fingerprint, err := googleSessionFingerprint(c.sessionPath)
+		if err != nil || fingerprint == inputFingerprint {
+			// Duplicate button press / same session: admit without a second owner.
+			return nil
+		}
+		// Session file changed (new pair). Tear down listeners and rebuild so
+		// the old HMAC keys cannot keep long-polling alongside the new client.
+		return c.rebuildAfterSessionChange(fingerprint)
 	case bridge.StateUnpaired:
 		return errors.New("Google Messages must be paired before reconnecting")
 	case bridge.StateStopping:
@@ -308,6 +313,95 @@ func (c *googleSupervisorControl) Reconnect() error {
 	default:
 		return fmt.Errorf("Google Messages cannot reconnect from supervisor state %q", snapshot.State)
 	}
+}
+
+// PrepareForPairing stops the live Google client and listeners without
+// deleting the session file. Pairing then runs alone; Reconnect after a
+// successful save rebuilds the supervisor with the new keys.
+func (c *googleSupervisorControl) PrepareForPairing() error {
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return bridge.ErrSupervisorStopped
+	}
+	if c.supervisorStopped {
+		c.mu.Unlock()
+		return nil
+	}
+	if c.stopping {
+		c.mu.Unlock()
+		return bridge.ErrSupervisorBusy
+	}
+	c.stopping = true
+	supervisor := c.supervisor
+	c.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), googleSupervisorStopTimeout)
+	defer cancel()
+	stopErr := supervisor.Stop(ctx)
+
+	c.mu.Lock()
+	if c.supervisor == supervisor {
+		c.supervisorStopped = true
+	}
+	c.stopping = false
+	c.mu.Unlock()
+
+	if stopErr != nil {
+		go c.awaitStoppedSupervisor(supervisor)
+		return fmt.Errorf("stop Google Messages before pairing: %w", stopErr)
+	}
+	return nil
+}
+
+// rebuildAfterSessionChange stops the current generation and starts a fresh
+// supervisor that loads the new session.json (atomic key swap after pairing).
+func (c *googleSupervisorControl) rebuildAfterSessionChange(fingerprint string) error {
+	c.mu.Lock()
+	if c.closed || c.stopping {
+		c.mu.Unlock()
+		return bridge.ErrSupervisorStopped
+	}
+	c.stopping = true
+	old := c.supervisor
+	newSupervisorFn := c.newSupervisor
+	c.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), googleSupervisorStopTimeout)
+	defer cancel()
+	_ = old.Stop(ctx)
+
+	if newSupervisorFn == nil {
+		c.mu.Lock()
+		c.supervisorStopped = true
+		c.stopping = false
+		c.inputFingerprint = fingerprint
+		c.mu.Unlock()
+		return errors.New("Google Messages supervisor cannot be restarted")
+	}
+	supervisor, err := newSupervisorFn()
+	if err != nil {
+		c.mu.Lock()
+		c.supervisorStopped = true
+		c.stopping = false
+		c.mu.Unlock()
+		return fmt.Errorf("rebuild Google Messages supervisor: %w", err)
+	}
+
+	c.mu.Lock()
+	c.supervisor = supervisor
+	c.inputFingerprint = fingerprint
+	c.supervisorStopped = false
+	c.stopping = false
+	c.mu.Unlock()
+
+	startCtx, startCancel := context.WithTimeout(context.Background(), googleSupervisorPolicy().ConnectTimeout)
+	defer startCancel()
+	err = supervisor.Start(startCtx, bridge.StartRequest{})
+	if errors.Is(err, bridge.ErrSupervisorBusy) {
+		return nil
+	}
+	return err
 }
 
 func (c *googleSupervisorControl) StopAndUnpair(unpair func() error) error {

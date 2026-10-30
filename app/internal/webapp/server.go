@@ -30,6 +30,9 @@ type Deps struct {
 	// inner control credential. Client-sent Authorization is always dropped.
 	InnerAuthorize func(*http.Request)
 	Reconnect      func() error // reconnect Google Messages after a new session is saved
+	// PreparePairing stops the live Google client/listeners before a new
+	// Gaia or QR pair so only one long-poll exists (nil = skip).
+	PreparePairing func() error
 	GoogleStatus   func() any
 	Logger         zerolog.Logger
 	// PairingRunner overrides the real Google pairing (tests).
@@ -119,6 +122,8 @@ func NewHandler(cfg Config, d Deps) (http.Handler, *Server, error) {
 		admin:    template.Must(template.New("admin").Parse(adminCookiesHTML)),
 		static:   http.StripPrefix("/app/", http.FileServer(http.FS(sub))),
 	}
+
+	s.pairer.SetPreparePairing(d.PreparePairing)
 
 	s.version = staticVersion(sub)
 	s.index = versionedIndex(sub, s.version)
