@@ -1316,6 +1316,7 @@
 
   // ---------- thread ----------
   function openConversation(id, nameHint) {
+    if ($("jumpNewest")) $("jumpNewest").hidden = true;
     if (state.rec) cancelRecording();
     showEmoji(false);
     showPlusSheet(false);
@@ -2025,16 +2026,35 @@
       }
     } else if (nearBottom) { box.scrollTop = box.scrollHeight; if (tail && !state.folder) markSeen(state.current, tail.TimestampMS); }
     noteTail(msgs);
+    updateJumpBtn();
   }
   function showNewPill(n) {
     var p = $("newMsgPill");
     if (!p) return;
     scrollState.pill = n;
-    if (!n) { p.hidden = true; return; }
+    if (!n) { p.hidden = true; updateJumpBtn(); return; }
     $("newMsgPillText").textContent = n === 1 ? "1 new message" : n + " new messages";
     var box = $("messages");
     p.style.top = Math.max(0, box.offsetTop + box.clientHeight - 80) + "px";
     p.hidden = false;
+    updateJumpBtn();
+  }
+  // "Go to newest" FAB (Google Messages style): shown when scrolled up more than ~a screen.
+  function updateJumpBtn() {
+    var b = $("jumpNewest"), box = $("messages");
+    if (!b || !box) return;
+    var dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+    var show = !!state.current && (dist > box.clientHeight || (scrollState.pill > 0 && dist > 120));
+    var n = scrollState.pill || 0, badge = $("jumpNewestBadge");
+    badge.textContent = n > 99 ? "99+" : String(n); badge.hidden = !n;
+    b.style.top = Math.max(0, box.offsetTop + box.clientHeight - 72) + "px";
+    b.hidden = !show;
+  }
+  function jumpToNewest() {
+    var box = $("messages"), dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+    if (dist > box.clientHeight * 6) box.scrollTop = Math.max(0, box.scrollHeight - box.clientHeight * 2);
+    try { box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } catch (e) { box.scrollTop = box.scrollHeight; }
+    showNewPill(0);
   }
   // ---------- read receipts (Google Messages-style) ----------
   // Under your latest sent message only, as in Google Messages: a clock
@@ -5740,13 +5760,12 @@
     Array.prototype.forEach.call(document.querySelectorAll('input[name="grokTrigger"]'), function (r) {
       r.addEventListener("change", function () { if (r.checked && grokState) saveGrok(!!grokState.enabled, r.value, !!grokState.groq_enabled); });
     });
-    $("newMsgPill").addEventListener("click", function () {
-      var box = $("messages");
-      try { box.scrollTo({ top: box.scrollHeight, behavior: "smooth" }); } catch (e) { box.scrollTop = box.scrollHeight; }
-      showNewPill(0);
-    });
+    $("newMsgPill").addEventListener("click", jumpToNewest);
+    $("jumpNewest").addEventListener("click", jumpToNewest);
+    window.addEventListener("resize", updateJumpBtn, { passive: true });
     $("messages").addEventListener("scroll", function () {
       var box = $("messages");
+      updateJumpBtn();
       if (box.scrollHeight - box.scrollTop - box.clientHeight < 120) {
         if (scrollState.pill) showNewPill(0);
         var t = state.lastMsgs && realTail(state.lastMsgs);
