@@ -2332,16 +2332,77 @@
     var t = $("input"), b = el("div", "mention-picker");
     b.id = "mentionPicker"; b.hidden = true; b.setAttribute("role", "listbox");
     var form = $("compose"); form.parentNode.insertBefore(b, form);
-    t.addEventListener("input", function () { mentionSel = 0; updateMentions(); });
+    t.addEventListener("input", function () { mentionSel = 0; updateMentions(); renderComposerMentions(); });
+    t.addEventListener("scroll", renderComposerMentions);
+    window.addEventListener("resize", renderComposerMentions);
     t.addEventListener("keyup", function (e) { if (e.key === "ArrowLeft" || e.key === "ArrowRight") updateMentions(); });
     t.addEventListener("blur", function () { setTimeout(hideMentions, 150); });
     // Android keyboards send Backspace as beforeinput deleteContentBackward.
     t.addEventListener("beforeinput", function (e) { if (e.inputType === "deleteContentBackward" && !e.isComposing) mentionBackspace(e); });
   }
+  // Chip highlight for valid NBSP@NameNBSP mentions inside the composer.
+  // The box is a flat contenteditable (text + <br>, see composer.js), so we
+  // don't add spans to it: accent text uses the CSS Custom Highlight API and
+  // the rounded pill is a translucent layer drawn from the ranges' rects.
+  var COMPOSE_MENTION_RE = /(^|\u00A0)@([^\u00A0\n@]{1,60})\u00A0/g, mentionLayer = null;
+  function composerPoint(t, i) {
+    var pos = 0;
+    for (var c = t.firstChild; c; c = c.nextSibling) {
+      var len = c.nodeType === 3 ? c.data.length : 1;
+      if (c.nodeType === 3 && i <= pos + len) return { node: c, off: i - pos };
+      pos += len;
+    }
+    return null;
+  }
+  function composerMentionRanges(t) {
+    var v = t.value || "", out = [], m;
+    if (v.indexOf("@") < 0) return out;
+    COMPOSE_MENTION_RE.lastIndex = 0;
+    while ((m = COMPOSE_MENTION_RE.exec(v))) {
+      var a = m.index + m[1].length, b = a + 1 + m[2].length;
+      var p = composerPoint(t, a), q = composerPoint(t, b);
+      if (p && q && p.node === q.node) {
+        var r = document.createRange();
+        r.setStart(p.node, p.off); r.setEnd(q.node, q.off);
+        out.push(r);
+      }
+      COMPOSE_MENTION_RE.lastIndex = Math.max(b, COMPOSE_MENTION_RE.lastIndex - 1);
+    }
+    return out;
+  }
+  function renderComposerMentions() {
+    var t = $("input"), form = $("compose");
+    if (!t || !form) return;
+    var ranges = composerMentionRanges(t);
+    if (window.CSS && CSS.highlights && window.Highlight) {
+      if (ranges.length) CSS.highlights.set("me-mention", new Highlight(...ranges)); else CSS.highlights.delete("me-mention");
+    }
+    if (!mentionLayer) {
+      mentionLayer = el("div", "compose-mention-layer");
+      mentionLayer.setAttribute("aria-hidden", "true");
+      form.appendChild(mentionLayer);
+    }
+    mentionLayer.textContent = "";
+    if (!ranges.length) return;
+    if (getComputedStyle(form).position === "static") form.style.position = "relative";
+    var fr = form.getBoundingClientRect(), tr = t.getBoundingClientRect();
+    ranges.forEach(function (r) {
+      Array.prototype.forEach.call(r.getClientRects(), function (rc) {
+        if (rc.width < 1 || rc.bottom <= tr.top || rc.top >= tr.bottom) return;
+        var pad = 3, d = el("div", "compose-mention-pill");
+        d.style.left = (rc.left - fr.left - pad) + "px";
+        d.style.top = (Math.max(rc.top, tr.top) - fr.top - 1) + "px";
+        d.style.width = (rc.width + pad * 2) + "px";
+        d.style.height = (Math.min(rc.bottom, tr.bottom) - Math.max(rc.top, tr.top) + 2) + "px";
+        mentionLayer.appendChild(d);
+      });
+    });
+  }
   function autosize() {
     var t = $("input");
     t.style.height = "auto";
     t.style.height = Math.min(t.scrollHeight, 260) + "px";
+    renderComposerMentions();
     // No sending while dictating: finish (Done) and review first.
     $("sendBtn").disabled = (!t.value.trim() && !state.pending.length) || state.transcribing || !!state.rec;
   }

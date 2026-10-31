@@ -1,5 +1,10 @@
 # Changelog
 
+
+## Unreleased - Composer mention highlight
+
+- Valid @mentions in the message box (including Car Mode) are highlighted as you type, in the same accent chip style as sent mentions.
+
 ## Unreleased - @mentions
 
 - Mentions in received messages ('@Full Name' or '@First') show as rounded chips, like Google Messages. Google sends mentions as plain text wrapped in non-breaking spaces.

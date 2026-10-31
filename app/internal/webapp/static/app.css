@@ -1270,3 +1270,9 @@ html.desk .jump-newest svg { width: 26px; height: 26px; }
 .mention-opt { text-align: left; padding: 10px 14px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
 .mention-opt.sel, .mention-opt:hover { background: rgba(62,139,255,.18); }
 html.car .mention-opt { padding: 16px 18px; font-size: 1.25em; }
+
+/* @mentions inside the composer: accent text + rounded translucent pill (layer drawn by app.js) */
+::highlight(me-mention) { color: var(--accent); }
+.compose-mention-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
+.compose-mention-pill { position: absolute; border-radius: 999px; background: rgba(127,127,127,.2); }
+html.car .compose-mention-pill { border-radius: 999px; }
