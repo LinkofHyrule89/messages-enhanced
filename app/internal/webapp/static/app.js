@@ -2167,15 +2167,35 @@
       new Date(a.TimestampMS).toDateString() === new Date(b.TimestampMS).toDateString();
   }
   // Small round photo of a group message's sender (initial-letter fallback).
-  function senderAvatar(m, c) {
-    var name = m.SenderName || m.SenderNumber || "?";
-    var av = el("div", "msg-avatar");
-    var bg = "hsl(" + hue(m.SenderNumber || name) + " 45% 38%)";
+  function senderParticipant(m, c) {
     var num = normalizeParticipantIdentifier(m.SenderNumber);
-    var p = conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).find(function (x) {
+    return conversationParticipants(c).filter(function (x) { return x && !isMe(x); }).find(function (x) {
       return (num && (normalizeParticipantIdentifier(x.number) === num || normalizeParticipantIdentifier(x.phone) === num)) ||
         (m.SenderName && (x.name || x.full_name || x.display_name) === m.SenderName);
     });
+  }
+  // Group sender color, as on the phone: the participant color Google assigns
+  // (its avatar color). Fallback: a stable pick from a light palette by number/name.
+  var SENDER_PALETTE = ["#f28b82", "#81c995", "#fdd663", "#8ab4f8", "#c58af9", "#fcad70", "#ff8bcb", "#78d9ec"];
+  // Avatar colors can be deep; lift dark ones toward white so names read on the dark thread.
+  function readableOnDark(hex) {
+    var n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    if (0.2126 * r + 0.7152 * g + 0.0722 * b >= 110) return hex;
+    var f = function (v) { return Math.round(v + (255 - v) * 0.45); };
+    return "rgb(" + f(r) + "," + f(g) + "," + f(b) + ")";
+  }
+  function senderColor(m, c) {
+    var p = senderParticipant(m, c), col = p && String(p.color || "");
+    if (/^#[0-9a-f]{6}$/i.test(col)) return readableOnDark(col);
+    var key = String(m.SenderNumber || m.SenderName || "?"), h = 0;
+    for (var i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+    return SENDER_PALETTE[Math.abs(h) % SENDER_PALETTE.length];
+  }
+  function senderAvatar(m, c) {
+    var name = m.SenderName || m.SenderNumber || "?";
+    var av = el("div", "msg-avatar");
+    var p = senderParticipant(m, c);
+    var bg = (p && /^#[0-9a-f]{6}$/i.test(String(p.color || ""))) ? p.color : "hsl(" + hue(m.SenderNumber || name) + " 45% 38%)";
     var r = p ? refsFor([p]) : { source: "sms", participantIDs: [], contactIDs: [], numbers: m.SenderNumber ? [m.SenderNumber] : [] };
     r.key = avatarLookupKey(r);
     var letter = (String(name).replace(/[^\p{L}\p{N}]/gu, "").charAt(0) || "#").toUpperCase();
@@ -2217,7 +2237,7 @@
       // Sender name above the bubble at the start of each run. ReplyToID is
       // ignored here — a reply that starts a run still shows the reply author
       // (Google Messages). Consecutive replies from the same person hide it.
-      if (groupChat && !m.IsFromMe && !prevSame) box.appendChild(el("div", "run-sender", fmtPhone(m.SenderName || m.SenderNumber || "Unknown")));
+      if (groupChat && !m.IsFromMe && !prevSame) { var rs = el("div", "run-sender", fmtPhone(m.SenderName || m.SenderNumber || "Unknown")); rs.style.color = senderColor(m, c); box.appendChild(rs); }
       row.dataset.id = m.MessageID;
       var bubble = el("div", "bubble");
       if (m.ReplyToID) bubble.appendChild(replyQuote(m, byID));

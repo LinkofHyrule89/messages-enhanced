@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.20 — 2026-10-31
+
+- Group chats: each sender name now uses that person's own color, as Google Messages does. The color is the one the phone assigns to the participant (sent with the participant data), so a name matches its avatar circle. If no color is sent, a stable pick from an 8-color palette by number or name is used. Names are adjusted for readability on dark and light themes. Applies to web, Car Mode and the Android app.
+
 ## v0.7.19
 
 - Reply quotes match the phone app: the quote sets the bubble width, so a short reply no longer squeezes a one-line quote; long quotes use the full bubble width and clamp at 4 lines (line breaks kept). Darker inset block, regular-weight name, no accent bar.

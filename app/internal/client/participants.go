@@ -21,6 +21,9 @@ type ParticipantInfo struct {
 	// was removed; Google's isVisible=false). Kept so older messages still
 	// resolve sender names; member lists skip them.
 	Hidden bool `json:"hidden,omitempty"`
+	// Color is the phone-assigned participant color (Google's avatarHexColor,
+	// "#RRGGBB"); the phone uses it for the avatar circle and group sender name.
+	Color string `json:"color,omitempty"`
 }
 
 // ParticipantsSnapshot builds the stored participants JSON and the avatar
@@ -49,6 +52,7 @@ func ParticipantsSnapshot(conv *gmproto.Conversation, source string, includeSelf
 			ContactID: p.GetContactID(),
 			FirstName: p.GetFirstName(),
 			Hidden:    anyVisible && !p.GetIsMe() && !p.GetIsVisible(),
+			Color:     p.GetAvatarHexColor(),
 		}
 		if id := p.GetID(); id != nil {
 			info.Number = id.GetNumber()
