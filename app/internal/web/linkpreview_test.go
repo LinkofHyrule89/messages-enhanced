@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"net/url"
 	"testing"
 	"time"
 
@@ -170,5 +171,19 @@ func TestLinkPreviewServiceEvictsLeastRecentlyUsedEntries(t *testing.T) {
 	}
 	if _, ok := service.cache[urlB]; ok {
 		t.Fatalf("expected %s to be evicted", urlB)
+	}
+}
+
+func TestYouTubeVideoID(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://www.youtube.com/watch?v=abcdefghijk&t=3": "abcdefghijk",
+		"https://youtu.be/abcdefghijk?si=x":               "abcdefghijk",
+		"https://m.youtube.com/shorts/abcdefghijk":        "abcdefghijk",
+		"https://example.com/watch?v=abcdefghijk":         "",
+	} {
+		u, _ := url.Parse(raw)
+		if got := youTubeVideoID(u); got != want {
+			t.Errorf("%s: got %q want %q", raw, got, want)
+		}
 	}
 }

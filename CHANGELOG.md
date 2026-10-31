@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.17
+
+- Link previews fill the bubble width with no grey side bars for tall/portrait images and video posts (X); height follows the image up to ~60% of the screen (400px), minimal crop past that.
+- Video previews (YouTube, X videos) show a play button; server sends is_video and image size.
+- YouTube previews (watch, youtu.be, shorts, live) now come from YouTube oEmbed + i.ytimg thumbnail, so they no longer vanish when the watch page is huge or behind a consent/bot page. Page read limit raised to 3 MB.
+- Long-press on a link preview opens the message menu instead of the browser link menu.
+
 ## v0.7.16
 
 - Reply quotes size to their own content (one line, or up to 3 lines when long) and the bubble widens to fit; short replies like "Oh nice" no longer squeeze the quote (v0.7.8 rule restored).

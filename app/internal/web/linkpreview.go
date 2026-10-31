@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +37,9 @@ type LinkPreview struct {
 	SiteName    string `json:"site_name,omitempty"`
 	IconURL     string `json:"icon_url,omitempty"`
 	Domain      string `json:"domain,omitempty"`
+	IsVideo     bool   `json:"is_video,omitempty"`
+	ImageWidth  int    `json:"image_width,omitempty"`
+	ImageHeight int    `json:"image_height,omitempty"`
 }
 
 type LinkPreviewFetcher func(ctx context.Context, rawURL string) (*LinkPreview, error)
@@ -139,6 +145,12 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 		return preview, nil
 	}
 
+	if id := youTubeVideoID(parsedURL); id != "" {
+		preview := s.fetchYouTube(ctx, normalizedURL, id)
+		s.store(normalizedURL, preview)
+		return cloneLinkPreview(preview), nil
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalizedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidLinkPreviewURL, err)
@@ -167,7 +179,7 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 		return nil, ErrNoLinkPreview
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 3<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read link preview: %w", err)
 	}
@@ -453,6 +465,9 @@ func extractLinkPreview(body []byte, baseURL *url.URL) (*LinkPreview, error) {
 		ImageURL:    resolvePreviewURL(baseURL, firstNonEmpty(meta["og:image"], meta["twitter:image"], meta["twitter:image:src"], meta["image"])),
 		SiteName:    firstNonEmpty(meta["og:site_name"], meta["application-name"]),
 		IconURL:     resolvePreviewURL(baseURL, icon),
+		IsVideo:     firstNonEmpty(meta["og:video"], meta["og:video:url"], meta["og:video:secure_url"], meta["twitter:player"]) != "" || strings.Contains(firstNonEmpty(meta["og:image"], meta["twitter:image"]), "video_thumb"),
+		ImageWidth:  atoiSafe(meta["og:image:width"]),
+		ImageHeight: atoiSafe(meta["og:image:height"]),
 	}
 	if preview.IconURL == "" && baseURL != nil && (baseURL.Scheme == "http" || baseURL.Scheme == "https") && baseURL.Host != "" {
 		preview.IconURL = baseURL.Scheme + "://" + baseURL.Host + "/favicon.ico"
@@ -554,4 +569,94 @@ func prettifyPreviewHost(host string) string {
 		return host
 	}
 	return strings.ToUpper(label[:1]) + label[1:]
+}
+
+func atoiSafe(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+var youTubeIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+
+// youTubeVideoID returns the 11-char video id for watch, youtu.be, shorts,
+// live and embed links, or "" if the URL is not a YouTube video.
+func youTubeVideoID(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
+	host = strings.TrimPrefix(host, "m.")
+	var id string
+	switch host {
+	case "youtu.be":
+		id = strings.Trim(u.Path, "/")
+	case "youtube.com", "music.youtube.com", "youtube-nocookie.com":
+		if u.Path == "/watch" {
+			id = u.Query().Get("v")
+		} else {
+			parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+			if len(parts) >= 2 && (parts[0] == "shorts" || parts[0] == "live" || parts[0] == "embed" || parts[0] == "v") {
+				id = parts[1]
+			}
+		}
+	}
+	if youTubeIDPattern.MatchString(id) {
+		return id
+	}
+	return ""
+}
+
+// fetchYouTube builds a preview from YouTube's oEmbed endpoint, which is not
+// subject to the consent/bot interstitials or huge watch-page HTML. It always
+// returns a usable preview (thumbnail from i.ytimg.com) even if oEmbed fails.
+func (s *LinkPreviewService) fetchYouTube(ctx context.Context, link, id string) *LinkPreview {
+	preview := &LinkPreview{
+		URL:         link,
+		Title:       "YouTube",
+		ImageURL:    "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg",
+		SiteName:    "YouTube",
+		IconURL:     "https://www.youtube.com/favicon.ico",
+		Domain:      "youtube.com",
+		IsVideo:     true,
+		ImageWidth:  480,
+		ImageHeight: 360,
+	}
+	q := url.Values{"url": {"https://www.youtube.com/watch?v=" + id}, "format": {"json"}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.youtube.com/oembed?"+q.Encode(), nil)
+	if err != nil {
+		return preview
+	}
+	req.Header.Set("User-Agent", "OpenMessage/1.0 (+https://openmessage.ai)")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return preview
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return preview
+	}
+	var o struct {
+		Title        string `json:"title"`
+		AuthorName   string `json:"author_name"`
+		ThumbnailURL string `json:"thumbnail_url"`
+		ThumbW       int    `json:"thumbnail_width"`
+		ThumbH       int    `json:"thumbnail_height"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&o) != nil {
+		return preview
+	}
+	if o.Title != "" {
+		preview.Title = truncatePreviewText(o.Title, 180)
+	}
+	preview.Description = truncatePreviewText(o.AuthorName, 320)
+	if strings.HasPrefix(o.ThumbnailURL, "https://i.ytimg.com/") {
+		preview.ImageURL = o.ThumbnailURL
+		if o.ThumbW > 0 && o.ThumbH > 0 {
+			preview.ImageWidth, preview.ImageHeight = o.ThumbW, o.ThumbH
+		}
+	}
+	return preview
 }

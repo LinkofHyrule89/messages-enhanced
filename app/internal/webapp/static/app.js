@@ -1680,6 +1680,7 @@
   function fillPreviewCard(slot, url, p) {
     slot.textContent = "";
     var a = el("a", "link-card");
+    a.draggable = false;
     a.href = p.url || url;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
@@ -1695,8 +1696,10 @@
       im.addEventListener("load", function () { media.classList.remove("loading"); });
       im.addEventListener("error", function () { if (media.parentNode) media.parentNode.removeChild(media); });
       if (p.image_width > 0 && p.image_height > 0) { im.width = p.image_width; im.height = p.image_height; }
+      im.draggable = false;
       im.src = img;
       media.appendChild(im);
+      if (p.is_video) { media.classList.add("video"); media.appendChild(el("span", "link-card-play")); }
       a.appendChild(media);
     }
     var copy = el("div", "link-card-copy");

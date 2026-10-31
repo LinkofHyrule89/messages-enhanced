@@ -1414,3 +1414,12 @@ html .bubble .link-card-desc { margin-top: 8px; color: rgba(255, 255, 255, .85);
 .link-card-foot img { width: 28px; height: 28px; border-radius: 6px; flex: none; background: rgba(255, 255, 255, .1); object-fit: contain; }
 .link-card-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 html .bubble .link-card-slot + .meta, html .bubble .link-card-slot + .reactions { margin-top: 14px; }
+
+/* v0.7.17: previews fill the bubble width (no grey side bars); very tall
+   images crop minimally from the top-center at the height cap. Links don't
+   steal long-press so the message menu opens. */
+html .bubble .link-card, html .bubble .link-card img { -webkit-touch-callout: none; -webkit-user-drag: none; user-select: none; }
+html .bubble .link-card-media { background: transparent; position: relative; display: block; }
+html .bubble .link-card-media img { width: 100%; max-width: 100%; height: auto; max-height: min(60vh, 400px); object-fit: cover; object-position: center top; }
+.link-card-play { position: absolute; left: 50%; top: 50%; width: 68px; height: 68px; margin: -34px 0 0 -34px; border-radius: 50%; background: rgba(0,0,0,.55); pointer-events: none; }
+.link-card-play::after { content: ""; position: absolute; left: 26px; top: 20px; border-style: solid; border-width: 14px 0 14px 22px; border-color: transparent transparent transparent #fff; }
