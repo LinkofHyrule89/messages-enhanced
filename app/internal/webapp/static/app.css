@@ -1288,6 +1288,3 @@ html.car .compose-mention-pill { border-radius: 999px; }
 html.car .mention-picker { border-radius: 32px; max-height: 420px; }
 html.car .mention-opt { padding: 16px 26px; gap: 20px; font-size: 1.25em; }
 html.car .mention-opt .mention-avatar { width: 48px; height: 48px; min-width: 48px; font-size: 19px; }
-
-/* Deleted-for-everyone placeholder */
-.bubble.deleted .deleted-body { font-style: italic; opacity: .7; }

@@ -26,7 +26,7 @@ func IsEmptyStubMessage(m *Message) bool {
 		return false
 	}
 	status := strings.ToUpper(strings.TrimSpace(m.Status))
-	if status == "" || strings.HasPrefix(status, "TOMBSTONE") || status == StatusMessageDeleted {
+	if status == "" || strings.HasPrefix(status, "TOMBSTONE") {
 		return false
 	}
 	for _, marker := range pendingStatusMarkers {
@@ -43,7 +43,6 @@ const emptyStubSQLPredicate = `
 	TRIM(body) = '' AND TRIM(COALESCE(media_id,'')) = '' AND TRIM(COALESCE(reactions,'')) = ''
 	AND TRIM(status) != ''
 	AND upper(status) NOT LIKE 'TOMBSTONE%'
-	AND upper(status) != 'MESSAGE_DELETED'
 	AND upper(status) NOT LIKE '%DOWNLOADING%' AND upper(status) NOT LIKE '%UPLOADING%'
 	AND upper(status) NOT LIKE '%SENDING%' AND upper(status) NOT LIKE '%YET_TO_SEND%'
 	AND upper(status) NOT LIKE '%PROCESSING%' AND upper(status) NOT LIKE '%VALIDATING%'

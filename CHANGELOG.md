@@ -2,12 +2,6 @@
 
 
 
-## Unreleased - Deleted and edited messages
-
-- A message its sender deleted for everyone now stays in the thread as "This message was deleted" instead of disappearing.
-- While your own delete-for-everyone is pending, the bubble says "Deleting for everyone…".
-- When the phone passes on an edited message, the latest text shows with an "Edited" label. The server logs "Message edit detected" (IDs and lengths only).
-
 ## Unreleased - Mention picker restyle
 
 - The @mention picker is now a rounded dark card above the composer with a round photo (or initials) and "@Full Name" per member, with no header. It works in Car Mode too, and Esc or tapping outside closes it.

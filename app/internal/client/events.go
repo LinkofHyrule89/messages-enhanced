@@ -156,21 +156,7 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 	// an update with status MESSAGE_DELETED: drop the local row instead of
 	// re-storing it.
 	if msg.GetMessageStatus().GetStatus() == gmproto.MessageStatusType_MESSAGE_DELETED {
-		if existing, err := h.Store.GetMessageByID(msg.GetMessageID()); err == nil && existing != nil && !existing.IsFromMe {
-			// Incoming message the sender deleted for everyone: keep a
-			// "This message was deleted" placeholder instead of vanishing.
-			h.Logger.Info().Str("conv_id", existing.ConversationID).Str("msg_id", existing.MessageID).Msg("Incoming message deleted for everyone")
-			if err := h.Store.MarkMessageDeletedForEveryone(existing.MessageID); err != nil {
-				h.Logger.Warn().Err(err).Str("conv_id", existing.ConversationID).Msg("Failed to mark deleted message")
-				return
-			}
-			if h.OnMessagesChange != nil {
-				h.OnMessagesChange(existing.ConversationID)
-			}
-			if h.OnConversationsChange != nil {
-				h.OnConversationsChange()
-			}
-		} else if err == nil && existing != nil {
+		if existing, err := h.Store.GetMessageByID(msg.GetMessageID()); err == nil && existing != nil {
 			if err := h.Store.DeleteMessageByID(existing.MessageID); err != nil {
 				h.Logger.Warn().Err(err).Str("conv_id", existing.ConversationID).Msg("Failed to remove deleted message")
 				return
@@ -248,18 +234,6 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 		isNew = !exists
 	}
 	isNewOwn := dbMsg.IsFromMe && isNew
-	// Incoming edit: Google re-delivers the same message ID with new text.
-	// Content is never logged, only that an edit happened.
-	if !isNew && !dbMsg.IsFromMe && strings.TrimSpace(dbMsg.Body) != "" {
-		if old, err := h.Store.GetMessageByID(dbMsg.MessageID); err == nil && old != nil &&
-			strings.TrimSpace(old.Body) != "" && old.Status != db.StatusMessageDeleted && old.Body != dbMsg.Body {
-			h.Logger.Info().Str("conv_id", dbMsg.ConversationID).Str("msg_id", dbMsg.MessageID).
-				Int("old_len", len(old.Body)).Int("new_len", len(dbMsg.Body)).Str("status", status).Msg("Message edit detected")
-			if err := h.Store.MarkMessageEdited(dbMsg.MessageID, dbMsg.ConversationID); err != nil {
-				h.Logger.Warn().Err(err).Msg("Failed to record message edit")
-			}
-		}
-	}
 
 	if err := h.Store.UpsertMessage(dbMsg); err != nil {
 		h.Logger.Error().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to store message")
