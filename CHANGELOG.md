@@ -2,6 +2,10 @@
 
 
 
+## Unreleased - Mention picker restyle
+
+- The @mention picker is now a rounded dark card above the composer with a round photo (or initials) and "@Full Name" per member, with no header. It works in Car Mode too, and Esc or tapping outside closes it.
+
 ## Unreleased - Mention pushes, reply quotes
 
 - Push notifications now carry `mentions_me`, so the Android app can show "<Sender> mentioned you".

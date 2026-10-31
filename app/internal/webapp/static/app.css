@@ -1278,3 +1278,13 @@ html.car .mention-opt { padding: 16px 18px; font-size: 1.25em; }
 .compose-mention-layer { position: absolute; inset: 0; pointer-events: none; z-index: 2; overflow: hidden; }
 .compose-mention-pill { position: absolute; border-radius: 999px; background: rgba(127,127,127,.2); }
 html.car .compose-mention-pill { border-radius: 999px; }
+
+/* @mention picker, Google Messages style: rounded dark card just above the composer, photo + @Full Name rows */
+.mention-picker { margin: 0 8px 8px; padding: 8px 0; max-height: 320px; background: #1e1f22; border-radius: 24px; box-shadow: 0 6px 24px rgba(0,0,0,.45); }
+.mention-opt { display: flex; align-items: center; gap: 16px; padding: 10px 20px; font-weight: 400; color: #e3e3e3; border-radius: 0; }
+.mention-opt.sel, .mention-opt:hover { background: rgba(255,255,255,.08); }
+.mention-opt .mention-avatar { width: 32px; height: 32px; min-width: 32px; font-size: 13px; flex: none; }
+.mention-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.car .mention-picker { border-radius: 32px; max-height: 420px; }
+html.car .mention-opt { padding: 16px 26px; gap: 20px; font-size: 1.25em; }
+html.car .mention-opt .mention-avatar { width: 48px; height: 48px; min-width: 48px; font-size: 19px; }

@@ -2278,12 +2278,16 @@
 
   // ---------- compose ----------
   // ---- @mentions in group chats (Google style) ----
-  var NB = "\u00A0", mentionSel = 0, mentionList = [];
+  var NB = "\u00A0", mentionSel = 0, mentionList = [], mentionPeople = {}, mentionDismissedAt = -1;
   function mentionMembers() {
     var c = (state.convs || []).find(function (x) { return x.ConversationID === state.current; });
     if (!c || !c.IsGroup || sourcePlatformOf(c) !== "sms") return [];
-    return currentMembers(c).others.map(function (p) { return String(p.name || p.first_name || "").trim(); })
-      .filter(function (n) { return n && !/^[+\d\s()-]+$/.test(n); });
+    mentionPeople = {};
+    return currentMembers(c).others.map(function (p) {
+      var n = String(p.name || p.first_name || "").trim();
+      if (n) mentionPeople[n] = p;
+      return n;
+    }).filter(function (n) { return n && !/^[+\d\s()-]+$/.test(n); });
   }
   function mentionQuery() {
     var t = $("input"), v = t.value, pos = t.selectionStart;
@@ -2299,6 +2303,8 @@
   function updateMentions() {
     var b = $("mentionPicker"), mq = mentionQuery(), names = mq ? mentionMembers() : [];
     if (!b || !mq || !names.length) return hideMentions();
+    if (mq.at === mentionDismissedAt) return hideMentions(); // Esc: stay closed for this @
+    mentionDismissedAt = -1;
     var lo = mq.q.toLowerCase();
     mentionList = names.filter(function (n) {
       return !lo || n.toLowerCase().indexOf(lo) === 0 || n.toLowerCase().split(/\s+/).some(function (w) { return w.indexOf(lo) === 0; });
@@ -2307,7 +2313,10 @@
     mentionSel = Math.min(mentionSel, mentionList.length - 1);
     b.textContent = "";
     mentionList.forEach(function (n, i) {
-      var it = el("button", "mention-opt" + (i === mentionSel ? " sel" : ""), "@" + n);
+      var it = el("button", "mention-opt" + (i === mentionSel ? " sel" : ""));
+      var p = mentionPeople[n] || {};
+      it.appendChild(contactAvatar({ name: n, number: p.number, participant_id: p.id, contact_id: p.contact_id }, "avatar mention-avatar"));
+      it.appendChild(el("span", "mention-name", "@" + n));
       it.type = "button";
       it.addEventListener("pointerdown", function (e) { e.preventDefault(); pickMention(n); });
       b.appendChild(it);
@@ -2347,7 +2356,7 @@
     if (b && !b.hidden && mentionList.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); mentionSel = (mentionSel + (e.key === "ArrowDown" ? 1 : mentionList.length - 1)) % mentionList.length; updateMentions(); return true; }
       if ((e.key === "Enter" || e.key === "Tab") && !e.isComposing) { e.preventDefault(); pickMention(mentionList[mentionSel]); return true; }
-      if (e.key === "Escape") { e.preventDefault(); hideMentions(); return true; }
+      if (e.key === "Escape") { e.preventDefault(); var dq = mentionQuery(); mentionDismissedAt = dq ? dq.at : -1; hideMentions(); return true; }
     }
     if (e.key === "Backspace" && !e.isComposing) return mentionBackspace(e);
     return false;
