@@ -404,6 +404,9 @@ type notification struct {
 	Person string `json:"person,omitempty"`
 	Phone  string `json:"phone,omitempty"`
 	Group  bool   `json:"group,omitempty"`
+	// MentionsMe: the message @mentions the owner (sent even when text is
+	// hidden, so the app can say "<Sender> mentioned you").
+	MentionsMe bool `json:"mentions_me,omitempty"`
 }
 
 func (h *PushHub) markSeenLocked(id string) bool {
@@ -516,14 +519,15 @@ func buildNotification(conv PushConversation, m PushMessage, count int, hide boo
 		body = fmt.Sprintf("%s (+%d more)", body, count-1)
 	}
 	n := notification{
-		Title: title,
-		Body:  body,
-		Tag:   pushTag(conv.ID),
-		URL:   "/app/?c=" + url.QueryEscape(conv.ID),
-		Conv:  conv.ID,
-		Type:  "message",
-		TS:    now.UnixMilli(),
-		Group: conv.IsGroup,
+		Title:      title,
+		Body:       body,
+		Tag:        pushTag(conv.ID),
+		URL:        "/app/?c=" + url.QueryEscape(conv.ID),
+		Conv:       conv.ID,
+		Type:       "message",
+		TS:         now.UnixMilli(),
+		Group:      conv.IsGroup,
+		MentionsMe: m.MentionsMe,
 	}
 	if !hide {
 		n.Person = strings.TrimSpace(m.SenderName)

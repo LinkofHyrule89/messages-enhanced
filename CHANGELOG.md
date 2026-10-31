@@ -1,6 +1,13 @@
 # Changelog
 
 
+
+## Unreleased - Mention pushes, reply quotes
+
+- Push notifications now carry `mentions_me`, so the Android app can show "<Sender> mentioned you".
+- Reply quotes inside bubbles size to their own content: the sender name is never cut off, and the quoted text shows up to 3 lines (including Car Mode).
+- Tapping a reply quote scrolls to the original and flashes it. If the original isn't loaded, older history is loaded (capped) until it's found, or "Message not available" is shown.
+
 ## Unreleased - Composer mention highlight
 
 - Valid @mentions in the message box (including Car Mode) are highlighted as you type, in the same accent chip style as sent mentions.

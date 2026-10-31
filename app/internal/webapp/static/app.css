@@ -148,7 +148,9 @@ a { color: var(--accent); }
   border-radius: 12px; background: rgba(0,0,0,.22); color: rgba(255,255,255,.72); font-size: 22px; line-height: 1.3; cursor: pointer; }
 .reply-quote-missing { cursor: default; font-style: italic; }
 .reply-quote-name { font-weight: 700; color: rgba(255,255,255,.85); }
-.reply-quote-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.reply-quote-name { white-space: normal; overflow-wrap: anywhere; }
+/* Quote sizes to its own content (bubble = max(reply, quote) up to max-width); text up to 3 lines. */
+.reply-quote-text { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
 .msg-row.flash .bubble { box-shadow: 0 0 0 4px rgba(255,255,255,.5); }
 .reply-bar { flex: none; display: flex; align-items: center; gap: 20px; padding: 12px 24px 12px 30px; background: var(--panel);
   border-top: 1px solid var(--line); border-left: 8px solid var(--accent); }

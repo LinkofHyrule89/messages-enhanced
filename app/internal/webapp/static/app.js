@@ -1770,21 +1770,45 @@
     var body = orig ? (msgSnippetSource(orig) || "Media") : "Original message";
     body = body.replace(/\s+/g, " ");
     if (orig) q.appendChild(el("span", "reply-quote-name", msgAuthor(orig)));
-    q.appendChild(el("span", "reply-quote-text", body.length > 60 ? body.substring(0, 60) + "…" : body));
-    if (orig) {
-      q.addEventListener("click", function () {
-        var rows = $("messages").querySelectorAll(".msg-row");
-        for (var i = 0; i < rows.length; i++) {
-          if (rows[i].dataset.id === String(m.ReplyToID)) {
-            rows[i].scrollIntoView({ block: "center", behavior: "smooth" });
-            rows[i].classList.add("flash");
-            (function (r) { setTimeout(function () { r.classList.remove("flash"); }, 1200); })(rows[i]);
-            break;
-          }
-        }
+    q.appendChild(el("span", "reply-quote-text", body.length > 240 ? body.substring(0, 240) + "…" : body));
+    q.addEventListener("click", function (e) { e.stopPropagation(); goToMessage(String(m.ReplyToID)); });
+    return q;
+  }
+
+  // Tap a reply quote: scroll to the original and flash it. If it isn't
+  // loaded, page older history (doubling, capped) until it is.
+  var GOTO_CAP = 2000, gotoBusy = null;
+  function findRow(id) {
+    var rows = $("messages").querySelectorAll(".msg-row");
+    for (var i = 0; i < rows.length; i++) if (rows[i].dataset.id === id) return rows[i];
+    return null;
+  }
+  function flashRow(r) {
+    r.scrollIntoView({ block: "center", behavior: "smooth" });
+    r.classList.remove("flash"); void r.offsetWidth; r.classList.add("flash");
+    setTimeout(function () { r.classList.remove("flash"); }, 1400);
+    setTimeout(updateJumpBtn, 700); // show go-to-newest
+  }
+  function goToMessage(id) {
+    if (!id) return;
+    var r = findRow(id);
+    if (r) { flashRow(r); return; }
+    var conv = state.current;
+    if (!conv || state.folder || gotoBusy === id) { if (state.folder) toast("Message not available"); return; }
+    gotoBusy = id;
+    function step() {
+      if (state.current !== conv) { gotoBusy = null; return; }
+      var have = state.serverMsgs && state.serverMsgs.id === conv ? state.serverMsgs.msgs.length : 0;
+      var cur = state.msgLimit && state.msgLimit.id === conv ? state.msgLimit.n : 80;
+      if (cur >= GOTO_CAP || have < cur) { gotoBusy = null; toast("Message not available"); return; }
+      state.msgLimit = { id: conv, n: Math.min(cur * 2, GOTO_CAP) };
+      loadMessages(false, false).then(function () {
+        var row = findRow(id);
+        if (row) { gotoBusy = null; flashRow(row); } else step();
       });
     }
-    return q;
+    toast("Finding the original message…");
+    step();
   }
 
   // ---------- pending send placeholders ----------
