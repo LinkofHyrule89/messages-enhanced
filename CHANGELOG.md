@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased - Disconnected grace
+
+- The "Google Messages is disconnected" banner and the Disconnected status dot now need 45 seconds of continuous disconnection (was 30 s for the banner, 25 s for the dot), so server restarts and VPN blips no longer flash them. Phone offline stays at 25 s.
+- A connected pairing poll (every 15 s) clears a stale Google-down banner at once instead of waiting for the 60 s health poll.
+
 ## 2026-10-30
 
 - **Link previews hide the raw URL:** when a message shows a preview card, the previewed link is removed from the bubble text (a link-only message shows just the card). No card, no change.

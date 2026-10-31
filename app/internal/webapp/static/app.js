@@ -2768,12 +2768,12 @@
   // ---------- health banner ----------
   // GET /api/app/health: Google connection / VPN checks from the server's
   // monitor (which also sends the Web Push alerts). Shown once a check has
-  // been failing for 30 s.
+  // been failing for 30 s (VPN) / 45 s continuously (Google, so restarts don't flash it).
   function pollHealth() {
     api("/api/app/health").then(function (h) {
       var now = Date.now(), lines = [];
       ((h && h.checks) || []).forEach(function (c) {
-        if (c.ok || !c.down_since_ms || now - c.down_since_ms < 30000) return;
+        if (c.ok || !c.down_since_ms || now - c.down_since_ms < (c.name === "vpn" ? 30000 : 45000)) return;
         var what = c.name === "vpn" ? "VPN is down" : "Google Messages is disconnected";
         lines.push(what + (c.detail ? " (" + c.detail + ")" : "") + " since " + clockTime(c.down_since_ms) + ". New messages may be delayed.");
       });
@@ -4981,7 +4981,7 @@
     else {
       var now = Date.now();
       if (!connGate.badSince) connGate.badSince = now;
-      if (b.dataset.state && (now - connGate.badSince < 25000 || now < netGate.quietUntil)) return;
+      if (b.dataset.state && (now - connGate.badSince < (text === "Disconnected" ? 45000 : 25000) || now < netGate.quietUntil)) return;
     }
     b.className = "conn-dot conn-" + kind;
     $("connText").textContent = text;
@@ -4999,6 +4999,9 @@
     $("pairBtn").hidden = !needsPair && !(p && p.pairing && p.pairing.state === "emoji");
     if (needsPair) setConn("Not paired", "warn");
     else if (connected) {
+      // Reconnected: drop a stale Google-down banner now, not at the next 60 s health poll.
+      var hb = $("healthBanner");
+      if (hb && !hb.hidden && /Google Messages is disconnected/.test(hb.textContent) && !/VPN/.test(hb.textContent)) hb.hidden = true;
       var phone = g.phone_responding !== undefined ? g.phone_responding : g.PhoneResponding;
       setConn(phone === false ? "Phone offline" : "Connected", phone === false ? "warn" : "ok");
     } else if (connecting) setConn("Connecting", "warn");
