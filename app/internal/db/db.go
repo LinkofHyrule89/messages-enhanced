@@ -66,6 +66,8 @@ type Message struct {
 	// Google's status text for an outgoing message ("Read by Alice, Bob"
 	// in RCS groups). Not a messages column: see FillStatusText.
 	StatusText string `json:"status_text,omitempty"`
+	// The sender changed the text after it arrived (see message_edits).
+	Edited bool `json:"edited,omitempty"`
 }
 
 type Contact struct {

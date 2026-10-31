@@ -531,8 +531,9 @@
   // and order change at once even if the server's list row lags; a patch is
   // dropped once the server's row is as new.
   state.convPatch = {}; // conv id -> { ts, preview }
+  function isDeletedMsg(m) { return String((m && m.Status) || "").toUpperCase() === "MESSAGE_DELETED"; }
   function msgPreview(m, conv) {
-    var t = String(m.Body || "").replace(/\s+/g, " ").trim();
+    var t = isDeletedMsg(m) ? "This message was deleted" : String(m.Body || "").replace(/\s+/g, " ").trim();
     if (m.MediaID && (!t || GENERIC_MEDIA_BODY[t] || BARE_FILENAME.test(t))) {
       var mt = String(m.MimeType || "");
       t = /^image\//.test(mt) ? "Photo" : /^video\//.test(mt) ? "Video" : /^audio\//.test(mt) ? "Audio" : "Attachment";
@@ -1742,6 +1743,7 @@
     return svg;
   }
   function msgSnippetSource(m) {
+    if (isDeletedMsg(m)) return "This message was deleted";
     if (isImageMessage(m)) return imageCaption(m) || "Photo";
     return m.Body || (m.MediaID || m.MimeType ? "Media" : "");
   }
@@ -1917,7 +1919,10 @@
       var bubble = el("div", "bubble");
       if (m.ReplyToID) bubble.appendChild(replyQuote(m, byID));
 
-      if (isVideoMessage(m)) {
+      if (isDeletedMsg(m)) {
+        bubble.classList.add("deleted");
+        bubble.appendChild(el("div", "body deleted-body", "This message was deleted"));
+      } else if (isVideoMessage(m)) {
         bubble.classList.add("has-media");
         bubble.appendChild(videoNode(m));
         var caption = String(m.Body || "").trim();
@@ -1931,7 +1936,7 @@
       } else {
         bubble.appendChild(m.MediaID ? iconEl("div", "body media-label", "attach", m.MimeType || "attachment") : el("div", "body", ""));
       }
-      var meta = el("div", "meta", clockTime(m.TimestampMS) + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
+      var meta = el("div", "meta", clockTime(m.TimestampMS) + (m.edited && !isDeletedMsg(m) ? " · Edited" : "") + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
       if (state.stars[m.MessageID]) { var sm = el("span", "star-mark", "\u2605"); sm.setAttribute("aria-label", "Starred"); meta.insertBefore(sm, meta.firstChild); }
       if (state.selecting && state.selected[m.MessageID]) row.classList.add("selected");
       if (isDesk()) row.appendChild(timeLabel(m));
@@ -2216,6 +2221,7 @@
   function statusNode(m, c, groupChat) {
     var s = String(m.Status || "").toUpperCase();
     if (s === "OUTGOING_SCHEDULED") return el("div", "msg-status", "Scheduled");
+    if (/REVOCATION/.test(s)) return el("div", "msg-status", "Deleting for everyone…");
     var kind = statusKind(m);
     if (!kind) return null;
     var box = el("div", "msg-status rcpt-row");
@@ -2271,6 +2277,7 @@
     if (s === "OUTGOING_DELIVERED") return { text: "Delivered" };
     if (s === "OUTGOING_COMPLETE" || s === "OUTGOING_NOT_DELIVERED_YET") return { text: "Sent" };
     if (s === "OUTGOING_SCHEDULED") return { text: "Scheduled" };
+    if (/REVOCATION/.test(s)) return { text: "Deleting for everyone…" };
     if (/FAIL|CANCELED/.test(s)) return null; // the bubble already says "Failed"
     if (/SENDING|YET_TO_SEND|VALIDATING|PROCESSING|AWAITING_RETRY|REVOCATION/.test(s)) return { text: "Sending…" };
     return null;

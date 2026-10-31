@@ -1021,6 +1021,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 				msgs = []*db.Message{}
 			}
 			store.FillStatusText(msgs)
+			store.FillEdited(msgs)
 			writeJSON(w, msgs)
 			return
 		}
@@ -1062,6 +1063,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			msgs = []*db.Message{}
 		}
 		store.FillStatusText(msgs)
+		store.FillEdited(msgs)
 		writeJSON(w, msgs)
 	})
 
