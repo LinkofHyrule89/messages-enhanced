@@ -2228,7 +2228,8 @@
       } else {
         bubble.appendChild(el("div", "body", ""));
       }
-      if (m.MediaID && !isDeletedMsg(m) && !isVideoMessage(m) && !isImageMessage(m) && !isMMSDownload(m)) {
+      if (m.MediaID && !isDeletedMsg(m) && !isVideoMessage(m) && !isImageMessage(m) && !isMMSDownload(m) &&
+          !((MERich.kind(m.MimeType, m.Body) === "file" || MERich.kind(m.MimeType, m.Body) === "pushloc") && /https?:\/\//i.test(String(m.Body || "")))) {
         var rk = MERich.kind(m.MimeType, m.Body);
         var bodyEl = bubble.querySelector(":scope > .body");
         if (bodyEl && (rk !== "file" || !String(m.Body || "").trim() || GENERIC_MEDIA_BODY[String(m.Body).trim()] || /\.[a-z0-9]{1,5}$/i.test(String(m.Body).trim()))) bodyEl.remove();

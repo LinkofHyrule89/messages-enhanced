@@ -7,6 +7,7 @@
 - Stickers without a bubble; one-time code "Copy code" and payment amount chips.
 - System notices (missed calls, encryption/security changes, verification, scam warnings) render as centered notices, including MESSAGE_STATUS_TOMBSTONE_* statuses.
 - RCS rich cards, carousels and suggested replies/actions render when they arrive.
+- No "[attachment]" label above link and location preview cards.
 - Better MIME detection for attachments, and older RCS location pushes become location messages.
 
 ## v0.7.13
