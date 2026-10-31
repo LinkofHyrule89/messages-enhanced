@@ -1433,3 +1433,12 @@ html .bubble .reply-quote { width: auto; min-width: 0; max-width: none; align-se
 html .bubble .reply-quote-name { font-weight: 400; font-size: 19px; color: rgba(255, 255, 255, .8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html .bubble .reply-quote-text { font-size: 18px; color: rgba(255, 255, 255, .85); white-space: pre-line; -webkit-line-clamp: 4; line-clamp: 4; }
 .bubble .sender, .thread-view.themed .bubble .sender { color: #f2c94c; font-weight: 500; }
+
+/* v0.7.20: big emoji sized like the phone (~64dp) and laid out as real space:
+   no grouped negative margin pulls it (or the next row) under a neighbour. */
+.emoji-anim-img { width: 64px; height: 64px; display: block; }
+html:not(.desk) .emoji-anim-img { width: 84px; height: 84px; }
+.emoji-anim-txt { font-size: 52px; }
+html:not(.desk) .emoji-anim-txt { font-size: 70px; }
+.bubble.emoji-only { overflow: visible; padding: 4px 0; }
+html .msg-row.emoji-only-row, html .msg-row.emoji-only-row + .msg-row { margin-top: 6px; margin-bottom: 4px; }
