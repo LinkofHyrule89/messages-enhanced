@@ -1675,6 +1675,10 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			preview = cloneLinkPreview(preview)
 			preview.ImageURL = "/api/link-preview-image?url=" + url.QueryEscape(preview.ImageURL)
 		}
+		if strings.TrimSpace(preview.IconURL) != "" {
+			preview = cloneLinkPreview(preview)
+			preview.IconURL = "/api/link-preview-image?url=" + url.QueryEscape(preview.IconURL)
+		}
 		writeJSON(w, preview)
 	})
 

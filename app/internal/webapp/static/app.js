@@ -1700,10 +1700,22 @@
       a.appendChild(media);
     }
     var copy = el("div", "link-card-copy");
-    var site = p.site_name || p.domain || "";
-    if (site) copy.appendChild(el("div", "link-card-site", fontSafe(site)));
     if (p.title) copy.appendChild(el("div", "link-card-title", fontSafe(p.title)));
     if (p.description) copy.appendChild(el("div", "link-card-desc", fontSafe(p.description)));
+    var dom = String(p.domain || "").replace(/^www\./i, "") || p.site_name || "";
+    if (dom) {
+      var foot = el("div", "link-card-foot");
+      var ic = String(p.icon_url || "");
+      if (ic && ic.charAt(0) === "/" && ic.charAt(1) !== "/") {
+        var fav = el("img");
+        fav.alt = ""; fav.loading = "lazy"; fav.decoding = "async"; fav.referrerPolicy = "no-referrer";
+        fav.addEventListener("error", function () { if (fav.parentNode) fav.parentNode.removeChild(fav); });
+        fav.src = ic;
+        foot.appendChild(fav);
+      }
+      foot.appendChild(el("span", "", fontSafe(dom)));
+      copy.appendChild(foot);
+    }
     a.appendChild(copy);
     slot.appendChild(a);
   }

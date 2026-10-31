@@ -32,6 +32,7 @@ type LinkPreview struct {
 	Description string `json:"description,omitempty"`
 	ImageURL    string `json:"image_url,omitempty"`
 	SiteName    string `json:"site_name,omitempty"`
+	IconURL     string `json:"icon_url,omitempty"`
 	Domain      string `json:"domain,omitempty"`
 }
 
@@ -244,7 +245,7 @@ func (s *LinkPreviewService) FetchImage(ctx context.Context, rawURL string) ([]b
 
 func isAllowedLinkPreviewImageType(contentType string) bool {
 	switch strings.ToLower(strings.TrimSpace(contentType)) {
-	case "image/avif", "image/webp", "image/apng", "image/png", "image/jpeg", "image/gif":
+	case "image/avif", "image/webp", "image/apng", "image/png", "image/jpeg", "image/gif", "image/x-icon", "image/vnd.microsoft.icon":
 		return true
 	default:
 		return false
@@ -388,6 +389,8 @@ func extractLinkPreview(body []byte, baseURL *url.URL) (*LinkPreview, error) {
 
 	meta := map[string]string{}
 	title := ""
+	icon := ""
+	iconRank := 0
 	var walk func(*html.Node)
 	walk = func(node *html.Node) {
 		if node.Type == html.ElementNode {
@@ -395,6 +398,28 @@ func extractLinkPreview(body []byte, baseURL *url.URL) (*LinkPreview, error) {
 			case "title":
 				if title == "" {
 					title = collapsePreviewWhitespace(textContent(node))
+				}
+			case "link":
+				rel, href := "", ""
+				for _, attr := range node.Attr {
+					switch strings.ToLower(attr.Key) {
+					case "rel":
+						rel = strings.ToLower(strings.TrimSpace(attr.Val))
+					case "href":
+						href = strings.TrimSpace(attr.Val)
+					}
+				}
+				rank := 0
+				switch {
+				case rel == "apple-touch-icon" || rel == "apple-touch-icon-precomposed":
+					rank = 3
+				case rel == "icon" || rel == "shortcut icon":
+					rank = 2
+				case strings.Contains(rel, "icon") && !strings.Contains(rel, "mask"):
+					rank = 1
+				}
+				if href != "" && rank > iconRank && !strings.HasSuffix(strings.ToLower(strings.SplitN(href, "?", 2)[0]), ".svg") {
+					icon, iconRank = href, rank
 				}
 			case "meta":
 				key := ""
@@ -427,6 +452,10 @@ func extractLinkPreview(body []byte, baseURL *url.URL) (*LinkPreview, error) {
 		Description: firstNonEmpty(meta["og:description"], meta["twitter:description"], meta["description"]),
 		ImageURL:    resolvePreviewURL(baseURL, firstNonEmpty(meta["og:image"], meta["twitter:image"], meta["twitter:image:src"], meta["image"])),
 		SiteName:    firstNonEmpty(meta["og:site_name"], meta["application-name"]),
+		IconURL:     resolvePreviewURL(baseURL, icon),
+	}
+	if preview.IconURL == "" && baseURL != nil && (baseURL.Scheme == "http" || baseURL.Scheme == "https") && baseURL.Host != "" {
+		preview.IconURL = baseURL.Scheme + "://" + baseURL.Host + "/favicon.ico"
 	}
 
 	preview.Title = truncatePreviewText(preview.Title, 180)

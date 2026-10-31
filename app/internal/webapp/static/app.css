@@ -1383,3 +1383,30 @@ a.rich-sub { text-decoration: underline; }
 .sys-notice .sys-ic { flex: 0 0 16px; width: 16px; height: 16px; fill: currentColor; }
 .sys-notice.notice-call { color: #ff8589; }
 .sys-notice.notice-warn { color: #f3b04a; }
+
+/* v0.7.15: Google Messages look for photos, replies and link previews (desk, mobile and Car Mode). */
+/* Photos: edge to edge at the top of the bubble, rounded with it; caption below inside the bubble. */
+html .bubble.has-image { padding-top: 0; overflow: hidden; }
+html .bubble.has-image > .sender { margin-top: 12px; }
+html .bubble.has-image > .media-image { margin: 0 -26px; max-width: none; width: calc(100% + 52px); border-radius: 0; }
+html .bubble.has-image > .media-image img { width: 100%; max-width: none; border-radius: 0; max-height: min(60vh, 520px); object-fit: contain; background: #000; }
+html .bubble.has-image > .media-image + .body { margin-top: 12px; }
+html .bubble.has-image > .sender + .media-image { margin-top: 8px; }
+/* Reply quote: a full-width darker block inset in the bubble, plain name above up to 3 lines of text. */
+html .bubble .reply-quote { border-left: 0; border-radius: 14px; background: rgba(0, 0, 0, .38); padding: 12px 18px; margin: -6px -18px 12px; gap: 4px; }
+html .bubble .reply-quote-name { font-weight: 500; color: rgba(255, 255, 255, .78); }
+html .bubble .reply-quote-text { color: rgba(255, 255, 255, .92); }
+/* Link previews: the card fills the bubble width; big uncropped image, bold title, description, favicon + domain footer. */
+html .bubble:has(.link-card) { overflow: hidden; }
+html .bubble .link-card { margin: 12px -26px -12px; border-radius: 0; background: transparent; min-width: 0; }
+html .bubble > .body:empty { display: none; }
+html .bubble > .body:empty + .link-card-slot .link-card, html .bubble > .link-card-slot:first-child .link-card { margin-top: -18px; }
+html .bubble .link-card-media { background: rgba(0, 0, 0, .35); }
+html .bubble .link-card-media img { width: 100%; max-width: 100%; }
+html .bubble .link-card-copy { padding: 14px 26px 16px; }
+html .bubble .link-card-title { margin-top: 0; }
+html .bubble .link-card-desc { margin-top: 8px; color: rgba(255, 255, 255, .85); }
+.link-card-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 21px; color: rgba(255, 255, 255, .8); }
+.link-card-foot img { width: 28px; height: 28px; border-radius: 6px; flex: none; background: rgba(255, 255, 255, .1); object-fit: contain; }
+.link-card-foot span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+html .bubble .link-card-slot + .meta, html .bubble .link-card-slot + .reactions { margin-top: 14px; }

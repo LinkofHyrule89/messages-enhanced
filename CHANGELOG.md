@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.15
+
+- Google Messages look: photos run edge to edge at the top of the bubble with rounded corners and the caption below.
+- Reply quotes are a full-width darker rounded block inside the bubble (name + text), tap still jumps to the original.
+- Link previews fill the bubble: large uncropped image, bold title, description, and a favicon + domain footer (no uppercase site label).
+
 ## v0.7.14
 
 - Contact (vCard) cards with call links and a contact.vcf download; calendar (.ics) cards with "Add to calendar" and invite.ics download.
