@@ -3,11 +3,14 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 type Client struct {
@@ -64,7 +67,111 @@ func ExtractMessageBody(msg *gmproto.Message) string {
 			return mc.GetContent()
 		}
 	}
+	for _, info := range msg.GetMessageInfo() {
+		if _, text := locationContent(info); text != nil && text.GetContent() != "" {
+			return text.GetContent()
+		}
+	}
 	return ""
+}
+
+// locationContent reads a shared location (MessageInfo field 5,
+// LocationContent{1: MediaContent map preview, 2: MessageContent text}).
+// Our vendored proto predates that field, so it arrives as unknown bytes.
+func locationContent(info *gmproto.MessageInfo) (*gmproto.MediaContent, *gmproto.MessageContent) {
+	if info == nil {
+		return nil, nil
+	}
+	raw := info.ProtoReflect().GetUnknown()
+	for len(raw) > 0 {
+		num, typ, n := protowire.ConsumeTag(raw)
+		if n < 0 {
+			return nil, nil
+		}
+		raw = raw[n:]
+		if num == 5 && typ == protowire.BytesType {
+			loc, m := protowire.ConsumeBytes(raw)
+			if m < 0 {
+				return nil, nil
+			}
+			return parseLocation(loc)
+		}
+		m := protowire.ConsumeFieldValue(num, typ, raw)
+		if m < 0 {
+			return nil, nil
+		}
+		raw = raw[m:]
+	}
+	return nil, nil
+}
+
+func parseLocation(b []byte) (*gmproto.MediaContent, *gmproto.MessageContent) {
+	var media *gmproto.MediaContent
+	var text *gmproto.MessageContent
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			break
+		}
+		b = b[n:]
+		if typ != protowire.BytesType {
+			m := protowire.ConsumeFieldValue(num, typ, b)
+			if m < 0 {
+				break
+			}
+			b = b[m:]
+			continue
+		}
+		v, m := protowire.ConsumeBytes(b)
+		if m < 0 {
+			break
+		}
+		b = b[m:]
+		switch num {
+		case 1:
+			mc := &gmproto.MediaContent{}
+			if proto.Unmarshal(v, mc) == nil {
+				media = mc
+			}
+		case 2:
+			tc := &gmproto.MessageContent{}
+			if proto.Unmarshal(v, tc) == nil {
+				text = tc
+			}
+		}
+	}
+	return media, text
+}
+
+// LocationBody makes sure a shared location's text carries a Maps link the
+// clients can render as a location card and open on tap.
+func LocationBody(body string) string {
+	t := strings.TrimSpace(body)
+	if t == "" || HasMapsLink(t) {
+		return body
+	}
+	return t + "\nhttps://maps.google.com/?q=" + url.QueryEscape(t)
+}
+
+// HasMapsLink reports a geo: URI or a Google/Apple Maps link in text.
+func HasMapsLink(s string) bool {
+	l := strings.ToLower(s)
+	for _, k := range []string{"geo:", "maps.google.", "google.com/maps", "goo.gl/maps", "maps.app.goo.gl", "maps.apple.com"} {
+		if strings.Contains(l, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsLocationMessage reports whether a message is a shared location.
+func IsLocationMessage(msg *gmproto.Message) bool {
+	for _, info := range msg.GetMessageInfo() {
+		if m, t := locationContent(info); m != nil || t != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // MediaInfo holds extracted media metadata from a protobuf Message.
@@ -84,7 +191,11 @@ type MediaInfo struct {
 // Falls back to thumbnail or inline data when full-size MediaID is unavailable.
 func ExtractMediaInfo(msg *gmproto.Message) *MediaInfo {
 	for _, info := range msg.GetMessageInfo() {
-		if mc := info.GetMediaContent(); mc != nil {
+		mc := info.GetMediaContent()
+		if mc == nil {
+			mc, _ = locationContent(info)
+		}
+		if mc != nil {
 			mime := mc.GetMimeType()
 			if mime == "" {
 				switch {

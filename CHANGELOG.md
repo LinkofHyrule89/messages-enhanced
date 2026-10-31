@@ -2,6 +2,7 @@
 
 ## v0.7.13
 
+- Shared locations from Google Messages are now received (they used to arrive empty) and render as a location card with the place text, opening Maps on tap. A sent location no longer stays stuck on the pending clock: status updates for already-stored contentless messages are applied.
 - Read receipts in one-to-one chats show the reader's photo (or initials) instead of two plain blue circles; group readers are deduplicated.
 - Per-conversation drafts in the web app and Car Mode: typed text is saved automatically for each chat in this browser only (localStorage, never synced). Switching chats shows that chat's own draft or an empty box; coming back restores it, mentions included. Drafts clear on send or when erased.
 - The chat list shows "Draft: ..." for chats with an unsent draft.

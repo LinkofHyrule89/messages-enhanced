@@ -18,3 +18,12 @@ func TestReadReceiptSingleAvatar(t *testing.T) {
 		}
 	}
 }
+
+func TestLocationCardWired(t *testing.T) {
+	b, _ := os.ReadFile("static/app.js")
+	for _, want := range []string{"function locationCard(", "locationInfo(text)", "Open in Maps"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}

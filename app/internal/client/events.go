@@ -186,6 +186,9 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 		return
 	}
 	body := ExtractMessageBody(msg)
+	if IsLocationMessage(msg) {
+		body = LocationBody(body)
+	}
 	senderName, senderNumber := ExtractSenderInfo(msg)
 
 	status := "unknown"
@@ -236,7 +239,9 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 	// Drop completed contentless stubs (e.g. an empty message that group
 	// activity leaks into a 1:1 thread). They would render as "Empty message"
 	// and wrongly surface the conversation in recents.
-	if db.IsEmptyStubMessage(dbMsg) {
+	// A stub we already stored (e.g. while it was sending) still takes its
+	// status update, so it cannot stay stuck on the pending clock.
+	if db.IsEmptyStubMessage(dbMsg) && !h.messageStored(dbMsg.MessageID) {
 		h.Logger.Debug().Str("msg_id", dbMsg.MessageID).Str("conv_id", dbMsg.ConversationID).Msg("Skipped empty stub message")
 		return
 	}
@@ -502,4 +507,12 @@ func (h *EventHandler) maybePersistRotatedCookies() {
 	}
 	h.lastCookieHash = cookieHash
 	h.Logger.Debug().Msg("persisted rotated Google cookies")
+}
+
+func (h *EventHandler) messageStored(id string) bool {
+	if id == "" || h.Store == nil {
+		return false
+	}
+	ok, err := h.Store.MessageExists(id)
+	return err == nil && ok
 }

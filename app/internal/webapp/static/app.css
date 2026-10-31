@@ -1336,3 +1336,12 @@ html:not(.desk) .emoji-anim-txt { font-size: 88px; }
 .setting-input.invalid { border-color: #f28b82; }
 .setting-err { display: block; margin-top: 6px; color: #f28b82; font-size: .8em; }
 .conv-preview.draft { color: var(--accent, #a8c7fa); font-style: italic; }
+
+/* shared location card */
+.loc-card { display: flex; gap: 10px; align-items: center; padding: 8px 4px; color: inherit; text-decoration: none; min-width: 180px; }
+.loc-pin { flex: 0 0 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; }
+.loc-pin svg { width: 24px; height: 24px; fill: #ea4335; }
+.loc-copy { display: flex; flex-direction: column; min-width: 0; }
+.loc-title { font-weight: 600; }
+.loc-label { opacity: .85; overflow-wrap: anywhere; }
+.loc-open { font-size: .85em; text-decoration: underline; opacity: .8; }

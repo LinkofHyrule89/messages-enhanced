@@ -1732,7 +1732,39 @@
     });
     return out.replace(/[ \t]{2,}/g, " ").replace(/^\s+|\s+$/g, "");
   }
+  // Shared location (RCS location push, geo: URI or a Maps link): a pin card
+  // with the place text that opens Maps. No map tiles (no API keys); the
+  // phone's own map preview, when Google sends one, shows as the image.
+  var MAPS_RE = /(geo:[^\s]+|https?:\/\/(?:maps\.google\.[^\s\/]+|(?:www\.)?google\.[^\s\/]+\/maps|goo\.gl\/maps|maps\.app\.goo\.gl|maps\.apple\.com)[^\s]*)/i;
+  function locationInfo(text) {
+    var t = String(text || ""), mm = MAPS_RE.exec(t);
+    if (!mm) return null;
+    var href = mm[1];
+    if (/^geo:/i.test(href)) {
+      var q = /[?&]q=([^&]+)/.exec(href), ll = href.slice(4).split(/[?;]/)[0];
+      href = "https://maps.google.com/?q=" + (q ? q[1] : encodeURIComponent(ll));
+    }
+    var label = t.replace(mm[1], "").replace(/\s+/g, " ").trim();
+    return { href: href, label: label };
+  }
+  function locationCard(info) {
+    var a = el("a", "loc-card");
+    a.href = info.href; a.target = "_blank"; a.rel = "noopener noreferrer";
+    var pin = el("span", "loc-pin");
+    var svg = svgEl("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+    svg.appendChild(svgEl("path", { d: "M12 2.5a6.5 6.5 0 0 0-6.5 6.5c0 4.9 6.5 12.5 6.5 12.5s6.5-7.6 6.5-12.5A6.5 6.5 0 0 0 12 2.5zm0 9a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z" }));
+    pin.appendChild(svg);
+    a.appendChild(pin);
+    var copy = el("span", "loc-copy");
+    copy.appendChild(el("span", "loc-title", "Shared location"));
+    if (info.label) copy.appendChild(el("span", "loc-label", fontSafe(info.label)));
+    copy.appendChild(el("span", "loc-open", "Open in Maps"));
+    a.appendChild(copy);
+    return a;
+  }
   function appendBodyWithPreview(bubble, m, text) {
+    var loc = locationInfo(text);
+    if (loc) { bubble.appendChild(locationCard(loc)); return; }
     var url = firstURL(text);
     if (!url) { bubble.appendChild(bodyNode(text)); return; }
     var rest = stripPreviewedURL(text, url);
