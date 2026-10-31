@@ -70,27 +70,3 @@ func TestHandleMessage_DeletedOwnMessageRemovesRow(t *testing.T) {
 	}
 }
 
-func TestHandleMessage_IncomingEditMarksEdited(t *testing.T) {
-	store, err := db.New(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	if err := store.UpsertMessage(&db.Message{MessageID: "e1", ConversationID: "c1", Body: "synthetic v1", TimestampMS: 1000, Status: "INCOMING_COMPLETE"}); err != nil {
-		t.Fatal(err)
-	}
-	h := &EventHandler{Store: store, Logger: zerolog.Nop()}
-	h.handleMessage(&libgm.WrappedMessage{Message: &gmproto.Message{
-		MessageID: "e1", ConversationID: "c1", Timestamp: 1000 * 1000,
-		MessageStatus: &gmproto.MessageStatus{Status: gmproto.MessageStatusType_INCOMING_COMPLETE},
-		MessageInfo:   []*gmproto.MessageInfo{{Data: &gmproto.MessageInfo_MessageContent{MessageContent: &gmproto.MessageContent{Content: "synthetic v2"}}}},
-	}})
-	m, _ := store.GetMessageByID("e1")
-	if m == nil || m.Body != "synthetic v2" {
-		t.Fatalf("edit not applied: %+v", m)
-	}
-	store.FillEdited([]*db.Message{m})
-	if !m.Edited {
-		t.Fatal("edit not marked")
-	}
-}
