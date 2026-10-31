@@ -147,7 +147,11 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 
 	if id := youTubeVideoID(parsedURL); id != "" {
 		preview := s.fetchYouTube(ctx, normalizedURL, id)
-		s.store(normalizedURL, preview)
+		// Only cache a real oEmbed result: a fallback ("YouTube" title) is
+		// retried next time instead of sticking for the whole cache TTL.
+		if preview.Title != "YouTube" {
+			s.store(normalizedURL, preview)
+		}
 		return cloneLinkPreview(preview), nil
 	}
 

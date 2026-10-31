@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.22
+
+- Link previews: YouTube and other video previews show a 16:9 centre-cropped thumbnail, so no black bars above and below. Web and Car Mode: the preview now sets the bubble width, so the image fills it edge to edge with no grey strip, and a YouTube title that failed to load is retried instead of staying as "YouTube".
+
 ## v0.7.21
 
 - Web and Car Mode link previews now match the Android card: the preview is the bubble, image flush and full-width (cropped, never letterboxed, tall images capped), play overlay on video/YouTube, and native title, description and site footer sizes, spacing and colors.
