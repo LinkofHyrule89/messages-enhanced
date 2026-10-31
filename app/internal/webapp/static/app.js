@@ -2088,7 +2088,12 @@
     var show = !!state.current && dist > 120;
     var n = scrollState.pill || 0, badge = $("jumpNewestBadge");
     badge.textContent = n > 99 ? "99+" : String(n); badge.hidden = !n;
-    b.style.top = Math.max(0, box.offsetTop + box.clientHeight - 72) + "px";
+    // Sit 16px above the composer (tracks its height), inside the thread pane.
+    var pane = b.offsetParent || box.parentNode, comp = $("compose");
+    var paneTop = pane.getBoundingClientRect().top, bh = b.offsetHeight || 56;
+    var anchor = comp && comp.offsetHeight ? comp.getBoundingClientRect().top : box.getBoundingClientRect().bottom;
+    b.hidden = false; bh = b.offsetHeight || bh;
+    b.style.top = Math.max(0, anchor - paneTop - bh - 16) + "px";
     b.hidden = !show;
   }
   function jumpToNewest() {
@@ -5814,6 +5819,7 @@
     $("newMsgPill").addEventListener("click", jumpToNewest);
     $("jumpNewest").addEventListener("click", jumpToNewest);
     window.addEventListener("resize", updateJumpBtn, { passive: true });
+    if (window.ResizeObserver && $("compose")) new ResizeObserver(function () { updateJumpBtn(); }).observe($("compose"));
     $("messages").addEventListener("scroll", function () {
       var box = $("messages");
       updateJumpBtn();

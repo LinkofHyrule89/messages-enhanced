@@ -6,7 +6,7 @@
 
 - **Fewer false connection errors:** background load failures now toast only after 3+ failures spanning 25 s while the tab is visible, at most once a minute, and never within 20 s of the tab regaining focus. The header dot waits 25 s before switching to Disconnected / Phone offline (recovery is instant). Server health banner keeps its 30 s rule.
 
-- **Go-to-newest button** is now anchored to the conversation pane.
+- **Go-to-newest button:** now a 48px high-contrast round button (64px in Car Mode) that sits 16px above the composer and follows it as it grows, above other layers. It replaces the old "New messages" pill; its badge shows the new-message count.
 
 - **Go to newest, sooner:** the button now shows whenever you are not at the bottom of a thread (about two messages up), whether the newest messages are read, unread, or your own. The badge still counts only new incoming messages.
 

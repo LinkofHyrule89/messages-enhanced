@@ -1250,15 +1250,15 @@ html.desk .grok-choice { font-size: 15px; gap: 10px; padding: 4px 0; }
 html.desk .grok-choice input { width: 18px; height: 18px; }
 #grokTriggerRow.disabled { opacity: .5; }
 
-/* Go-to-newest FAB (Google Messages style) */
-.jump-newest { position: absolute; right: 20px; z-index: 6; width: 56px; height: 56px; border: 0; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center; background: var(--surface-2, #2b2f36); color: var(--accent);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, .4); cursor: pointer; }
+/* Go-to-newest FAB (Google Messages style). Car Mode: 64px; desktop/tablet: 48px. */
+.jump-newest { position: absolute; right: 16px; z-index: 50; width: 64px; height: 64px; border: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; background: #e8eaed; color: #1a1c1f;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .5); cursor: pointer; }
 .jump-newest[hidden] { display: none; }
-.jump-newest svg { width: 28px; height: 28px; fill: currentColor; }
-.jump-badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
-  background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; text-align: center; }
+.jump-newest svg { width: 32px; height: 32px; fill: currentColor; }
+.jump-badge { position: absolute; top: -4px; right: -4px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; line-height: 22px; text-align: center; }
 .jump-badge[hidden] { display: none; }
-html.desk .jump-newest { width: 44px; height: 44px; }
-html.desk .jump-newest svg { width: 22px; height: 22px; }
-html.desk .new-msg-pill { display: none; }
+html.desk .jump-newest { width: 48px; height: 48px; }
+html.desk .jump-newest svg { width: 26px; height: 26px; }
+.new-msg-pill { display: none !important; }
