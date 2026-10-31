@@ -782,6 +782,10 @@
     $("convMenuArchiveLabel").textContent = archived ? "Unarchive" : "Archive";
     arch.dataset.archived = archived ? "1" : "";
     $("convMenuTrash").hidden = !google;
+    var spam = fname === "spam" || c.tab === "spam";
+    $("convMenuBlock").hidden = !google || spam || c.IsGroup;
+    $("convMenuBlockReport").hidden = !google || spam || c.IsGroup;
+    $("convMenuUnblock").hidden = !google || !spam;
     // Refresh: Google Messages conversations stored here (not live-only folder rows).
     $("convMenuRefresh").hidden = !google || (!!state.folder && !c.local);
     // Non-car: the header's mute bell lives in this menu too.
@@ -1526,6 +1530,7 @@
   function openImageViewer(m) {
     var v = $("imageViewer"), img = $("imageViewerImg");
     img.src = mediaURL(m);
+    requestFullSize(m);
     var cap = imageCaption(m);
     $("imageViewerCaption").textContent = cap;
     $("imageViewerCaption").hidden = !cap;
@@ -1932,10 +1937,21 @@
         bubble.classList.add("has-media", "has-image");
         bubble.appendChild(imageNode(m));
         if (imageCaption(m)) appendBodyWithPreview(bubble, m, m.Body);
+      } else if (isMMSDownload(m)) {
+        bubble.appendChild(mmsDownloadNode(m));
       } else if (m.Body) {
         appendBodyWithPreview(bubble, m, m.Body);
+        if (fxOn("animatedEmoji") && window.MEEffects && window.MEEffects.emojiOnly(m.Body)) {
+          var eb = bubble.querySelector(".body");
+          if (eb && window.MEEffects.animateEmoji(eb, m.Body)) { bubble.classList.add("emoji-only"); row.classList.add("emoji-only-row"); }
+        }
       } else {
         bubble.appendChild(m.MediaID ? iconEl("div", "body media-label", "attach", m.MimeType || "attachment") : el("div", "body", ""));
+      }
+      maybeScreenEffect(m);
+      if (m.IsFromMe && !m.local && !isSendPlaceholder(m) && /FAIL/.test(m.Status || "") && !/^tm-/.test(m.MessageID)) {
+        bubble.classList.add("tap-resend"); bubble.title = "Not sent. Tap to try again";
+        bubble.addEventListener("click", function (ev) { if (ev.target.closest("a,button")) return; resendServer(m); });
       }
       var meta = el("div", "meta", clockTime(m.TimestampMS) + (m.edited && !isDeletedMsg(m) ? " · Edited" : "") + (m.IsFromMe && /FAIL/.test(m.Status || "") ? " · Failed" : ""));
       if (state.stars[m.MessageID]) { var sm = el("span", "star-mark", "\u2605"); sm.setAttribute("aria-label", "Starred"); meta.insertBefore(sm, meta.firstChild); }
@@ -2528,6 +2544,83 @@
       toast("Not sent: " + e.message, "error");
     });
   }
+  // ---------- libgm extras: resend, MMS download, full-size image, block ----------
+  function messageAction(m, action) {
+    return postJSON("/api/app/messages/action", { message_id: m.MessageID, action: action });
+  }
+  function resendServer(m) {
+    if (!confirm("Try sending this message again?")) return;
+    messageAction(m, "resend").then(function () { toast("Sending again…"); })
+      .catch(function (e) { if (e.message !== "login required") toast("Couldn't resend: " + e.message, "error"); });
+  }
+  function isMMSDownload(m) { return !m.IsFromMe && /INCOMING_YET_TO_MANUAL_DOWNLOAD|INCOMING_DOWNLOAD_FAILED|INCOMING_DOWNLOAD_CANCELED|INCOMING_EXPIRED_OR_NOT_AVAILABLE/.test(m.Status || ""); }
+  function mmsDownloadNode(m) {
+    var wrap = el("div", "body mms-download");
+    var expired = /EXPIRED/.test(m.Status);
+    wrap.appendChild(el("div", "mms-download-title", expired ? "Multimedia message expired" : /FAILED/.test(m.Status) ? "Couldn't download" : "Multimedia message"));
+    if (!expired) {
+      var b = el("button", "mms-download-btn", "Tap to download");
+      b.type = "button";
+      b.addEventListener("click", function () {
+        b.disabled = true; b.textContent = "Downloading…";
+        messageAction(m, "download").catch(function (e) { b.disabled = false; b.textContent = "Tap to download"; toast("Couldn't download: " + e.message, "error"); });
+      });
+      wrap.appendChild(b);
+    }
+    return wrap;
+  }
+  var fullsizeAsked = {};
+  function requestFullSize(m) {
+    if (!m || !m.MessageID || m.local || /^tm-/.test(m.MessageID) || fullsizeAsked[m.MessageID]) return;
+    fullsizeAsked[m.MessageID] = 1;
+    messageAction(m, "fullsize").catch(function () { delete fullsizeAsked[m.MessageID]; });
+  }
+  function blockConversation(id, block, report) {
+    var c = state.convs && state.convs.find ? state.convs.find(function (x) { return x.ConversationID === id; }) : null;
+    var name = c ? (c.Name || "this conversation") : "this conversation";
+    var q = !block ? "Unblock " + name + "?" : report ? "Block " + name + " and report spam? You won't get calls or messages from them, and the conversation moves to Spam & blocked." : "Block " + name + "? You won't get calls or messages from them.";
+    if (!confirm(q)) return;
+    postJSON("/api/app/conversations/block", { conversation_id: id, blocked: !!block, report: !!report }).then(function () {
+      toast(!block ? "Unblocked" : report ? "Blocked and reported spam" : "Blocked");
+      if (typeof loadConversations === "function") loadConversations();
+    }).catch(function (e) { if (e.message !== "login required") toast("Couldn't update: " + e.message, "error"); });
+  }
+  // ---------- screen effects (Settings: Holiday animations) ----------
+  var FX_SINCE = Date.now();
+  function fxOn(k) { var s = loadSettings(); return s[k] !== false; }
+  function maybeScreenEffect(m) {
+    if (!window.MEEffects || !fxOn("holidayAnimations") || isSendPlaceholder(m) || m.local) return;
+    if (!m.TimestampMS || m.TimestampMS < FX_SINCE - 5000 || Date.now() - m.TimestampMS > 60000) return;
+    if (m.ConversationID && state.current && m.ConversationID !== state.current) return;
+    if (document.hidden) return;
+    // Car Mode: subtle, shorter effects.
+    window.MEEffects.playForMessage(m, { subtle: !isDesk() });
+  }
+  // ---------- Clean links (composer) ----------
+  function cleanRule() {
+    var r = loadSettings().cleanRule, L = window.MELinkClean;
+    return L && r && L.validRule(r) ? r : (L ? L.DEFAULT_RULE : "");
+  }
+  function composerTextNodes() {
+    var out = [], w = document.createTreeWalker($("input"), NodeFilter.SHOW_TEXT, null);
+    while (w.nextNode()) { var n = w.currentNode; if (!n.parentNode.closest || !n.parentNode.closest(".mention-chip,[contenteditable=false]")) out.push(n); }
+    return out;
+  }
+  function updateCleanLinks() {
+    var b = $("cleanLinksBtn"), L = window.MELinkClean;
+    if (!b || !L) return;
+    var rule = cleanRule();
+    b.hidden = !composerTextNodes().some(function (n) { return L.cleanText(n.data, rule).count > 0; });
+  }
+  function cleanComposerLinks() {
+    var L = window.MELinkClean; if (!L) return;
+    var rule = cleanRule(), n = 0;
+    composerTextNodes().forEach(function (t) { var r = L.cleanText(t.data, rule); if (r.count) { t.data = r.text; n += r.count; } });
+    $("cleanLinksBtn").hidden = true;
+    $("input").dispatchEvent(new Event("input", { bubbles: true }));
+    toast(n ? (n === 1 ? "Cleaned 1 link" : "Cleaned " + n + " links") : "No tracking parameters found");
+    $("input").focus();
+  }
   function retrySend(m) {
     var convID = m.ConversationID || state.current;
     if (m.local) dropLocal(m); else state.dismissed[m.MessageID] = true;
@@ -2766,6 +2859,7 @@
   function sendReaction(m, emoji) {
     if (!m || !emoji) return;
     var convID = m.ConversationID || state.current;
+    if (window.MEEffects && fxOn("holidayAnimations")) window.MEEffects.reaction(emoji, { subtle: !isDesk() });
     postJSON("/api/react", { conversation_id: convID, message_id: m.MessageID, emoji: emoji, action: "add" }).then(function () {
       if (state.current === convID) loadMessages(false, true);
     }).catch(function (e) { if (e.message !== "login required") toast("Couldn't react: " + e.message, "error"); });
@@ -3890,8 +3984,9 @@
     m.loadedAt = Date.now();
     state.convMeta = m;
     var proto = m.protocol || "";
-    $("input").placeholder = proto === "RCS" ? "RCS message" : proto === "SMS" ? "Text message" : "Message";
-    $("input").setAttribute("aria-label", $("input").placeholder);
+    var ph = proto === "RCS" ? "RCS message" : proto === "SMS" || proto === "MMS" ? "Text message" : "Message";
+    $("input").placeholder = ph; $("input").dataset.placeholder = ph;
+    $("input").setAttribute("aria-label", ph);
     $("sendProto").hidden = proto !== "SMS";
     $("sendLock").hidden = !m.e2ee;
     $("sendBtn").classList.toggle("e2ee", !!m.e2ee);
@@ -3938,6 +4033,10 @@
     if (!showEm) showEmoji(false);
     es2.setAttribute("aria-checked", showEm ? "true" : "false");
     es2.classList.toggle("on", showEm);
+    [["setHolidayFx", "holidayAnimations"], ["setAnimEmoji", "animatedEmoji"]].forEach(function (p) {
+      var on = s[p[1]] !== false, b = $(p[0]); if (!b) return;
+      b.setAttribute("aria-checked", on ? "true" : "false"); b.classList.toggle("on", on);
+    });
     var sd = s.showDeleted === true, sdb = $("setShowDeleted");
     sdb.setAttribute("aria-checked", sd ? "true" : "false");
     sdb.classList.toggle("on", sd);
@@ -5976,6 +6075,31 @@
       saveSettings(st);
       applySettings();
     });
+    [["setHolidayFx", "holidayAnimations"], ["setAnimEmoji", "animatedEmoji"]].forEach(function (p) {
+      $(p[0]).addEventListener("click", function () {
+        var st = loadSettings(); st[p[1]] = st[p[1]] === false; saveSettings(st); applySettings();
+        if (p[1] === "holidayAnimations" && !st[p[1]] && window.MEEffects) window.MEEffects.stop();
+        if (state.current) renderCurrent(true);
+      });
+    });
+    // Clean links rule (validated regex; empty or invalid keeps the last good one).
+    (function () {
+      var inp = $("setCleanRule"), err = $("setCleanRuleErr"), L = window.MELinkClean;
+      if (!inp || !L) return;
+      inp.value = cleanRule();
+      inp.addEventListener("input", function () {
+        var ok = L.validRule(inp.value);
+        err.hidden = ok; inp.classList.toggle("invalid", !ok);
+        if (ok) { var st = loadSettings(); st.cleanRule = inp.value.trim(); saveSettings(st); updateCleanLinks(); }
+      });
+      $("setCleanRuleReset").addEventListener("click", function () {
+        var st = loadSettings(); delete st.cleanRule; saveSettings(st);
+        inp.value = L.DEFAULT_RULE; err.hidden = true; inp.classList.remove("invalid"); updateCleanLinks();
+      });
+    })();
+    $("input").addEventListener("input", updateCleanLinks);
+    if (window.MutationObserver) new MutationObserver(updateCleanLinks).observe($("input"), { childList: true, subtree: true, characterData: true });
+    $("cleanLinksBtn").addEventListener("click", cleanComposerLinks);
     $("setShowDeleted").addEventListener("click", function () {
       var st = loadSettings();
       st.showDeleted = st.showDeleted !== true;
@@ -6054,6 +6178,12 @@
     $("convMenuTheme").addEventListener("click", function () {
       closeConvMenu();
       openChatTheme();
+    });
+    [["convMenuBlock", true, false], ["convMenuBlockReport", true, true], ["convMenuUnblock", false, false]].forEach(function (p) {
+      $(p[0]).addEventListener("click", function () {
+        var f = state.convMenuFor; closeConvMenu();
+        if (f && f.conv) blockConversation(f.conv.ConversationID, p[1], p[2]);
+      });
     });
     $("convMenuDetails").addEventListener("click", function () {
       var f = state.convMenuFor;

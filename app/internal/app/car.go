@@ -256,6 +256,36 @@ func (a *App) CarContacts() (*CarContacts, error) {
 		}
 	}
 	sort.SliceStable(top, func(i, j int) bool { return top[i].LastMessageTS > top[j].LastMessageTS })
+	// Google's own top contacts (the phone's picker order) come first.
+	if gt := a.googleTopContacts(); len(gt) > 0 {
+		byKey := map[string]CarContact{}
+		for _, c := range all {
+			byKey[carPhoneKey(c.Number)] = c
+		}
+		var merged []CarContact
+		used := map[string]bool{}
+		for _, g := range gt {
+			k := carPhoneKey(g.Number)
+			if used[k] {
+				continue
+			}
+			used[k] = true
+			if c, ok := byKey[k]; ok {
+				merged = append(merged, c)
+			} else {
+				if g.Name == "" {
+					g.Name = g.Number
+				}
+				merged = append(merged, g)
+			}
+		}
+		for _, c := range top {
+			if !used[carPhoneKey(c.Number)] {
+				merged = append(merged, c)
+			}
+		}
+		top = merged
+	}
 	if len(top) > 8 {
 		top = top[:8]
 	}

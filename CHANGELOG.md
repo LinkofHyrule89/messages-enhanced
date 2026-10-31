@@ -1,8 +1,17 @@
 # Changelog
 
+## v0.7.12
+
+- Holiday and keyword animations in the web app (subtle in Car Mode), plus reaction bursts. Setting "Holiday animations" (on by default); honours reduced-motion.
+- Animated Noto emoji for emoji-only messages. Setting "Animated emojis" (on by default).
+- Clean links: a "Clean links" chip appears in the composer when a link is present and removes tracking parameters. The rule is an editable regular expression in Settings, with validation and Reset to default.
+- Block, Block & report spam, and Unblock in the conversation menu.
+- Tap a failed message to resend it; "Tap to download" for MMS the phone has not downloaded; opening an image requests the full-resolution original.
+- Bubble corners and the RCS/Text message composer label now match Google Messages.
+- Archive, spam and trash folder sync fix.
 
 
-## Unreleased - Deleted messages
+## v0.7.11 - Deleted messages
 
 - New setting "Show deleted message placeholders" (off by default). When it is on, a message its sender deleted for everyone stays in the thread as an italic "This message was deleted" bubble with the sender and time. The deleted text is wiped on the server and never shown.
 - While your own delete-for-everyone is pending, the bubble says "Deleting for everyone…".

@@ -82,3 +82,22 @@ func (r *realGMClient) GetConversation(conversationID string) (*gmproto.Conversa
 func (r *realGMClient) MarkRead(conversationID, messageID string) error {
 	return r.gm.MarkRead(conversationID, messageID)
 }
+
+// GMExtras are optional phone actions (block, resend, MMS download,
+// full-size images, top contacts). Kept out of GMClient so test mocks
+// don't need them; callers type-assert.
+type GMExtras interface {
+	ResendMessage(messageID string) error
+	DownloadMessage(messageID string) error
+	GetFullSizeImage(messageID, actionMessageID string) (*gmproto.GetFullSizeImageResponse, error)
+	ListTopContacts() (*gmproto.ListTopContactsResponse, error)
+}
+
+func (r *realGMClient) ResendMessage(id string) error   { return r.gm.ResendMessage(id) }
+func (r *realGMClient) DownloadMessage(id string) error { return r.gm.DownloadMessage(id) }
+func (r *realGMClient) GetFullSizeImage(id, action string) (*gmproto.GetFullSizeImageResponse, error) {
+	return r.gm.GetFullSizeImage(id, action)
+}
+func (r *realGMClient) ListTopContacts() (*gmproto.ListTopContactsResponse, error) {
+	return r.gm.ListTopContacts()
+}

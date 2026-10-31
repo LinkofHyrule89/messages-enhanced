@@ -177,3 +177,19 @@ func (c *Client) GetFullSizeImage(messageID, actionMessageID string) (*gmproto.G
 
 	return typedResponse[*gmproto.GetFullSizeImageResponse](c.sessionHandler.sendMessage(actionType, payload))
 }
+
+// ResendMessage asks the phone to retry a failed outgoing message.
+func (c *Client) ResendMessage(messageID string) error {
+	payload := &gmproto.ResendMessageRequest{MessageID: messageID}
+	_, err := c.sessionHandler.sendMessage(gmproto.ActionType_RESEND_MESSAGE, payload)
+	return err
+}
+
+// DownloadMessage asks the phone to download an MMS that is waiting for a
+// manual download. The request carries only the message ID (same shape as
+// ResendMessageRequest).
+func (c *Client) DownloadMessage(messageID string) error {
+	payload := &gmproto.ResendMessageRequest{MessageID: messageID}
+	_, err := c.sessionHandler.sendMessage(gmproto.ActionType_DOWNLOAD_MESSAGE, payload)
+	return err
+}

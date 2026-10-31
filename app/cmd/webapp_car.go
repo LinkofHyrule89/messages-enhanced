@@ -27,6 +27,12 @@ func (b webCarBackend) ArchiveConversation(id string, archived bool) (any, error
 func (b webCarBackend) TrashConversation(id string) (any, error) {
 	return b.a.CarTrashConversation(id)
 }
+func (b webCarBackend) BlockConversation(id string, block, report bool) (any, error) {
+	return b.a.CarBlockConversation(id, block, report)
+}
+func (b webCarBackend) MessageAction(id, action string) (any, error) {
+	return b.a.CarMessageAction(id, action)
+}
 func (b webCarBackend) MuteConversation(id string, muted bool) (any, error) {
 	return b.a.CarMuteConversation(id, muted)
 }

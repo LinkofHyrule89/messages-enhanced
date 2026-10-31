@@ -701,6 +701,7 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 				V2:                    v2Options,
 				V2IngestCounters:      v2IngestCounters,
 				MarkReadOnGoogle:      a.MarkReadOnGoogle,
+				ArchiveOnGoogle:       func(id string, archived bool) error { _, err := a.CarArchiveConversation(id, archived); return err },
 				Reads:                 reads,
 				V2Primary:             v2Primary,
 				Client:                a.GetClient,

@@ -149,6 +149,10 @@ type APIOptions struct {
 	BackfillStatus        func() any         // returns a JSON-serializable backfill progress snapshot
 	BackfillPhone         func(string) error // targeted backfill for a single phone number
 	SyncGoogleContacts    func() (int, error)
+	// ArchiveOnGoogle (optional) archives/unarchives a Google Messages
+	// conversation on the phone when the web app moves it into or out of
+	// the Archive tab.
+	ArchiveOnGoogle func(conversationID string, archived bool) error
 }
 
 type SearchResult struct {
@@ -960,10 +964,15 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 				httpError(w, "invalid JSON: "+err.Error(), 400)
 				return
 			}
+			oldTab := ""
+			if c, err := store.GetConversation(convID); err == nil && c != nil {
+				oldTab = c.Tab
+			}
 			if err := store.SetConversationTab(convID, req.Tab); err != nil {
 				httpError(w, "set tab: "+err.Error(), 400)
 				return
 			}
+			syncArchiveTab(store, opts, convID, oldTab, req.Tab)
 			convo, err := store.GetConversation(convID)
 			if err != nil {
 				httpError(w, "get conversation: "+err.Error(), 500)
@@ -1085,9 +1094,18 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 			httpError(w, "ids is required", 400)
 			return
 		}
+		oldTabs := map[string]string{}
+		for _, id := range req.IDs {
+			if c, err := store.GetConversation(id); err == nil && c != nil {
+				oldTabs[id] = c.Tab
+			}
+		}
 		if err := store.SetConversationsTab(req.IDs, req.Tab); err != nil {
 			httpError(w, "move conversations: "+err.Error(), 400)
 			return
+		}
+		for _, id := range req.IDs {
+			syncArchiveTab(store, opts, id, oldTabs[id], req.Tab)
 		}
 		publishConversations()
 		writeJSON(w, map[string]any{"moved": len(req.IDs), "tab": strings.TrimSpace(req.Tab)})
@@ -3999,4 +4017,24 @@ func addProjectionLag(
 		out[key] = entry
 	}
 	out["projection_stalled"] = stalled
+}
+
+// syncArchiveTab mirrors a local move into or out of the Archive tab to the
+// phone (Google Messages conversations only; best effort, the local move
+// stands either way).
+func syncArchiveTab(store *db.Store, opts APIOptions, convID, oldTab, newTab string) {
+	if opts.ArchiveOnGoogle == nil {
+		return
+	}
+	oldTab, newTab = strings.TrimSpace(oldTab), strings.TrimSpace(newTab)
+	wasArch, isArch := oldTab == db.TabArchive, newTab == db.TabArchive
+	if wasArch == isArch {
+		return
+	}
+	if err := opts.ArchiveOnGoogle(convID, isArch); err != nil {
+		_ = err // non-Google chats and offline phones are expected here
+	}
+	if !isArch && newTab != "" {
+		_ = store.SetConversationTab(convID, newTab) // keep the custom tab chosen
+	}
 }

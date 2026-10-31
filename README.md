@@ -195,6 +195,10 @@ name. Without a match, Android shows a URL bar instead of full screen.
 
 A native Kotlin Android app for tablets and phones (split layout, Material You, notifications with inline reply, in-app updates) lives in its own repo: [messages-enhanced-native](https://github.com/LinkofHyrule89/messages-enhanced-native). Download the APK from its [releases page](https://github.com/LinkofHyrule89/messages-enhanced-native/releases). It connects to this server.
 
+## Attribution
+
+Animated emoji are [Noto Animated Emoji](https://googlefonts.github.io/noto-emoji-animation/) by Google, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legal-code), loaded at runtime from fonts.gstatic.com and not modified or bundled. Holiday animations are original code.
+
 ## License
 
 OpenMessage is released under the Unlicense (public domain); see

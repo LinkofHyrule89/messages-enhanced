@@ -1291,3 +1291,47 @@ html.car .mention-opt .mention-avatar { width: 48px; height: 48px; min-width: 48
 
 /* Deleted-for-everyone placeholder */
 .bubble.deleted .deleted-body { font-style: italic; opacity: .7; }
+
+/* v0.7.12: phone-like bubble corners (large 20 : small 4 ratio from Google Messages, our values) */
+html.desk .me.grp-first .bubble, html.desk .me.grp-last .bubble, html.desk .me.grp-mid .bubble,
+html.desk .them.grp-first .bubble, html.desk .them.grp-last .bubble, html.desk .them.grp-mid .bubble { --small-r: 6px; }
+html.desk .me.grp-first .bubble { border-bottom-right-radius: 6px; }
+html.desk .me.grp-mid .bubble { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+html.desk .me.grp-last .bubble { border-top-right-radius: 6px; }
+html.desk .them.grp-first .bubble { border-bottom-left-radius: 6px; }
+html.desk .them.grp-mid .bubble { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+html.desk .them.grp-last .bubble { border-top-left-radius: 6px; }
+html:not(.desk) .me.grp-first .bubble { border-bottom-right-radius: 7px; }
+html:not(.desk) .me.grp-mid .bubble { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+html:not(.desk) .me.grp-last .bubble { border-top-right-radius: 7px; }
+html:not(.desk) .them.grp-first .bubble { border-bottom-left-radius: 7px; }
+html:not(.desk) .them.grp-mid .bubble { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+html:not(.desk) .them.grp-last .bubble { border-top-left-radius: 7px; }
+
+/* Screen effects canvas */
+.fx-canvas { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: none; }
+
+/* Emoji-only messages: large, animated (Noto Animated Emoji), no bubble */
+.bubble.emoji-only { background: transparent !important; padding: 2px 0 0; }
+.bubble.emoji-only .meta { opacity: .8; }
+.emoji-anim { display: flex; gap: 4px; align-items: center; }
+.emoji-anim-img { width: 72px; height: 72px; }
+html:not(.desk) .emoji-anim-img { width: 104px; height: 104px; }
+.emoji-anim-txt { font-size: 60px; line-height: 1.1; }
+html:not(.desk) .emoji-anim-txt { font-size: 88px; }
+
+/* Failed server message: tap to resend */
+.bubble.tap-resend { cursor: pointer; outline: 2px solid rgba(242, 139, 130, .55); outline-offset: -2px; }
+
+/* MMS tap to download */
+.mms-download { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.mms-download-title { font-weight: 600; }
+.mms-download-btn { border: 0; border-radius: 999px; padding: 10px 22px; background: rgba(255,255,255,.14); color: inherit; font: inherit; cursor: pointer; }
+.mms-download-btn:disabled { opacity: .6; }
+
+/* Clean links chip above the composer */
+.clean-links-chip { flex: none; align-self: center; border: 0; border-radius: 999px; padding: 6px 16px; background: #004a77; color: #c2e7ff; font: inherit; font-size: .8em; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.setting-field { flex-wrap: wrap; }
+.setting-input { display: block; width: 100%; margin-top: 10px; padding: 10px 14px; border-radius: 12px; border: 2px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; font: inherit; font-family: ui-monospace, monospace; font-size: .8em; box-sizing: border-box; }
+.setting-input.invalid { border-color: #f28b82; }
+.setting-err { display: block; margin-top: 6px; color: #f28b82; font-size: .8em; }

@@ -121,6 +121,7 @@
               </button>
               <button id="recEdit" class="rec-inline rec-edit" type="button" aria-label="Stop and edit the text" title="Edit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg></button>
             </div>
+            <button id="cleanLinksBtn" class="clean-links-chip" type="button" hidden title="Remove tracking parameters from links">Clean links</button>
             <button id="emojiBtn" class="btn-attach btn-emoji" type="button" aria-label="Emoji" title="Emoji" aria-expanded="false" aria-controls="emojiPanel"><span data-icon="emoji"></span></button>
             <button id="galleryBtn" class="pill-btn gallery-btn" type="button" aria-label="Photos and videos" title="Photos and videos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 16H5V5h14v14zm-5.04-6.71-2.75 3.54-1.96-2.36L6.5 17h11l-3.54-4.71z"/></svg></button>
           </div>
@@ -243,6 +244,29 @@
         </span>
         <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
       </button>
+      <button id="setHolidayFx" class="setting-row" type="button" role="switch" aria-checked="true">
+        <span class="setting-text">
+          <span class="setting-name">Holiday animations</span>
+          <span class="setting-desc">Full-screen effects for greetings like &quot;Happy birthday&quot; or &quot;Good night&quot;, and reaction bursts. Subtle in Car Mode</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
+      <button id="setAnimEmoji" class="setting-row" type="button" role="switch" aria-checked="true">
+        <span class="setting-text">
+          <span class="setting-name">Animated emojis</span>
+          <span class="setting-desc">Messages with only 1–3 emoji show large and animated (Noto Animated Emoji by Google, CC BY 4.0)</span>
+        </span>
+        <span class="switch" aria-hidden="true"><span class="switch-knob"></span></span>
+      </button>
+      <div class="setting-row setting-field">
+        <span class="setting-text">
+          <span class="setting-name">Clean links rule</span>
+          <span class="setting-desc">Query parameters whose names start with a match (regular expression, any case) are removed when you tap Clean links</span>
+          <input id="setCleanRule" class="setting-input" type="text" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Clean links rule">
+          <span id="setCleanRuleErr" class="setting-err" hidden>Not a valid regular expression</span>
+        </span>
+        <button id="setCleanRuleReset" class="btn-secondary" type="button">Reset</button>
+      </div>
       <button id="setShowDeleted" class="setting-row" type="button" role="switch" aria-checked="false">
         <span class="setting-text">
           <span class="setting-name">Show deleted message placeholders</span>
@@ -550,6 +574,18 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
       <span class="conv-menu-copy"><span id="convMenuMuteLabel">Mute notifications</span></span>
     </button>
+    <button id="convMenuBlock" class="msg-menu-item conv-menu-item" type="button" role="menuitem" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM4 12a8 8 0 0 1 12.9-6.3L5.7 16.9A7.95 7.95 0 0 1 4 12zm8 8a7.95 7.95 0 0 1-4.9-1.7L18.3 7.1A8 8 0 0 1 12 20z"/></svg>
+      <span class="conv-menu-copy"><span>Block</span></span>
+    </button>
+    <button id="convMenuBlockReport" class="msg-menu-item conv-menu-item" type="button" role="menuitem" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.7 3H8.3L3 8.3v7.4L8.3 21h7.4l5.3-5.3V8.3L15.7 3zM13 17h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+      <span class="conv-menu-copy"><span>Block &amp; report spam</span></span>
+    </button>
+    <button id="convMenuUnblock" class="msg-menu-item conv-menu-item" type="button" role="menuitem" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-2 15-5-5 1.4-1.4 3.6 3.6 7.6-7.6L19 8l-9 9z"/></svg>
+      <span class="conv-menu-copy"><span>Unblock</span></span>
+    </button>
     <button id="convMenuDetails" class="msg-menu-item conv-menu-item" type="button" role="menuitem">
       <span class="conv-menu-ico" aria-hidden="true" data-icon="info"></span>
       <span class="conv-menu-copy"><span id="convMenuDetailsLabel">Group details</span></span>
@@ -632,6 +668,8 @@
 </div>
 <script src="/app/emoji-data.js"></script>
 <script src="/app/live-stt.js"></script>
+<script src="/app/linkclean.js"></script>
+<script src="/app/effects.js"></script>
 <script src="/app/composer.js"></script>
 <script src="/app/pinch.js"></script>
 <script src="/app/app.js"></script>

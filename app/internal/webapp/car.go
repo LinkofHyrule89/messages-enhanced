@@ -36,6 +36,10 @@ type CarBackend interface {
 	// RefreshConversation re-reads one conversation from Google (members,
 	// icon, photos, latest messages). retryAfter > 0: rate limited.
 	RefreshConversation(conversationID string) (v any, retryAfter int, err error)
+	// BlockConversation blocks (report = also report spam) or unblocks.
+	BlockConversation(conversationID string, block, report bool) (any, error)
+	// MessageAction: "resend", "download" (MMS) or "fullsize" (image).
+	MessageAction(messageID, action string) (any, error)
 }
 
 func (s *Server) registerCarRoutes(mux *http.ServeMux) {
@@ -54,6 +58,8 @@ func (s *Server) registerCarRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/app/refresh", s.handleRefresh)
 	mux.HandleFunc("/api/app/conversations/refresh", s.handleCarConversationRefresh)
 	mux.HandleFunc("/api/app/grok", s.handleGrok)
+	mux.HandleFunc("/api/app/conversations/block", s.handleCarConversationBlock)
+	mux.HandleFunc("/api/app/messages/action", s.handleCarMessageAction)
 	s.registerProfileRoutes(mux)
 }
 
@@ -434,4 +440,59 @@ func (s *Server) handleTyping(w http.ResponseWriter, r *http.Request) {
 		"typing": s.deps.Typing.Active(strings.TrimSpace(r.URL.Query().Get("conversation_id"))),
 		"ttl_ms": TypingTTL.Milliseconds(),
 	})
+}
+
+// POST /api/app/conversations/block {"conversation_id": "...", "blocked": true|false, "report": bool}
+func (s *Server) handleCarConversationBlock(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	b := s.carBackend(w)
+	if b == nil {
+		return
+	}
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+		Blocked        *bool  `json:"blocked"`
+		Report         bool   `json:"report"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.ConversationID) == "" || req.Blocked == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "conversation_id and blocked are required"})
+		return
+	}
+	v, err := b.BlockConversation(req.ConversationID, *req.Blocked, req.Report)
+	writeCarResult(w, v, err)
+}
+
+// POST /api/app/messages/action {"message_id": "...", "action": "resend"|"download"|"fullsize"}
+func (s *Server) handleCarMessageAction(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodPost) {
+		return
+	}
+	b := s.carBackend(w)
+	if b == nil {
+		return
+	}
+	var req struct {
+		MessageID string `json:"message_id"`
+		Action    string `json:"action"`
+	}
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	switch req.Action {
+	case "resend", "download", "fullsize":
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be resend, download or fullsize"})
+		return
+	}
+	if strings.TrimSpace(req.MessageID) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "message_id is required"})
+		return
+	}
+	v, err := b.MessageAction(req.MessageID, req.Action)
+	writeCarResult(w, v, err)
 }

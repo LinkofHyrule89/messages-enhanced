@@ -82,6 +82,10 @@ func (f *fakeCar) DeleteMessage(id string) (any, error) {
 func (f *fakeCar) Contacts() (any, error) {
 	return map[string]any{"top": []any{}, "all": []map[string]string{{"name": "Ann", "number": "+15550001111"}}}, nil
 }
+func (f *fakeCar) BlockConversation(id string, block, report bool) (any, error) {
+	return map[string]any{"ok": true}, nil
+}
+func (f *fakeCar) MessageAction(id, action string) (any, error) { return map[string]any{"ok": true}, nil }
 func (f *fakeCar) StartConversation(numbers []string, groupName string) (any, error) {
 	f.started = append(f.started, numbers)
 	f.groupName = groupName
