@@ -1900,6 +1900,7 @@
     state.mineSending = false;
     var menuOpenFor = state.menuFor && state.menuFor.msg.MessageID, menuStillThere = false;
     var desk = isDesk(), groupChat = !!(c && c.IsGroup);
+    if (loadSettings().showDeleted !== true) msgs = msgs.filter(function (m) { return !isDeletedMsg(m); });
     msgs.forEach(function (m, idx) {
       var day = new Date(m.TimestampMS).toDateString();
       if (day !== lastDay) { box.appendChild(el("div", "day-sep", dayLabel(m.TimestampMS))); lastDay = day; }
@@ -3937,6 +3938,9 @@
     if (!showEm) showEmoji(false);
     es2.setAttribute("aria-checked", showEm ? "true" : "false");
     es2.classList.toggle("on", showEm);
+    var sd = s.showDeleted === true, sdb = $("setShowDeleted");
+    sdb.setAttribute("aria-checked", sd ? "true" : "false");
+    sdb.classList.toggle("on", sd);
     var snd = s.sound !== false, ss = $("setSound");
     ss.setAttribute("aria-checked", snd ? "true" : "false");
     ss.classList.toggle("on", snd);
@@ -5971,6 +5975,13 @@
       st.showAttach = !st.showAttach;
       saveSettings(st);
       applySettings();
+    });
+    $("setShowDeleted").addEventListener("click", function () {
+      var st = loadSettings();
+      st.showDeleted = st.showDeleted !== true;
+      saveSettings(st);
+      applySettings();
+      if (state.current) loadMessages(false, false);
     });
     $("setEmoji").addEventListener("click", function () {
       var st = loadSettings();

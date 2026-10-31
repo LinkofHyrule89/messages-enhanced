@@ -4,7 +4,7 @@
 
 ## Unreleased - Deleted messages
 
-- A message its sender deleted for everyone now stays in the thread as "This message was deleted" instead of disappearing.
+- New setting "Show deleted message placeholders" (off by default). When it is on, a message its sender deleted for everyone stays in the thread as an italic "This message was deleted" bubble with the sender and time. The deleted text is wiped on the server and never shown.
 - While your own delete-for-everyone is pending, the bubble says "Deleting for everyone…".
 
 ## Unreleased - Mention picker restyle
