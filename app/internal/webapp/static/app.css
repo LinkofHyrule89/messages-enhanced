@@ -1442,3 +1442,26 @@ html:not(.desk) .emoji-anim-img { width: 84px; height: 84px; }
 html:not(.desk) .emoji-anim-txt { font-size: 70px; }
 .bubble.emoji-only { overflow: visible; padding: 4px 0; }
 html .msg-row.emoji-only-row, html .msg-row.emoji-only-row + .msg-row { margin-top: 6px; margin-bottom: 4px; }
+
+/* v0.7.21: web/Car link previews match the native card (native dp/sp values
+   expressed in em of the 16sp body text). The card is the bubble: flush to the
+   edges, full width, no letterbox, corners from the bubble's own clip. */
+html .msg-row .bubble:has(.link-card) { overflow: hidden; }
+html .msg-row .bubble .link-card { width: min(18.75em, 66vw); max-width: 100%; min-width: 0;
+  margin: .5em -26px 0; border-radius: 0; background: transparent; }
+html .msg-row .bubble > .body:empty + .link-card-slot .link-card,
+html .msg-row .bubble > .link-card-slot:first-child .link-card { margin-top: -18px; }
+html .bubble .link-card-media, html .bubble .link-card-media.loading { background: transparent; display: block; position: relative; min-height: 0; }
+html .bubble .link-card-media.loading { height: 10em; }
+html .bubble .link-card-media img { display: block; width: 100%; max-width: 100%; height: auto;
+  min-height: 3.75em; max-height: min(60vh, 25em); object-fit: cover; object-position: center; }
+html .bubble .link-card-copy { padding: 0; }
+html .bubble .link-card-title { margin: 0; padding: .667em .8em 0; font-size: .9375em; font-weight: 700; line-height: 1.3;
+  color: #fff; text-transform: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+html .bubble .link-card-desc { margin: 0; padding: .3em .9em 0; font-size: .8125em; line-height: 1.3; color: rgba(255,255,255,.8);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+html .bubble .link-card-foot { display: flex; align-items: center; gap: .667em; margin: 0; padding: .667em 1em .833em;
+  font-size: .75em; color: rgba(255,255,255,.7); }
+html .bubble .link-card-foot img { width: 1.333em; height: 1.333em; border-radius: 3px; background: transparent; }
+.link-card-play { width: 3em; height: 3em; margin: -1.5em 0 0 -1.5em; }
+.link-card-play::after { left: 1.15em; top: .85em; border-width: .65em 0 .65em 1em; }

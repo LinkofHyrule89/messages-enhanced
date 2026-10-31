@@ -1,10 +1,11 @@
 # Changelog
 
-## v0.7.21 — 2026-10-31
+## v0.7.21
 
+- Web and Car Mode link previews now match the Android card: the preview is the bubble, image flush and full-width (cropped, never letterboxed, tall images capped), play overlay on video/YouTube, and native title, description and site footer sizes, spacing and colors.
 - Big emoji: emoji-only messages now show at about the phone app size (64dp animated emoji, smaller large-text emoji) and take real layout space with normal spacing, so they no longer overlap the message above or below. Web, Car Mode and Android.
 
-## v0.7.20 — 2026-10-31
+## v0.7.20
 
 - Group chats: each sender name now uses that person's own color, as Google Messages does. The color is the one the phone assigns to the participant (sent with the participant data), so a name matches its avatar circle. If no color is sent, a stable pick from an 8-color palette by number or name is used. Names are adjusted for readability on dark and light themes. Applies to web, Car Mode and the Android app.
 
