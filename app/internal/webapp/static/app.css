@@ -1262,3 +1262,11 @@ html.desk .grok-choice input { width: 18px; height: 18px; }
 html.desk .jump-newest { width: 48px; height: 48px; }
 html.desk .jump-newest svg { width: 26px; height: 26px; }
 .new-msg-pill { display: none !important; }
+
+/* @mentions */
+.bubble .mention { display: inline-block; padding: 0 6px; margin: 0 1px; border-radius: 999px; background: rgba(127,127,127,.2); color: var(--accent); font-weight: 600; line-height: 1.35; }
+.mention-picker { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; margin: 0 12px 6px; background: var(--panel, #1f2430); border-radius: 14px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+.mention-picker[hidden] { display: none; }
+.mention-opt { text-align: left; padding: 10px 14px; background: none; border: 0; color: inherit; font: inherit; cursor: pointer; }
+.mention-opt.sel, .mention-opt:hover { background: rgba(62,139,255,.18); }
+html.car .mention-opt { padding: 16px 18px; font-size: 1.25em; }

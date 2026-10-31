@@ -399,6 +399,11 @@ type notification struct {
 	Type string `json:"type,omitempty"`
 	TS   int64  `json:"ts"`
 	Test bool   `json:"test,omitempty"`
+	// Sender details let the Android app show the sender's photo (Person
+	// icon) and the group icon. Left out when message text is hidden.
+	Person string `json:"person,omitempty"`
+	Phone  string `json:"phone,omitempty"`
+	Group  bool   `json:"group,omitempty"`
 }
 
 func (h *PushHub) markSeenLocked(id string) bool {
@@ -510,7 +515,7 @@ func buildNotification(conv PushConversation, m PushMessage, count int, hide boo
 	} else if count > 1 {
 		body = fmt.Sprintf("%s (+%d more)", body, count-1)
 	}
-	return notification{
+	n := notification{
 		Title: title,
 		Body:  body,
 		Tag:   pushTag(conv.ID),
@@ -518,7 +523,13 @@ func buildNotification(conv PushConversation, m PushMessage, count int, hide boo
 		Conv:  conv.ID,
 		Type:  "message",
 		TS:    now.UnixMilli(),
+		Group: conv.IsGroup,
 	}
+	if !hide {
+		n.Person = strings.TrimSpace(m.SenderName)
+		n.Phone = strings.TrimSpace(m.SenderNum)
+	}
+	return n
 }
 
 // pushClearGrace: a just-notified chat isn't cleared for a moment, in case

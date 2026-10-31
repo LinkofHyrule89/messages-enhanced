@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased - @mentions
+
+- Mentions in received messages ('@Full Name' or '@First') show as rounded chips, like Google Messages. Google sends mentions as plain text wrapped in non-breaking spaces.
+- Typing @ in a group chat opens a member picker that filters as you type (arrows, Enter or Tab, Esc). It inserts the full name. Backspace removes the last name first, then the whole mention. Car Mode gets larger picker rows.
+- The server marks Google messages that mention you (full or first name), so the "Mentions only" notification setting now works for Google chats.
+- App push data now carries the sender name, number, and group flag (left out when text is hidden), so the Android app can show sender photos and the group icon.
+
 ## Unreleased - Disconnected grace
 
 - The "Google Messages is disconnected" banner and the Disconnected status dot now need 45 seconds of continuous disconnection (was 30 s for the banner, 25 s for the dot), so server restarts and VPN blips no longer flash them. Phone offline stays at 25 s.

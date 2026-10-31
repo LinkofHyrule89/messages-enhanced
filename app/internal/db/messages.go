@@ -42,6 +42,9 @@ func upsertMessageTx(tx *sql.Tx, m *Message) error {
 	if strings.TrimSpace(m.SourcePlatform) == "" {
 		m.SourcePlatform = "sms"
 	}
+	if m.SourcePlatform == "sms" && !m.IsFromMe && !m.MentionsMe && strings.Contains(m.Body, "@") {
+		m.MentionsMe = MentionsName(m.Body, ownerNameTx(tx))
+	}
 	// On conflict we must NOT blindly overwrite content columns with the
 	// incoming row: the live bridges re-deliver the same message_id for
 	// status-only updates (delivery/read receipts), where media_id /

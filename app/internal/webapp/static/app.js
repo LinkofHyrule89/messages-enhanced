@@ -1588,10 +1588,24 @@
     if (last < text.length) out.push({ text: text.slice(last) });
     return out;
   }
+  // Google Messages mentions are plain text: "\u00A0@Full Name\u00A0" or
+  // "\u00A0@First\u00A0". Render each as a pill chip.
+  var MENTION_RE = /(^|\u00A0)@([^\u00A0\n@]{1,60})\u00A0/g;
+  function appendMentions(d, text) {
+    var last = 0, m;
+    MENTION_RE.lastIndex = 0;
+    while ((m = MENTION_RE.exec(text)) !== null) {
+      var start = m.index + m[1].length;
+      if (start > last) d.appendChild(document.createTextNode(text.slice(last, start)));
+      d.appendChild(el("span", "mention", "@" + m[2]));
+      last = m.index + m[0].length - 1; // keep the trailing no-break space
+    }
+    if (last < text.length) d.appendChild(document.createTextNode(text.slice(last)));
+  }
   function bodyNode(text) {
     var d = el("div", "body");
     splitLinks(String(text || "")).forEach(function (p) {
-      if (!p.url) { d.appendChild(document.createTextNode(p.text)); return; }
+      if (!p.url) { appendMentions(d, p.text); return; }
       var a = el("a", "msg-link", p.text);
       a.href = p.url;
       a.target = "_blank";
@@ -2239,6 +2253,91 @@
   }
 
   // ---------- compose ----------
+  // ---- @mentions in group chats (Google style) ----
+  var NB = "\u00A0", mentionSel = 0, mentionList = [];
+  function mentionMembers() {
+    var c = (state.convs || []).find(function (x) { return x.ConversationID === state.current; });
+    if (!c || !c.IsGroup || sourcePlatformOf(c) !== "sms") return [];
+    return currentMembers(c).others.map(function (p) { return String(p.name || p.first_name || "").trim(); })
+      .filter(function (n) { return n && !/^[+\d\s()-]+$/.test(n); });
+  }
+  function mentionQuery() {
+    var t = $("input"), v = t.value, pos = t.selectionStart;
+    if (pos == null || pos !== t.selectionEnd) return null;
+    var before = v.slice(0, pos), at = before.lastIndexOf("@");
+    if (at < 0) return null;
+    var q = before.slice(at + 1);
+    if (q.length > 30 || /[\u00A0\n@]/.test(q) || /\s\S*\s/.test(q)) return null;
+    if (at > 0 && !/[\s\u00A0(]/.test(before.charAt(at - 1))) return null;
+    return { at: at, q: q, pos: pos };
+  }
+  function hideMentions() { var b = $("mentionPicker"); if (b) b.hidden = true; mentionList = []; }
+  function updateMentions() {
+    var b = $("mentionPicker"), mq = mentionQuery(), names = mq ? mentionMembers() : [];
+    if (!b || !mq || !names.length) return hideMentions();
+    var lo = mq.q.toLowerCase();
+    mentionList = names.filter(function (n) {
+      return !lo || n.toLowerCase().indexOf(lo) === 0 || n.toLowerCase().split(/\s+/).some(function (w) { return w.indexOf(lo) === 0; });
+    }).slice(0, 8);
+    if (!mentionList.length) return hideMentions();
+    mentionSel = Math.min(mentionSel, mentionList.length - 1);
+    b.textContent = "";
+    mentionList.forEach(function (n, i) {
+      var it = el("button", "mention-opt" + (i === mentionSel ? " sel" : ""), "@" + n);
+      it.type = "button";
+      it.addEventListener("pointerdown", function (e) { e.preventDefault(); pickMention(n); });
+      b.appendChild(it);
+    });
+    b.hidden = false;
+  }
+  function pickMention(name) {
+    var t = $("input"), mq = mentionQuery();
+    if (!mq) return hideMentions();
+    var v = t.value, pre = v.slice(0, mq.at), post = v.slice(mq.pos);
+    var ins = NB + "@" + name + NB + (post.charAt(0) === " " ? "" : " ");
+    t.value = pre + ins + post;
+    var c = (pre + ins).length;
+    t.focus(); t.setSelectionRange(c, c);
+    hideMentions(); autosize();
+    t.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  // Backspace right after a mention: "@First Last" -> "@First", then removed.
+  function mentionBackspace(e) {
+    var t = $("input"), pos = t.selectionStart;
+    if (pos == null || pos !== t.selectionEnd) return false;
+    var v = t.value, before = v.slice(0, pos);
+    var m = /\u00A0@([^\u00A0\n@]{1,60})\u00A0 ?$/.exec(before);
+    if (!m) return false;
+    var name = m[1], words = name.split(" "), start = m.index, repl;
+    if (words.length > 1) repl = NB + "@" + words[0] + NB;
+    else repl = "";
+    e.preventDefault();
+    t.value = v.slice(0, start) + repl + v.slice(pos);
+    var c = start + repl.length;
+    t.setSelectionRange(c, c); autosize();
+    t.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+  function mentionKeydown(e) {
+    var b = $("mentionPicker");
+    if (b && !b.hidden && mentionList.length) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); mentionSel = (mentionSel + (e.key === "ArrowDown" ? 1 : mentionList.length - 1)) % mentionList.length; updateMentions(); return true; }
+      if ((e.key === "Enter" || e.key === "Tab") && !e.isComposing) { e.preventDefault(); pickMention(mentionList[mentionSel]); return true; }
+      if (e.key === "Escape") { e.preventDefault(); hideMentions(); return true; }
+    }
+    if (e.key === "Backspace" && !e.isComposing) return mentionBackspace(e);
+    return false;
+  }
+  function initMentions() {
+    var t = $("input"), b = el("div", "mention-picker");
+    b.id = "mentionPicker"; b.hidden = true; b.setAttribute("role", "listbox");
+    var form = $("compose"); form.parentNode.insertBefore(b, form);
+    t.addEventListener("input", function () { mentionSel = 0; updateMentions(); });
+    t.addEventListener("keyup", function (e) { if (e.key === "ArrowLeft" || e.key === "ArrowRight") updateMentions(); });
+    t.addEventListener("blur", function () { setTimeout(hideMentions, 150); });
+    // Android keyboards send Backspace as beforeinput deleteContentBackward.
+    t.addEventListener("beforeinput", function (e) { if (e.inputType === "deleteContentBackward" && !e.isComposing) mentionBackspace(e); });
+  }
   function autosize() {
     var t = $("input");
     t.style.height = "auto";
@@ -5753,7 +5852,9 @@
     $("compose").addEventListener("submit", sendMessage);
     $("input").addEventListener("input", autosize);
     $("input").addEventListener("blur", rememberSelection);
+    initMentions();
     $("input").addEventListener("keydown", function (e) {
+      if (mentionKeydown(e)) return;
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(); }
     });
     $("micBtn").addEventListener("click", onMicTap);
