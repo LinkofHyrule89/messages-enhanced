@@ -2,6 +2,7 @@
 
 ## v0.7.13
 
+- Read receipts in one-to-one chats show the reader's photo (or initials) instead of two plain blue circles; group readers are deduplicated.
 - Per-conversation drafts in the web app and Car Mode: typed text is saved automatically for each chat in this browser only (localStorage, never synced). Switching chats shows that chat's own draft or an empty box; coming back restores it, mentions included. Drafts clear on send or when erased.
 - The chat list shows "Draft: ..." for chats with an unsent draft.
 

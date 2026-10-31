@@ -2241,6 +2241,17 @@
     if (!r) return null;
     return r[1].split(/\s*,\s*|\s+and\s+|\s*&\s*/).map(function (x) { return x.trim(); }).filter(Boolean);
   }
+  // One entry per reader (same name, or same number), at most 4.
+  function dedupeReaders(names) {
+    if (!names) return names;
+    var seen = {};
+    return names.filter(function (n) {
+      var d = String(n).replace(/\D/g, ""), k = d.length >= 7 ? d.slice(-10) : String(n).trim().toLowerCase();
+      if (!k || seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    }).slice(0, 4);
+  }
   // The group member Google means by a "Read by" name: its first name (as
   // on the phone), else the first word of the full name, else the number.
   function memberByName(c, name) {
@@ -2262,7 +2273,21 @@
     var kind = statusKind(m);
     if (!kind) return null;
     var box = el("div", "msg-status rcpt-row");
-    var names = groupChat && kind !== "failed" && kind !== "sending" ? readByNames(m) : null;
+    var names = groupChat && kind !== "failed" && kind !== "sending" ? dedupeReaders(readByNames(m)) : null;
+    if (!groupChat && kind === "read" && c) {
+      // 1:1: one face for the reader (photo, or initials) rather than the dot pair.
+      var other = conversationParticipants(c).filter(function (x) { return x && !isMe(x); })[0];
+      var who = other ? (other.name || other.number) : (c.Name || "");
+      if (who) {
+        box.classList.add("read-by", "read-one");
+        var one = senderAvatar({ SenderName: who, SenderNumber: other ? other.number : "" }, c);
+        one.className = "rb-av";
+        one.title = "Read";
+        one.setAttribute("aria-label", "Read");
+        box.appendChild(one);
+        return box;
+      }
+    }
     var others = groupChat ? currentMembers(c).others.length : 0;
     if (names && names.length && !(others && names.length >= others)) {
       box.classList.add("read-by");
