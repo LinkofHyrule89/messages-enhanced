@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.19
+
+- Reply quotes match the phone app: the quote sets the bubble width, so a short reply no longer squeezes a one-line quote; long quotes use the full bubble width and clamp at 4 lines (line breaks kept). Darker inset block, regular-weight name, no accent bar.
+- Group sender names are gold, as on the phone.
+
 ## v0.7.17
 
 - Link previews fill the bubble width with no grey side bars for tall/portrait images and video posts (X); height follows the image up to ~60% of the screen (400px), minimal crop past that.
