@@ -22,7 +22,7 @@ func deletedUpdate(id, conv string) *libgm.WrappedMessage {
 	}}
 }
 
-func TestHandleMessage_DeletedUpdateRemovesLocalRow(t *testing.T) {
+func TestHandleMessage_DeletedUpdateKeepsIncomingPlaceholder(t *testing.T) {
 	store, err := db.New(":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -40,8 +40,8 @@ func TestHandleMessage_DeletedUpdateRemovesLocalRow(t *testing.T) {
 		OnConversationsChange: func() { convChanges++ },
 	}
 	h.handleMessage(deletedUpdate("m1", "c1"))
-	if m, _ := store.GetMessageByID("m1"); m != nil {
-		t.Fatal("deleted message still stored")
+	if m, _ := store.GetMessageByID("m1"); m == nil || m.Body != "" || m.Status != db.StatusMessageDeleted {
+		t.Fatalf("want deleted placeholder, got %+v", m)
 	}
 	if changedFor != "c1" || convChanges != 1 {
 		t.Fatalf("change callbacks: %q %d", changedFor, convChanges)
@@ -51,5 +51,46 @@ func TestHandleMessage_DeletedUpdateRemovesLocalRow(t *testing.T) {
 	h.handleMessage(deletedUpdate("m2", "c1"))
 	if m, _ := store.GetMessageByID("m2"); m != nil {
 		t.Fatal("deleted update was stored as a new message")
+	}
+}
+
+func TestHandleMessage_DeletedOwnMessageRemovesRow(t *testing.T) {
+	store, err := db.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.UpsertMessage(&db.Message{MessageID: "o1", ConversationID: "c1", Body: "synthetic", TimestampMS: 1000, Status: "OUTGOING_COMPLETE", IsFromMe: true}); err != nil {
+		t.Fatal(err)
+	}
+	h := &EventHandler{Store: store, Logger: zerolog.Nop()}
+	h.handleMessage(deletedUpdate("o1", "c1"))
+	if m, _ := store.GetMessageByID("o1"); m != nil {
+		t.Fatal("own deleted message still stored")
+	}
+}
+
+func TestHandleMessage_IncomingEditMarksEdited(t *testing.T) {
+	store, err := db.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.UpsertMessage(&db.Message{MessageID: "e1", ConversationID: "c1", Body: "synthetic v1", TimestampMS: 1000, Status: "INCOMING_COMPLETE"}); err != nil {
+		t.Fatal(err)
+	}
+	h := &EventHandler{Store: store, Logger: zerolog.Nop()}
+	h.handleMessage(&libgm.WrappedMessage{Message: &gmproto.Message{
+		MessageID: "e1", ConversationID: "c1", Timestamp: 1000 * 1000,
+		MessageStatus: &gmproto.MessageStatus{Status: gmproto.MessageStatusType_INCOMING_COMPLETE},
+		MessageInfo:   []*gmproto.MessageInfo{{Data: &gmproto.MessageInfo_MessageContent{MessageContent: &gmproto.MessageContent{Content: "synthetic v2"}}}},
+	}})
+	m, _ := store.GetMessageByID("e1")
+	if m == nil || m.Body != "synthetic v2" {
+		t.Fatalf("edit not applied: %+v", m)
+	}
+	store.FillEdited([]*db.Message{m})
+	if !m.Edited {
+		t.Fatal("edit not marked")
 	}
 }

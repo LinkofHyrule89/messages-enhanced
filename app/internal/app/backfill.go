@@ -692,7 +692,12 @@ func (a *App) storeMessage(msg *gmproto.Message) {
 	client.RecordMessageEncryption(a.Store, msg)
 	client.RecordMessageStatusText(a.Store, msg)
 	if msg.GetMessageStatus().GetStatus() == gmproto.MessageStatusType_MESSAGE_DELETED {
-		return // deleted in Google Messages; never re-store it
+		// Deleted in Google Messages: never re-store it, but an incoming
+		// message we already have becomes a "This message was deleted" placeholder.
+		if old, err := a.Store.GetMessageByID(msg.GetMessageID()); err == nil && old != nil && !old.IsFromMe && old.Status != db.StatusMessageDeleted {
+			_ = a.Store.MarkMessageDeletedForEveryone(old.MessageID)
+		}
+		return
 	}
 	body := client.ExtractMessageBody(msg)
 	senderName, senderNumber := client.ExtractSenderInfo(msg)
