@@ -1,0 +1,11 @@
+const R=require("../static/rich.js"),a=require("assert");
+a.strictEqual(R.kind("text/x-vcard"),"vcard");a.strictEqual(R.kind("application/octet-stream","a.ics"),"ics");
+const v=R.vcard("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ada Example\r\nTEL;TYPE=CELL:+1 555 0100\r\nEND:VCARD");a.strictEqual(v.name,"Ada Example");a.deepStrictEqual(v.phones,["+1 555 0100"]);
+const e=R.ics("BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Team\\, lunch\nDTSTART:20261105T190000Z\nLOCATION:Cafe\nEND:VEVENT\nEND:VCALENDAR");a.strictEqual(e.title,"Team, lunch");a.strictEqual(e.start.ms,Date.UTC(2026,10,5,19));
+a.strictEqual(R.pushLocation('<x label="P"><gml:pos>1.5 -2</gml:pos></x>').href,"https://maps.google.com/?q=1.5,-2");
+const rc=R.richCard({message:{generalPurposeCardCarousel:{content:[{title:"A",suggestions:[{action:{displayText:"Open",urlAction:{openUrl:{url:"https://example.com"}}}}]},{title:"B"}]},suggestions:[{reply:{displayText:"Yes"}}]}});
+a.strictEqual(rc.cards.length,2);a.strictEqual(rc.cards[0].suggestions[0].href,"https://example.com");a.strictEqual(rc.suggestions[0].reply,true);
+a.strictEqual(R.otp("Your verification code is 482913. Don't share it."),"482913");a.strictEqual(R.otp("See you at 1030"),"");a.strictEqual(R.otp("G-123456 is your Google code"),"123456");a.strictEqual(R.otp("Your code: 123-456"),"123456");
+a.strictEqual(R.payment("Sam sent you $12.50 for pizza"),"$12.50");a.strictEqual(R.payment("$5 is a lot"),"");
+a.strictEqual(R.notice("MESSAGE_STATUS_TOMBSTONE_MISSED_VIDEO_CALL","").text,"Missed video call");a.strictEqual(R.notice("TOMBSTONE_PROTOCOL_SWITCH_TO_ENCRYPTED_RCS","x").icon,"lock");a.strictEqual(R.notice("TOMBSTONE_PROTOCOL_SWITCH_TO_TEXT","").icon,"unlock");
+a.ok(R.isNotice("MESSAGE_STATUS_TOMBSTONE_GROUP_ICON_CHANGED_GLOBAL"));console.log("ok");

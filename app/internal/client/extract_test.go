@@ -76,7 +76,7 @@ func TestExtractMediaInfo_Characterization(t *testing.T) {
 			},
 			want: &MediaInfo{
 				MediaID:  "image-without-mime",
-				MimeType: "image/jpeg",
+				MimeType: "image/png",
 			},
 		},
 		{
@@ -87,7 +87,7 @@ func TestExtractMediaInfo_Characterization(t *testing.T) {
 			},
 			want: &MediaInfo{
 				MediaID:  "video-without-mime",
-				MimeType: "application/octet-stream",
+				MimeType: "video/mp4",
 			},
 		},
 	}

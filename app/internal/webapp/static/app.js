@@ -449,7 +449,7 @@
     function initUnlock() {
       ["pointerdown", "touchstart", "keydown"].forEach(function (t) { document.addEventListener(t, unlock, true); });
     }
-    function incoming(m) { return !m.IsFromMe && !/^TOMBSTONE/i.test(m.Status || ""); }
+    function incoming(m) { return !m.IsFromMe && !/TOMBSTONE/i.test(m.Status || ""); }
     // Messages of one conversation (newest first or any order).
     function noteMessages(id, msgs) {
       var max = 0, fresh = false;
@@ -543,7 +543,7 @@
     return t;
   }
   function patchConv(convID, m) {
-    if (!m || !convID || /^TOMBSTONE/i.test(m.Status || "")) return false;
+    if (!m || !convID || /TOMBSTONE/i.test(m.Status || "")) return false;
     var c = state.convs.find(function (x) { return x.ConversationID === convID; });
     var ts = m.TimestampMS || Date.now();
     if (!c || ts <= (c.LastMessageTS || 0) && c.last_message_preview) return false;
@@ -1438,7 +1438,7 @@
         state.serverMsgs = { id: id, msgs: (msgs || []).slice().reverse() };
         if (state.jump && state.jump.conv === id) state.jump.loaded = true;
         if (!state.folder) chime.noteMessages(id, msgs || []);
-        if (!state.folder && msgs && msgs.length) patchConv(id, msgs.filter(function (m) { return !/^TOMBSTONE/i.test(m.Status || ""); })[0]);
+        if (!state.folder && msgs && msgs.length) patchConv(id, msgs.filter(function (m) { return !/TOMBSTONE/i.test(m.Status || ""); })[0]);
         var merged = mergeLocal(id, state.serverMsgs.msgs);
         var sig = JSON.stringify(msgs || []) + "|" + localSig(id);
         if (quiet && !scroll && lastRender.id === id && lastRender.sig === sig) return;
@@ -1762,6 +1762,232 @@
     a.appendChild(copy);
     return a;
   }
+  // ---------- special content (contacts, events, voice, files, rich cards,
+  // codes, payments, system notices); parsers live in rich.js ----------
+  var RICH_ICONS = {
+    person: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-3.3 0-8 1.7-8 5v1h16v-1c0-3.3-4.7-5-8-5z",
+    event: "M7 2v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm-2 8h14v10H5V10zm2 2v3h3v-3H7z",
+    file: "M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V9h5.5L13 3.5z",
+    play: "M8 5v14l11-7z", pause: "M6 5h4v14H6zm8 0h4v14h-4z",
+    lock: "M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 8V7a3 3 0 0 1 6 0v3H9z",
+    unlock: "M12 2a5 5 0 0 0-5 5h2a3 3 0 0 1 6 0v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5z",
+    call: "M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1L6.6 10.8z",
+    shield: "M12 2 4 5v6c0 5 3.4 9.7 8 11 4.6-1.3 8-6 8-11V5l-8-3zm-1.2 14.2-3.5-3.5 1.4-1.4 2.1 2.1 4.9-4.9 1.4 1.4-6.3 6.3z",
+    warn: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+    group: "M16 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm-8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm0 2c-2.3 0-7 1.2-7 3.5V19h14v-2.5C15 14.2 10.3 13 8 13zm8 0c-.3 0-.6 0-1 .1 1.2.8 2 2 2 3.4V19h6v-2.5c0-2.3-4.7-3.5-7-3.5z",
+    edit: "M3 17.2V21h3.8l11-11-3.8-3.8-11 11zM20.7 7a1 1 0 0 0 0-1.4l-2.3-2.3a1 1 0 0 0-1.4 0l-1.8 1.8 3.8 3.8L20.7 7z",
+    info: "M11 7h2v2h-2zm0 4h2v6h-2zm1-9a10 10 0 1 0 0 20 10 10 0 0 0 0-20z",
+    copy: "M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z",
+    pay: "M11.8 10.9c-2.3-.6-3-1.2-3-2.1 0-1.1 1-1.8 2.7-1.8 1.8 0 2.4.8 2.5 2.1h2.2c-.1-1.7-1.1-3.3-3.2-3.8V3h-3v2.2c-1.9.4-3.5 1.7-3.5 3.6 0 2.3 1.9 3.4 4.7 4.1 2.5.6 3 1.5 3 2.4 0 .7-.5 1.8-2.7 1.8-2.1 0-2.9-.9-3-2.1H6.3c.1 2.2 1.8 3.5 3.7 3.9V21h3v-2.1c1.9-.4 3.5-1.5 3.5-3.6 0-2.8-2.4-3.8-4.7-4.4z",
+  };
+  function richIcon(name, cls) { return svgIcon(RICH_ICONS[name] || RICH_ICONS.info, cls || "rich-ic"); }
+  var richText = {};
+  function mediaText(m, cb) {
+    var k = m.MessageID, c = richText[k];
+    if (c && c.done) { cb(c.text); return; }
+    if (c) { c.cbs.push(cb); return; }
+    c = richText[k] = { cbs: [cb] };
+    fetch(mediaURL(m), { credentials: "same-origin" }).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then(function (t) { return t.length > 512 * 1024 ? "" : t; }, function () { return null; })
+      .then(function (t) { c.done = true; c.text = t; c.cbs.forEach(function (f) { f(t); }); c.cbs = []; if (t === null) setTimeout(function () { delete richText[k]; }, 30000); });
+  }
+  function cachedNode(key, build) { var n = state.nodes[key]; if (n) return n; n = build(); state.nodes[key] = n; return n; }
+  function downloadLink(m, label, name) {
+    var a = el("a", "rich-btn", label);
+    a.href = mediaURL(m); a.setAttribute("download", name || ""); a.rel = "noopener";
+    return a;
+  }
+  function richShell(iconName, cls) {
+    var w = el("div", "rich-card " + (cls || ""));
+    var ic = el("span", "rich-card-ic"); ic.appendChild(richIcon(iconName)); w.appendChild(ic);
+    var copy = el("div", "rich-card-copy"); w.appendChild(copy);
+    return { wrap: w, copy: copy };
+  }
+  function contactNode(m) {
+    return cachedNode("vc:" + m.MessageID, function () {
+      var s = richShell("person", "contact-card");
+      s.copy.appendChild(el("div", "rich-title", "Contact"));
+      var acts = el("div", "rich-actions"); acts.appendChild(downloadLink(m, "Download", "contact.vcf"));
+      s.wrap.appendChild(acts);
+      mediaText(m, function (t) {
+        if (!t) { s.copy.appendChild(el("div", "rich-sub", "Couldn't load contact")); return; }
+        var v = MERich.vcard(t); s.copy.textContent = "";
+        s.copy.appendChild(el("div", "rich-title", fontSafe(v.name)));
+        v.phones.slice(0, 3).forEach(function (p) { var a = el("a", "rich-sub", fmtPhone(p)); a.href = "tel:" + p.replace(/[^\d+]/g, ""); s.copy.appendChild(a); });
+        if (!v.phones.length && v.emails[0]) s.copy.appendChild(el("div", "rich-sub", v.emails[0]));
+      });
+      return s.wrap;
+    });
+  }
+  function fmtEventTime(ev) {
+    if (!ev.start) return "";
+    var d = new Date(ev.start.ms), opt = { weekday: "short", month: "short", day: "numeric" };
+    var s = d.toLocaleDateString(undefined, opt);
+    if (!ev.start.allDay) s += ", " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (ev.end && !ev.start.allDay) s += " – " + new Date(ev.end.ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return s;
+  }
+  function gcalDate(t, allDay) { return new Date(t).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "").slice(0, allDay ? 8 : 16); }
+  function eventNode(m) {
+    return cachedNode("ics:" + m.MessageID, function () {
+      var s = richShell("event", "event-card");
+      s.copy.appendChild(el("div", "rich-title", "Calendar invite"));
+      var acts = el("div", "rich-actions"); acts.appendChild(downloadLink(m, "Download", "invite.ics"));
+      s.wrap.appendChild(acts);
+      mediaText(m, function (t) {
+        var ev = t && MERich.ics(t);
+        if (!ev) return;
+        s.copy.textContent = "";
+        s.copy.appendChild(el("div", "rich-title", fontSafe(ev.title)));
+        var when = fmtEventTime(ev); if (when) s.copy.appendChild(el("div", "rich-sub", when));
+        if (ev.location) s.copy.appendChild(el("div", "rich-sub", fontSafe(ev.location)));
+        if (ev.start) {
+          var end = ev.end ? ev.end.ms : ev.start.ms + (ev.start.allDay ? 864e5 : 36e5);
+          var g = el("a", "rich-btn", "Add to calendar");
+          g.href = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(ev.title) + "&dates=" + gcalDate(ev.start.ms, ev.start.allDay) + "/" + gcalDate(end, ev.start.allDay) + (ev.location ? "&location=" + encodeURIComponent(ev.location) : "");
+          g.target = "_blank"; g.rel = "noopener noreferrer";
+          acts.insertBefore(g, acts.firstChild);
+        }
+      });
+      return s.wrap;
+    });
+  }
+  function fileNode(m) {
+    return cachedNode("f:" + m.MessageID, function () {
+      var name = String(m.Body || "").trim(), mt = String(m.MimeType || "");
+      var ext = (/\.([a-z0-9]{1,5})$/i.exec(name) || [])[1] || (mt.split("/")[1] || "file").replace(/^vnd\..*\./, "").slice(0, 5);
+      var a = el("a", "rich-card file-card");
+      a.href = mediaURL(m); a.setAttribute("download", name && name.length < 120 ? name : ""); a.rel = "noopener";
+      var ic = el("span", "rich-card-ic"); ic.appendChild(richIcon("file")); a.appendChild(ic);
+      var copy = el("span", "rich-card-copy");
+      copy.appendChild(el("span", "rich-title", fontSafe(name && name.length < 120 && !GENERIC_MEDIA_BODY[name] ? name : "File")));
+      copy.appendChild(el("span", "rich-sub", ext.toUpperCase() + " · Download"));
+      a.appendChild(copy);
+      return a;
+    });
+  }
+  // Voice note: play/pause, waveform from the decoded audio (bars fill as it
+  // plays), duration and a speed toggle, like Google Messages.
+  function voiceNode(m) {
+    return cachedNode("au:" + m.MessageID, function () {
+      var w = el("div", "voice"), btn = el("button", "voice-play"), bars = el("div", "voice-wave"), dur = el("span", "voice-dur", "0:00"), spd = el("button", "voice-speed", "1×");
+      btn.type = spd.type = "button"; btn.setAttribute("aria-label", "Play voice message");
+      btn.appendChild(richIcon("play"));
+      var N = 36, bs = [];
+      var seed = 0; String(m.MessageID).split("").forEach(function (ch) { seed = (seed * 31 + ch.charCodeAt(0)) >>> 0; });
+      for (var i = 0; i < N; i++) { seed = (seed * 1103515245 + 12345) >>> 0; var b = el("span", "voice-bar"); b.style.height = (25 + (seed % 60)) + "%"; bars.appendChild(b); bs.push(b); }
+      var au = new Audio(); au.preload = "metadata"; au.src = mediaURL(m);
+      function fmt(s) { s = Math.max(0, Math.round(s || 0)); return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2); }
+      function paint() { var p = au.duration ? au.currentTime / au.duration : 0, k = Math.round(p * N); bs.forEach(function (b, j) { b.classList.toggle("on", j < k); }); dur.textContent = fmt(au.paused && !au.currentTime ? au.duration : au.currentTime); }
+      function setIcon(n) { btn.textContent = ""; btn.appendChild(richIcon(n)); btn.setAttribute("aria-label", n === "play" ? "Play voice message" : "Pause voice message"); }
+      au.addEventListener("loadedmetadata", paint); au.addEventListener("timeupdate", paint);
+      au.addEventListener("play", function () { setIcon("pause"); }); au.addEventListener("pause", function () { setIcon("play"); });
+      au.addEventListener("ended", function () { au.currentTime = 0; paint(); });
+      au.addEventListener("error", function () { if (!w.isConnected) return; w.textContent = ""; w.className = "media media-failed"; w.appendChild(attachmentLink(m, "audio")); });
+      btn.addEventListener("click", function (ev) { ev.stopPropagation(); if (au.paused) { document.querySelectorAll("audio").forEach(function () {}); au.play().catch(function () {}); } else au.pause(); });
+      bars.addEventListener("click", function (ev) { if (!au.duration) return; var r = bars.getBoundingClientRect(); au.currentTime = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * au.duration; paint(); });
+      var speeds = [1, 1.5, 2], si = 0;
+      spd.addEventListener("click", function (ev) { ev.stopPropagation(); si = (si + 1) % speeds.length; au.playbackRate = speeds[si]; spd.textContent = speeds[si] + "×"; });
+      // Real waveform when the browser can decode it (small files only).
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC && window.fetch) fetch(mediaURL(m), { credentials: "same-origin" }).then(function (r) { return r.ok ? r.arrayBuffer() : null; }).then(function (buf) {
+        if (!buf || buf.byteLength > 8e6) return;
+        var ctx = new AC();
+        return new Promise(function (res, rej) { var p = ctx.decodeAudioData(buf, res, rej); if (p && p.then) p.then(res, rej); }).then(function (ab) {
+          var d = ab.getChannelData(0), step = Math.floor(d.length / N) || 1, peaks = [], mx = 0;
+          for (var j = 0; j < N; j++) { var s = 0; for (var q = j * step; q < Math.min(d.length, (j + 1) * step); q += 16) s = Math.max(s, Math.abs(d[q])); peaks.push(s); mx = Math.max(mx, s); }
+          peaks.forEach(function (p, j) { bs[j].style.height = Math.max(12, Math.round(100 * p / (mx || 1))) + "%"; });
+          if (ctx.close) ctx.close();
+        });
+      }).catch(function () {});
+      w.appendChild(btn); w.appendChild(bars); w.appendChild(dur); w.appendChild(spd);
+      return w;
+    });
+  }
+  function suggestionChips(list, cls) {
+    var row = el("div", "rich-suggestions " + (cls || ""));
+    list.forEach(function (s) {
+      var c;
+      if (s.href) { c = el("a", "rich-chip", s.text); c.href = s.href; c.target = "_blank"; c.rel = "noopener noreferrer"; }
+      else {
+        c = el("button", "rich-chip", s.text); c.type = "button";
+        c.addEventListener("click", function (ev) { ev.stopPropagation(); var t = $("input"); if (!t || t.disabled) return; t.value = s.text; t.dispatchEvent(new Event("input", { bubbles: true })); t.focus(); });
+      }
+      row.appendChild(c);
+    });
+    return row;
+  }
+  function richCardBody(rc) {
+    var w = el("div", "rcs" + (rc.carousel ? " rcs-carousel" : ""));
+    var strip = el("div", "rcs-strip");
+    rc.cards.forEach(function (c) {
+      var card = el("div", "rcs-card");
+      if (c.media) { var img = el("img", "rcs-media"); img.loading = "lazy"; img.referrerPolicy = "no-referrer"; img.src = c.media; img.alt = ""; img.onerror = function () { img.remove(); }; card.appendChild(img); }
+      if (c.title) card.appendChild(el("div", "rich-title", fontSafe(c.title)));
+      if (c.description) card.appendChild(el("div", "rich-sub", fontSafe(c.description)));
+      if (c.suggestions.length) card.appendChild(suggestionChips(c.suggestions, "in-card"));
+      strip.appendChild(card);
+    });
+    w.appendChild(strip);
+    if (rc.suggestions.length) w.appendChild(suggestionChips(rc.suggestions));
+    return w;
+  }
+  function richCardNode(m) {
+    return cachedNode("rc:" + m.MessageID, function () {
+      var w = el("div", "rcs-slot");
+      w.appendChild(el("div", "body", "Rich card"));
+      mediaText(m, function (t) {
+        var rc = t && MERich.richCard(t);
+        w.textContent = "";
+        if (rc) w.appendChild(richCardBody(rc)); else w.appendChild(fileNode(m));
+      });
+      return w;
+    });
+  }
+  function pushLocationNode(m) {
+    return cachedNode("pl:" + m.MessageID, function () {
+      var w = el("div", "loc-slot");
+      w.appendChild(locationCard({ href: mediaURL(m), label: "" }));
+      mediaText(m, function (t) { var info = t && MERich.pushLocation(t); if (info) { w.textContent = ""; w.appendChild(locationCard(info)); } });
+      return w;
+    });
+  }
+  function richMediaNode(m) {
+    switch (MERich.kind(m.MimeType, m.Body)) {
+      case "vcard": return contactNode(m);
+      case "ics": return eventNode(m);
+      case "audio": return voiceNode(m);
+      case "richcard": return richCardNode(m);
+      case "pushloc": return pushLocationNode(m);
+      default: return fileNode(m);
+    }
+  }
+  function isSticker(m) { return (/image\/webp/i.test(m.MimeType || "") || String(m.Body || "").trim() === "[Sticker]") && !imageCaption(m); }
+  // One-time code / payment chips under a received text.
+  function textChips(m) {
+    if (m.IsFromMe || !m.Body) return null;
+    var code = MERich.otp(m.Body), pay = !code && MERich.payment(m.Body);
+    if (!code && !pay) return null;
+    var row = el("div", "rich-suggestions chips-under");
+    var c = el("button", "rich-chip" + (code ? " otp-chip" : " pay-chip"));
+    c.type = "button";
+    c.appendChild(richIcon(code ? "copy" : "pay"));
+    c.appendChild(document.createTextNode(code ? "Copy " + code : pay));
+    c.title = code ? "Copy code" : "Copy amount";
+    c.addEventListener("click", function (ev) { ev.stopPropagation(); copyText(code || pay); });
+    row.appendChild(c);
+    return row;
+  }
+  function noticeRow(m) {
+    var n = MERich.notice(m.Status, m.Body);
+    if (!n) return null;
+    var row = el("div", "sys-notice notice-" + n.icon);
+    row.dataset.id = m.MessageID;
+    row.appendChild(richIcon(n.icon, "sys-ic"));
+    row.appendChild(el("span", "sys-text", fontSafe(n.text)));
+    row.title = clockTime(m.TimestampMS);
+    return row;
+  }
   function appendBodyWithPreview(bubble, m, text) {
     var loc = locationInfo(text);
     if (loc) { bubble.appendChild(locationCard(loc)); return; }
@@ -1953,7 +2179,7 @@
     msgs.forEach(function (m) { if (m && m.MessageID) byID[String(m.MessageID)] = m; });
     state.byID = byID;
     var lastMine = -1;
-    msgs.forEach(function (m, i) { if (m.IsFromMe && !/^TOMBSTONE/i.test(m.Status || "")) lastMine = i; });
+    msgs.forEach(function (m, i) { if (m.IsFromMe && !/TOMBSTONE/i.test(m.Status || "")) lastMine = i; });
     state.mineSending = false;
     var menuOpenFor = state.menuFor && state.menuFor.msg.MessageID, menuStillThere = false;
     var desk = isDesk(), groupChat = !!(c && c.IsGroup);
@@ -1961,6 +2187,7 @@
     msgs.forEach(function (m, idx) {
       var day = new Date(m.TimestampMS).toDateString();
       if (day !== lastDay) { box.appendChild(el("div", "day-sep", dayLabel(m.TimestampMS))); lastDay = day; }
+      if (MERich.isNotice(m.Status)) { var nr = noticeRow(m); if (nr) box.appendChild(nr); return; }
       var row = el("div", "msg-row " + (m.IsFromMe ? "me" : "them"));
       // Non-car: Google Messages-style runs (grouped corners, sender name
       // and photo on the first received bubble of a run in group chats).
@@ -1987,6 +2214,7 @@
         if (caption && !GENERIC_MEDIA_BODY[caption] && !VIDEO_EXT.test(caption)) appendBodyWithPreview(bubble, m, m.Body);
       } else if (isImageMessage(m)) {
         bubble.classList.add("has-media", "has-image");
+        if (isSticker(m)) { bubble.classList.add("sticker"); row.classList.add("sticker-row"); }
         bubble.appendChild(imageNode(m));
         if (imageCaption(m)) appendBodyWithPreview(bubble, m, m.Body);
       } else if (isMMSDownload(m)) {
@@ -1998,8 +2226,16 @@
           if (eb && window.MEEffects.animateEmoji(eb, m.Body)) { bubble.classList.add("emoji-only"); row.classList.add("emoji-only-row"); }
         }
       } else {
-        bubble.appendChild(m.MediaID ? iconEl("div", "body media-label", "attach", m.MimeType || "attachment") : el("div", "body", ""));
+        bubble.appendChild(el("div", "body", ""));
       }
+      if (m.MediaID && !isDeletedMsg(m) && !isVideoMessage(m) && !isImageMessage(m) && !isMMSDownload(m)) {
+        var rk = MERich.kind(m.MimeType, m.Body);
+        var bodyEl = bubble.querySelector(":scope > .body");
+        if (bodyEl && (rk !== "file" || !String(m.Body || "").trim() || GENERIC_MEDIA_BODY[String(m.Body).trim()] || /\.[a-z0-9]{1,5}$/i.test(String(m.Body).trim()))) bodyEl.remove();
+        bubble.classList.add("has-rich", "rich-" + rk);
+        bubble.insertBefore(richMediaNode(m), bubble.querySelector(":scope > .meta"));
+      }
+      var chips = !isDeletedMsg(m) && textChips(m);
       maybeScreenEffect(m);
       if (m.IsFromMe && !m.local && !isSendPlaceholder(m) && /FAIL/.test(m.Status || "") && !/^tm-/.test(m.MessageID)) {
         bubble.classList.add("tap-resend"); bubble.title = "Not sent. Tap to try again";
@@ -2010,6 +2246,7 @@
       if (state.selecting && state.selected[m.MessageID]) row.classList.add("selected");
       if (isDesk()) row.appendChild(timeLabel(m));
       bubble.appendChild(meta);
+      if (chips) bubble.appendChild(chips);
       var rx = reactionsNode(m);
       if (rx) bubble.appendChild(rx);
       var mb = el("button", "msg-menu-btn");
@@ -2115,17 +2352,17 @@
     showNewPill(0);
   }
   function realTail(msgs) {
-    for (var i = msgs.length - 1; i >= 0; i--) if (!/^TOMBSTONE/i.test(msgs[i].Status || "")) return msgs[i];
+    for (var i = msgs.length - 1; i >= 0; i--) if (!/TOMBSTONE/i.test(msgs[i].Status || "")) return msgs[i];
     return null;
   }
   function noteTail(msgs) { var t = realTail(msgs); scrollState.tailID = t ? String(t.MessageID) : ""; }
   function firstUnread(msgs, seenAt) {
     var i, from = -1;
     if (seenAt) {
-      for (i = 0; i < msgs.length; i++) if (!msgs[i].IsFromMe && !/^TOMBSTONE/i.test(msgs[i].Status || "") && msgs[i].TimestampMS > seenAt) { from = i; break; }
+      for (i = 0; i < msgs.length; i++) if (!msgs[i].IsFromMe && !/TOMBSTONE/i.test(msgs[i].Status || "") && msgs[i].TimestampMS > seenAt) { from = i; break; }
     } else {
       // Never opened here: the incoming run after your last message.
-      for (i = msgs.length - 1; i >= 0 && !msgs[i].IsFromMe; i--) if (!/^TOMBSTONE/i.test(msgs[i].Status || "")) from = i;
+      for (i = msgs.length - 1; i >= 0 && !msgs[i].IsFromMe; i--) if (!/TOMBSTONE/i.test(msgs[i].Status || "")) from = i;
     }
     return from >= 0 ? msgs[from] : null;
   }
@@ -2174,7 +2411,7 @@
       if (nearBottom) scrollToBottom();
       else {
         var n = 0;
-        for (var i = msgs.length - 1; i >= 0 && String(msgs[i].MessageID) !== sc.tailID; i--) if (!msgs[i].IsFromMe && !/^TOMBSTONE/i.test(msgs[i].Status || "")) n++;
+        for (var i = msgs.length - 1; i >= 0 && String(msgs[i].MessageID) !== sc.tailID; i--) if (!msgs[i].IsFromMe && !/TOMBSTONE/i.test(msgs[i].Status || "")) n++;
         showNewPill(sc.pill + Math.max(1, n));
       }
     } else if (nearBottom) { box.scrollTop = box.scrollHeight; if (tail && !state.folder) markSeen(state.current, tail.TimestampMS); }

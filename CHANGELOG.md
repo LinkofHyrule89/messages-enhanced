@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.7.14
+
+- Contact (vCard) cards with call links and a contact.vcf download; calendar (.ics) cards with "Add to calendar" and invite.ics download.
+- Voice notes play with a waveform, seek and 1x/1.5x/2x speed; other files show a download card.
+- Stickers without a bubble; one-time code "Copy code" and payment amount chips.
+- System notices (missed calls, encryption/security changes, verification, scam warnings) render as centered notices, including MESSAGE_STATUS_TOMBSTONE_* statuses.
+- RCS rich cards, carousels and suggested replies/actions render when they arrive.
+- Better MIME detection for attachments, and older RCS location pushes become location messages.
+
 ## v0.7.13
 
 - Shared locations from Google Messages are now received (they used to arrive empty) and render as a location card with the place text, opening Maps on tap. A sent location no longer stays stuck on the pending clock: status updates for already-stored contentless messages are applied.

@@ -211,6 +211,13 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 		dbMsg.MediaID = media.MediaID
 		dbMsg.MimeType = media.MimeType
 		dbMsg.DecryptionKey = hex.EncodeToString(media.DecryptionKey)
+		// Older location encoding: an RCS location push document as the
+		// attachment. When it is inline, store it as a Maps link body.
+		if IsPushLocationMime(media.MimeType) && len(media.InlineData) > 0 && strings.TrimSpace(dbMsg.Body) == "" {
+			if lb := PushLocationBody(media.InlineData); lb != "" {
+				dbMsg.Body = lb
+			}
+		}
 	}
 
 	if reactions := ExtractReactions(msg); reactions != nil {

@@ -196,15 +196,7 @@ func ExtractMediaInfo(msg *gmproto.Message) *MediaInfo {
 			mc, _ = locationContent(info)
 		}
 		if mc != nil {
-			mime := mc.GetMimeType()
-			if mime == "" {
-				switch {
-				case mc.GetFormat() >= 1 && mc.GetFormat() <= 7:
-					mime = "image/jpeg"
-				default:
-					mime = "application/octet-stream"
-				}
-			}
+			mime := InferMime(mc.GetMimeType(), mc.GetFormat(), mc.GetMediaName())
 
 			mi := &MediaInfo{
 				MediaID:                mc.GetMediaID(),

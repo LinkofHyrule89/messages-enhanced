@@ -1345,3 +1345,38 @@ html:not(.desk) .emoji-anim-txt { font-size: 88px; }
 .loc-title { font-weight: 600; }
 .loc-label { opacity: .85; overflow-wrap: anywhere; }
 .loc-open { font-size: .85em; text-decoration: underline; opacity: .8; }
+/* Special content cards (contact, event, file, rich card), voice notes,
+   code/payment chips and system notices. */
+.rich-card { display: flex; gap: 10px; align-items: flex-start; padding: 8px 4px; min-width: 200px; max-width: 320px; color: inherit; text-decoration: none; flex-wrap: wrap; }
+.rich-card-ic { flex: 0 0 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.14); display: flex; align-items: center; justify-content: center; }
+.rich-ic { width: 22px; height: 22px; fill: currentColor; }
+.rich-card-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+.rich-title { font-weight: 600; overflow-wrap: anywhere; }
+.rich-sub { font-size: .88em; opacity: .85; color: inherit; overflow-wrap: anywhere; }
+a.rich-sub { text-decoration: underline; }
+.rich-actions { display: flex; gap: 8px; flex-basis: 100%; padding-left: 50px; flex-wrap: wrap; }
+.rich-btn { font-size: .88em; font-weight: 600; padding: 5px 12px; border-radius: 16px; border: 1px solid currentColor; color: inherit; text-decoration: none; opacity: .95; }
+.voice { display: flex; align-items: center; gap: 8px; min-width: 220px; padding: 4px 2px; }
+.voice-play { flex: 0 0 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(255,255,255,.2); color: inherit; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.voice-play .rich-ic { width: 20px; height: 20px; }
+.voice-wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 28px; cursor: pointer; min-width: 110px; }
+.voice-bar { flex: 1; min-width: 2px; border-radius: 2px; background: currentColor; opacity: .38; }
+.voice-bar.on { opacity: 1; }
+.voice-dur { font-size: .82em; font-variant-numeric: tabular-nums; opacity: .85; min-width: 32px; }
+.voice-speed { border: 0; background: rgba(255,255,255,.16); color: inherit; border-radius: 10px; font-size: .78em; padding: 2px 6px; cursor: pointer; }
+.bubble.sticker { background: transparent !important; box-shadow: none; padding: 0; }
+.bubble.sticker .media img { max-width: 160px; max-height: 160px; border-radius: 0; background: transparent; }
+.rcs { max-width: 340px; }
+.rcs-strip { display: flex; flex-direction: column; gap: 8px; }
+.rcs-carousel .rcs-strip { flex-direction: row; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
+.rcs-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 12px; background: rgba(255,255,255,.08); min-width: 200px; scroll-snap-align: start; }
+.rcs-carousel .rcs-card { flex: 0 0 220px; }
+.rcs-media { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; }
+.rich-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.rich-chip { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: .88em; padding: 5px 12px; border-radius: 16px; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; text-decoration: none; }
+.bubble .rich-chip { border-color: currentColor; color: inherit; }
+.rich-chip .rich-ic { width: 16px; height: 16px; }
+.sys-notice { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 10px auto; padding: 0 24px; max-width: 520px; text-align: center; color: var(--muted); font-size: .85em; }
+.sys-notice .sys-ic { flex: 0 0 16px; width: 16px; height: 16px; fill: currentColor; }
+.sys-notice.notice-call { color: #ff8589; }
+.sys-notice.notice-warn { color: #f3b04a; }
