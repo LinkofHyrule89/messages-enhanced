@@ -1335,3 +1335,4 @@ html:not(.desk) .emoji-anim-txt { font-size: 88px; }
 .setting-input { display: block; width: 100%; margin-top: 10px; padding: 10px 14px; border-radius: 12px; border: 2px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; font: inherit; font-family: ui-monospace, monospace; font-size: .8em; box-sizing: border-box; }
 .setting-input.invalid { border-color: #f28b82; }
 .setting-err { display: block; margin-top: 6px; color: #f28b82; font-size: .8em; }
+.conv-preview.draft { color: var(--accent, #a8c7fa); font-style: italic; }

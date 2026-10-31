@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.7.13
+
+- Per-conversation drafts in the web app and Car Mode: typed text is saved automatically for each chat in this browser only (localStorage, never synced). Switching chats shows that chat's own draft or an empty box; coming back restores it, mentions included. Drafts clear on send or when erased.
+- The chat list shows "Draft: ..." for chats with an unsent draft.
+
 ## v0.7.12
 
 - Holiday and keyword animations in the web app (subtle in Car Mode), plus reaction bursts. Setting "Holiday animations" (on by default); honours reduced-motion.

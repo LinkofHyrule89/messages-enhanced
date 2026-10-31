@@ -682,7 +682,9 @@
       var pv = el("div", "conv-preview");
       var lk = listStatusKind(c);
       if (lk) pv.appendChild(statusIcon(lk));
-      pv.appendChild(document.createTextNode(c.last_message_preview || ""));
+      var dr = c.ConversationID !== state.current && window.MEDrafts ? MEDrafts.get(c.ConversationID) : "";
+      if (dr) { pv.textContent = ""; pv.classList.add("draft"); pv.appendChild(document.createTextNode(MEDrafts.listPreview(dr))); }
+      else pv.appendChild(document.createTextNode(c.last_message_preview || ""));
       mid.appendChild(pv);
     }
     var right = el("div", "conv-right");
@@ -1347,7 +1349,7 @@
     closeMsgMenu();
     closeConvMenu();
     closeImageViewer();
-    if (state.current !== id) { clearPending(); if (!(state.jump && state.jump.conv === id)) state.msgLimit = null; }
+    if (state.current !== id) { swapDraft(state.current, id); clearPending(); if (!(state.jump && state.jump.conv === id)) state.msgLimit = null; }
     state.current = id;
     loadConvMeta(id);
     stopSelect(); closeMsgSheet();
@@ -1381,6 +1383,23 @@
     readSync.openConv = readOnly || (state.jump && state.jump.conv === id) ? "" : id;
     if (!readOnly) syncReadSoon();
   }
+  // ---------- per-conversation drafts (this browser only) ----------
+  // Save what is typed for the chat being left; show the next chat's own
+  // draft (or an empty box). Nothing is synced to the server.
+  function swapDraft(from, to) {
+    var t = $("input");
+    if (!t || !window.MEDrafts) return;
+    if (from) MEDrafts.put(from, t.value);
+    var next = to ? MEDrafts.get(to) : "";
+    if (t.value !== next) {
+      t.value = next; lastSel = null;
+      try { if (next) t.setSelectionRange(next.length, next.length); } catch (e) {}
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  }
+  function saveDraftNow() {
+    if (window.MEDrafts && state.current && !document.body.classList.contains("readonly-thread")) MEDrafts.put(state.current, $("input").value);
+  }
   function closeThread() {
     if (state.rec) cancelRecording();
     showEmoji(false);
@@ -1390,6 +1409,7 @@
     clearReply();
     setComposerFloat(false);
     clearPending();
+    swapDraft(state.current, null);
     state.current = null; document.body.classList.remove("has-thread", "readonly-thread");
     state.msgLimit = null; state.jump = null;
     stopSelect(); closeMsgSheet();
@@ -2672,6 +2692,7 @@
     var reply = state.replyTo;
     var l = newLocal(state.current, text, reply ? reply.MessageID : "", null, "");
     t.value = ""; lastSel = null; autosize();
+    if (window.MEDrafts) MEDrafts.clear(state.current);
     if (reply) clearReply();
     showEmoji(false);
     renderCurrent(true);   // the bubble shows before any network call
@@ -6098,6 +6119,10 @@
       });
     })();
     $("input").addEventListener("input", updateCleanLinks);
+    var draftTimer = 0;
+    $("input").addEventListener("input", function () { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraftNow, 250); });
+    window.addEventListener("pagehide", saveDraftNow);
+    document.addEventListener("visibilitychange", function () { if (document.hidden) saveDraftNow(); });
     if (window.MutationObserver) new MutationObserver(updateCleanLinks).observe($("input"), { childList: true, subtree: true, characterData: true });
     $("cleanLinksBtn").addEventListener("click", cleanComposerLinks);
     $("setShowDeleted").addEventListener("click", function () {
