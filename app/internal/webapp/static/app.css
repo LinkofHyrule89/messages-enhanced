@@ -1393,12 +1393,16 @@ html .bubble.has-image > .media-image img { width: 100%; max-width: none; border
 html .bubble.has-image > .media-image + .body { margin-top: 12px; }
 html .bubble.has-image > .sender + .media-image { margin-top: 8px; }
 /* Reply quote: a full-width darker block inset in the bubble, plain name above up to 3 lines of text. */
-html .bubble .reply-quote { border-left: 0; border-radius: 14px; background: rgba(0, 0, 0, .38); padding: 12px 18px; margin: -6px -18px 12px; gap: 4px; }
-html .bubble .reply-quote-name { font-weight: 500; color: rgba(255, 255, 255, .78); }
-html .bubble .reply-quote-text { color: rgba(255, 255, 255, .92); }
+/* v0.7.16: values from the phone app (8dp corner, 6dp inset, 12sp name/text) at the web 1.5x scale.
+   The quote sizes to its own content (one line, or up to 3 lines when longer than the bubble) and
+   the bubble grows to fit: width:max-content capped by the bubble's max width. */
+html .bubble .reply-quote { border-left: 0; border-radius: 12px; background: rgba(0, 0, 0, .35); padding: 12px 18px; margin: -9px -17px 6px; gap: 3px; box-sizing: border-box; width: max-content; min-width: calc(100% + 34px); max-width: calc(100% + 34px); }
+html .bubble:has(> .reply-quote) { width: max-content; max-width: min(72%, 1100px); }
+html .bubble .reply-quote-name { font-weight: 400; font-size: 19px; color: rgba(255, 255, 255, .78); }
+html .bubble .reply-quote-text { font-size: 19px; color: rgba(255, 255, 255, .88); }
 /* Link previews: the card fills the bubble width; big uncropped image, bold title, description, favicon + domain footer. */
 html .bubble:has(.link-card) { overflow: hidden; }
-html .bubble .link-card { margin: 12px -26px -12px; border-radius: 0; background: transparent; min-width: 0; }
+html .msg-row .bubble .link-card { margin: 12px -26px -4px; border-radius: 0; background: transparent; min-width: 0; }
 html .bubble > .body:empty { display: none; }
 html .bubble > .body:empty + .link-card-slot .link-card, html .bubble > .link-card-slot:first-child .link-card { margin-top: -18px; }
 html .bubble .link-card-media { background: rgba(0, 0, 0, .35); }

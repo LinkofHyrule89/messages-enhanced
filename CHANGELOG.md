@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.16
+
+- Reply quotes size to their own content (one line, or up to 3 lines when long) and the bubble widens to fit; short replies like "Oh nice" no longer squeeze the quote (v0.7.8 rule restored).
+- Quote styling per the phone app: 8dp corners, 6dp inset, 12sp name and text, darker fill.
+- Photos and link previews sit flush with the bubble edges, clipped to its corners, with no inner frame; the link preview is the bubble itself (text above, image, title, description, favicon + domain).
+- Bubble corners 20dp / 4dp per the phone app.
+
 ## v0.7.15
 
 - Google Messages look: photos run edge to edge at the top of the bubble with rounded corners and the caption below.
