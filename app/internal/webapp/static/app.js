@@ -1691,7 +1691,10 @@
       im.loading = "lazy";
       im.decoding = "async";
       im.referrerPolicy = "no-referrer";
+      media.classList.add("loading");
+      im.addEventListener("load", function () { media.classList.remove("loading"); });
       im.addEventListener("error", function () { if (media.parentNode) media.parentNode.removeChild(media); });
+      if (p.image_width > 0 && p.image_height > 0) { im.width = p.image_width; im.height = p.image_height; }
       im.src = img;
       media.appendChild(im);
       a.appendChild(media);

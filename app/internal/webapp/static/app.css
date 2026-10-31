@@ -128,8 +128,11 @@ a { color: var(--accent); }
 .link-card { display: block; margin-top: 12px; min-width: min(420px, calc(60vw / var(--z))); border-radius: 20px; overflow: hidden; background: rgba(0,0,0,.28);
   color: var(--text); text-decoration: none; }
 .link-card:active { filter: brightness(1.2); }
-.link-card-media { background: #000; }
-.link-card-media img { display: block; width: 100%; max-height: 300px; object-fit: cover; }
+.link-card-media { background: #000; display: flex; justify-content: center; }
+/* Full image, never cropped: bubble width, proportional height, capped at ~60% of the viewport / 400px. */
+.link-card-media img { display: block; max-width: 100%; width: auto; height: auto; max-height: min(60vh, 400px); object-fit: contain; }
+.link-card-media.loading { min-height: 120px; }
+.link-card-media.loading img { width: 100%; }
 .link-card-copy { padding: 14px 20px 16px; }
 .link-card-site { font-size: 20px; font-weight: 600; color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: .03em; }
 .link-card-title { margin-top: 4px; font-size: 26px; font-weight: 700; line-height: 1.25;
