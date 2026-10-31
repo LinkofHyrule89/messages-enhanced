@@ -88,7 +88,7 @@ a { color: var(--accent); }
 .conv-empty { padding: 40px; color: var(--muted); }
 
 /* ---------- thread ---------- */
-.thread { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.thread { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .thread-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); font-size: 32px; }
 .thread-empty-icon { font-size: 120px; opacity: .5; }
 .thread-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }

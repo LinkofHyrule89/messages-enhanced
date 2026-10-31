@@ -2,6 +2,12 @@
 
 ## 2026-10-30
 
+- **Link previews hide the raw URL:** when a message shows a preview card, the previewed link is removed from the bubble text (a link-only message shows just the card). No card, no change.
+
+- **Fewer false connection errors:** background load failures now toast only after 3+ failures spanning 25 s while the tab is visible, at most once a minute, and never within 20 s of the tab regaining focus. The header dot waits 25 s before switching to Disconnected / Phone offline (recovery is instant). Server health banner keeps its 30 s rule.
+
+- **Go-to-newest button** is now anchored to the conversation pane.
+
 - **Go to newest, sooner:** the button now shows whenever you are not at the bottom of a thread (about two messages up), whether the newest messages are read, unread, or your own. The badge still counts only new incoming messages.
 
 - **Go to newest message:** conversation threads show a round down-arrow button at the bottom-right when you scroll up more than a screen, with an unread badge for messages that arrive meanwhile. Tap to smooth-scroll to the newest message (jumps when far). Incoming messages never yank your scroll position. Car Mode keeps its large "New messages" pill.

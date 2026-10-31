@@ -486,6 +486,24 @@
     return { play: play, initUnlock: initUnlock, noteMessages: noteMessages, noteConversations: noteConversations };
   })();
 
+  // Network error grace (like the native app): background load failures only
+  // surface after 3+ failures spanning 25 s while the tab is visible, and not
+  // within 20 s of the tab regaining focus.
+  var netGate = { fails: 0, first: 0, quietUntil: 0, shownAt: 0 };
+  function netOk() { netGate.fails = 0; netGate.first = 0; }
+  function netFailShouldShow() {
+    var now = Date.now();
+    if (document.hidden || now < netGate.quietUntil) { netOk(); return false; }
+    if (!netGate.fails) netGate.first = now;
+    netGate.fails++;
+    if (netGate.fails < 3 || now - netGate.first < 25000 || now - netGate.shownAt < 60000) return false;
+    netGate.shownAt = now;
+    return true;
+  }
+  function netQuiet() { netGate.quietUntil = Date.now() + 20000; netOk(); connGate.badSince = 0; }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) netQuiet(); });
+  window.addEventListener("focus", netQuiet);
+  window.addEventListener("online", netQuiet);
   function loadConversations(force) {
     // Folder lists are read live from Google (read-only); refresh them only
     // on entry, not on every live-update ping.
@@ -496,7 +514,8 @@
       chime.noteConversations(state.convs);
       applyConvPatches();
       renderConversations();
-    }).catch(function (e) { if (e.message !== "login required") toast("Couldn't load conversations: " + e.message, "error"); });
+      netOk();
+    }).catch(function (e) { if (e.message !== "login required" && netFailShouldShow()) toast("Couldn't load conversations: " + e.message, "error"); });
   }
   // Pinned conversations: google_pinned is the phone's pin (read-only,
   // synced from Google Messages); local_pinned_at_ms is a pin made here
@@ -1404,7 +1423,7 @@
         renderMessages(merged, scroll);
         if (changed && !state.folder) refreshConvMeta(); // new messages: fresh lock / E2EE state
       });
-    }).catch(function (e) { if (!quiet && e.message !== "login required") toast("Couldn't load messages: " + e.message, "error"); });
+    }).catch(function (e) { if (e.message !== "login required" && (quiet ? netFailShouldShow() : true)) toast("Couldn't load messages: " + e.message, "error"); });
   }
   // ---------- attachments ----------
   // Media bytes come from OpenMessage's GET /api/media/<message id> (same
@@ -1663,10 +1682,32 @@
     if (previewCached(url)) fill(); else previewRequest(url, fill);
     return slot;
   }
+  // When a preview card is shown, hide the previewed URL from the bubble text
+  // (Google Messages style). No card -> keep the link as-is.
+  function stripPreviewedURL(text, url) {
+    var out = "", done = false;
+    splitLinks(String(text || "")).forEach(function (p) {
+      if (!done && p.url === url) { done = true; return; }
+      out += p.text;
+    });
+    return out.replace(/[ \t]{2,}/g, " ").replace(/^\s+|\s+$/g, "");
+  }
   function appendBodyWithPreview(bubble, m, text) {
-    bubble.appendChild(bodyNode(text));
     var url = firstURL(text);
-    if (url) bubble.appendChild(previewNode(m, url));
+    if (!url) { bubble.appendChild(bodyNode(text)); return; }
+    var rest = stripPreviewedURL(text, url);
+    var body = bodyNode(previewCached(url) ? rest : text);
+    if (previewCached(url) && !rest) body.hidden = true;
+    bubble.appendChild(body);
+    var slot = previewNode(m, url);
+    bubble.appendChild(slot);
+    if (previewCached(url) === undefined) previewRequest(url, function () {
+      if (!previewCached(url) || !body.parentNode) return;
+      var nb = bodyNode(rest);
+      if (!rest) nb.hidden = true;
+      body.parentNode.replaceChild(nb, body);
+      body = nb;
+    });
   }
 
   // ---------- replies ----------
@@ -4925,8 +4966,18 @@
     "Connecting": "Connecting to Google Messages…",
     "Disconnected": "Disconnected from Google Messages. Retrying…",
   };
+  // Bad states (Disconnected / Phone offline) must persist 25 s (and not in
+  // the post-focus quiet period) before the dot changes; recovery is instant.
+  var connGate = { badSince: 0 };
   function setConn(text, kind) {
     var b = $("conn");
+    var bad = text === "Disconnected" || text === "Phone offline";
+    if (!bad) connGate.badSince = 0;
+    else {
+      var now = Date.now();
+      if (!connGate.badSince) connGate.badSince = now;
+      if (b.dataset.state && (now - connGate.badSince < 25000 || now < netGate.quietUntil)) return;
+    }
     b.className = "conn-dot conn-" + kind;
     $("connText").textContent = text;
     b.title = CONN_DETAIL[text] || text;
