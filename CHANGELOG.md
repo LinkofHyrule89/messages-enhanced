@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased (web)
+
+- Web: photo messages match the Android bubble: the photo is flush to the top, left and right edges, the bubble is the photo's width (capped like Android), captions wrap underneath, and tall photos are capped and cropped instead of letterboxed. Car Mode is unchanged.
+
 ## v0.7.22
 
 - Link previews: YouTube and other video previews show a 16:9 centre-cropped thumbnail, so no black bars above and below. Web and Car Mode: the preview now sets the bubble width, so the image fills it edge to edge with no grey strip, and a YouTube title that failed to load is retried instead of staying as "YouTube".
