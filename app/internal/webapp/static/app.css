@@ -1389,7 +1389,7 @@ a.rich-sub { text-decoration: underline; }
 html .bubble.has-image { padding-top: 0; overflow: hidden; }
 html .bubble.has-image > .sender { margin-top: 12px; }
 html .bubble.has-image > .media-image { margin: 0 -26px; max-width: none; width: calc(100% + 52px); border-radius: 0; }
-html .bubble.has-image > .media-image img { width: 100%; max-width: none; border-radius: 0; max-height: min(60vh, 520px); object-fit: contain; background: #000; }
+html .bubble.has-image > .media-image img { width: auto; max-width: 100%; margin: 0 auto; border-radius: 0; max-height: min(60vh, 520px); object-fit: contain; }
 html .bubble.has-image > .media-image + .body { margin-top: 12px; }
 html .bubble.has-image > .sender + .media-image { margin-top: 8px; }
 /* Reply quote: a full-width darker block inset in the bubble, plain name above up to 3 lines of text. */
