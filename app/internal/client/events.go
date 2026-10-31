@@ -248,6 +248,18 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 		isNew = !exists
 	}
 	isNewOwn := dbMsg.IsFromMe && isNew
+	// Incoming edit: Google re-delivers the same message ID with new text.
+	// Content is never logged, only that an edit happened.
+	if !isNew && !dbMsg.IsFromMe && strings.TrimSpace(dbMsg.Body) != "" {
+		if old, err := h.Store.GetMessageByID(dbMsg.MessageID); err == nil && old != nil &&
+			strings.TrimSpace(old.Body) != "" && old.Status != db.StatusMessageDeleted && old.Body != dbMsg.Body {
+			h.Logger.Info().Str("conv_id", dbMsg.ConversationID).Str("msg_id", dbMsg.MessageID).
+				Int("old_len", len(old.Body)).Int("new_len", len(dbMsg.Body)).Str("status", status).Msg("Message edit detected")
+			if err := h.Store.MarkMessageEdited(dbMsg.MessageID, dbMsg.ConversationID); err != nil {
+				h.Logger.Warn().Err(err).Msg("Failed to record message edit")
+			}
+		}
+	}
 
 	if err := h.Store.UpsertMessage(dbMsg); err != nil {
 		h.Logger.Error().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to store message")
