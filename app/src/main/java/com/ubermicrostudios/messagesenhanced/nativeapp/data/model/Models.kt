@@ -1,7 +1,9 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.data.model
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -56,6 +58,19 @@ data class MessageDto(
     @SerialName("transcript_model") val transcriptModel: String = "",
     @SerialName("status_text") val statusText: String = "",
     @SerialName("edited") val edited: Boolean = false,
+    /**
+     * Pixel size of the attachment when the server sends it. Absent today on
+     * `db.Message`; alternate names are accepted so a later field does not
+     * need a client update. Zero means unknown (size comes from the URL cache).
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @SerialName("Width")
+    @JsonNames("width", "media_width", "image_width")
+    val mediaWidth: Int = 0,
+    @OptIn(ExperimentalSerializationApi::class)
+    @SerialName("Height")
+    @JsonNames("height", "media_height", "image_height")
+    val mediaHeight: Int = 0,
     /** Local file path or absolute preview URL for a send that has not landed yet. */
     @kotlinx.serialization.Transient val localPreview: String = "",
 ) {

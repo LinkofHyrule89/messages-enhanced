@@ -25,6 +25,7 @@ import coil.load
 import coil.request.Disposable
 import coil.request.ImageRequest
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.cachedMedia
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.google.android.material.color.MaterialColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
@@ -43,7 +44,6 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.util.Formatters
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.Participants
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ShareIndex
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.formatPhoneForDisplay
-import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 import java.io.File
 
 /** Pick a conversation, matching the web forward sheet's name filter (first 80). */
@@ -195,13 +195,10 @@ object ForwardPicker {
         if (thumbnail.isBlank()) {
             binding.thumb.setImageDrawable(null)
         } else if (thumbnail.startsWith("http://") || thumbnail.startsWith("https://")) {
-            binding.thumb.load(thumbnail) {
-                crossfade(true)
-                stableCacheKey(thumbnail)
-            }
+            binding.thumb.load(thumbnail) { cachedMedia(thumbnail) }
         } else {
             val path = if (thumbnail.startsWith("file://")) thumbnail.removePrefix("file://") else thumbnail
-            binding.thumb.load(File(path)) { crossfade(true) }
+            binding.thumb.load(File(path))
         }
         binding.removeAttachment.setOnClickListener {
             binding.thumb.dispose()

@@ -1,5 +1,6 @@
 package com.ubermicrostudios.messagesenhanced.nativeapp.util
 
+import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import coil.key.Keyer
 import coil.memory.MemoryCache
@@ -86,6 +87,26 @@ fun ImageRequest.Builder.stableCacheKey(data: Any?): ImageRequest.Builder {
     val key = (data as? String)?.let(ImageCacheKeys::of) ?: return this
     // Disk only. Overriding memoryCacheKey drops Coil's transformation extras.
     diskCacheKey(key)
+    return this
+}
+
+/** Neutral fill used before a bitmap arrives. Same tone as an incoming bubble. */
+const val IMAGE_PLACEHOLDER_COLOR = 0xFF262B33.toInt()
+
+/**
+ * Message and wallpaper loads: stable disk and memory keys, and a crossfade
+ * only when [NetworkCrossfadeFactory] sees [coil.decode.DataSource.NETWORK].
+ * The memory key is also the placeholder key, so a hit is set synchronously
+ * inside Coil's enqueue on the main thread.
+ */
+fun ImageRequest.Builder.cachedMedia(url: String): ImageRequest.Builder {
+    val disk = ImageCacheKeys.diskKey(url)
+    val memory = MemoryCache.Key(disk)
+    diskCacheKey(disk)
+    memoryCacheKey(memory)
+    placeholderMemoryCacheKey(memory)
+    placeholder(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
+    transitionFactory(NetworkCrossfadeFactory())
     return this
 }
 

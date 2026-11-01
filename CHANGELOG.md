@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.7.25
+
+- Switching chats keeps photo, GIF, sticker, and link-preview rows the same height. The view is sized from the attachment's dimensions, or from the size saved after the first decode, and a neutral placeholder fills that box until the bitmap arrives.
+- Cached pictures show immediately. A crossfade runs only for a real network download; a chat background already in memory is applied synchronously, so the wallpaper does not flash when you open the chat.
+- Avatars and group icons show the cached photo immediately, then check with If-None-Match. The cached photo is replaced only when the server sends a new image.
+
 ## v0.7.24
 
 - Conversation list: pinned-row pin icons stay in one column; timestamps use a fixed minimum width so labels like "Fri" and "12:00 AM" no longer shift the pin sideways.

@@ -2,4 +2,5 @@
 <resources>
     <item name="tag_message_id" type="id" />
     <item name="tag_body_size" type="id" />
+    <item name="tag_avatar_url" type="id" />
 </resources>

@@ -10,6 +10,7 @@
     <color name="accent2">#2A6FE0</color>
     <color name="me">#2F6FE4</color>
     <color name="them">#262B33</color>
+    <color name="image_placeholder">#262B33</color>
     <color name="danger">#E5484D</color>
     <color name="ok">#30A46C</color>
     <color name="brand">#3E6AE1</color>

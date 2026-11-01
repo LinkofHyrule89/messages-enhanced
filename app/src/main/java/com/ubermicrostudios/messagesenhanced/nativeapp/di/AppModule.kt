@@ -8,6 +8,8 @@ import coil.decode.ImageDecoderDecoder
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.JsonConfig
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.AvatarRefresher
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.NetworkCrossfadeFactory
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.UrlStringKeyer
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.UrlUriKeyer
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.net.AuthInterceptor
@@ -108,9 +110,11 @@ object AppModule {
     fun provideImageLoader(
         @ApplicationContext context: Context,
         client: OkHttpClient,
+        avatarRefresher: AvatarRefresher,
     ): ImageLoader = ImageLoader.Builder(context)
         .okHttpClient(client)
-        .crossfade(true)
+        .eventListener(avatarRefresher)
+        .transitionFactory(NetworkCrossfadeFactory())
         .memoryCache {
             MemoryCache.Builder(context)
                 .maxSizePercent(0.20)

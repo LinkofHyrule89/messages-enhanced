@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.text.SpannableStringBuilder
@@ -28,7 +30,9 @@ import com.google.android.material.imageview.ShapeableImageView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import coil.imageLoader
 import coil.load
+import coil.memory.MemoryCache
 import java.io.File
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
@@ -42,6 +46,11 @@ import com.ubermicrostudios.messagesenhanced.nativeapp.ui.conversations.tint
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.BubbleColors
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.CircleAvatars
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.RecyclerIds
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.IMAGE_PLACEHOLDER_COLOR
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ImageAspects
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ImageCacheKeys
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.LocalImageBounds
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.cachedMedia
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.stableCacheKey
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.ConversationEncryption
@@ -396,19 +405,23 @@ class MessageAdapter(
                 val src = item.localPreview
                 if (src.startsWith("http://") || src.startsWith("https://")) {
                     image.load(src) {
-                        crossfade(true)
-                        stableCacheKey(src)
+                        cachedMedia(src)
+                        listener(onSuccess = { _, result -> rememberDecoded(src, result.drawable) })
                     }
                 } else {
-                    image.load(File(src)) { crossfade(true) }
+                    val path = src.removePrefix("file://")
+                    image.load(File(path)) {
+                        listener(onSuccess = { _, result -> rememberDecoded(path, result.drawable) })
+                    }
                 }
             }
             item.isImageMedia() && item.messageId.isNotBlank() && !item.messageId.startsWith("local-") -> {
                 image.isVisible = true
                 attachment.isVisible = false
-                image.load(mediaUrl(item)) {
-                    crossfade(true)
-                    stableCacheKey(mediaUrl(item))
+                val url = mediaUrl(item)
+                image.load(url) {
+                    cachedMedia(url)
+                    listener(onSuccess = { _, result -> rememberDecoded(url, result.drawable) })
                 }
             }
             // The attachment is the link/location preview itself: show just the card, no label.
@@ -631,6 +644,43 @@ class MessageAdapter(
         avatar.background = bg
     }
 
+    /** Attachment pixel size from the message, the URL cache, or a decoded memory bitmap. */
+    private fun mediaDims(view: View, item: MessageDto): ImageAspects.Px? {
+        val remote = when {
+            item.localPreview.startsWith("http://") || item.localPreview.startsWith("https://") -> item.localPreview
+            item.messageId.isNotBlank() && !item.messageId.startsWith("local-") -> mediaUrl(item)
+            else -> null
+        }
+        if (remote != null) {
+            knownOrMemory(view, remote, item.mediaWidth, item.mediaHeight)?.let { return it }
+        }
+        val local = item.localPreview
+            .takeIf { it.isNotBlank() && !it.startsWith("http://") && !it.startsWith("https://") }
+            ?.removePrefix("file://")
+        if (local != null) {
+            ImageAspects.resolve(local, item.mediaWidth, item.mediaHeight)?.let { return it }
+            LocalImageBounds.of(local)?.also { ImageAspects.remember(local, it.width, it.height) }?.let { return it }
+        }
+        return ImageAspects.known(item.mediaWidth, item.mediaHeight, null)
+    }
+
+    private fun knownOrMemory(view: View, url: String, dtoWidth: Int, dtoHeight: Int): ImageAspects.Px? {
+        ImageAspects.resolve(url, dtoWidth, dtoHeight)?.let { return it }
+        val bitmap = view.context.imageLoader.memoryCache
+            ?.get(MemoryCache.Key(ImageCacheKeys.diskKey(url)))
+            ?.bitmap
+            ?: return null
+        if (bitmap.width <= 0 || bitmap.height <= 0) return null
+        ImageAspects.remember(url, bitmap.width, bitmap.height)
+        return ImageAspects.Px(bitmap.width, bitmap.height)
+    }
+
+    private fun rememberDecoded(key: String, drawable: Drawable) {
+        val w = drawable.intrinsicWidth
+        val h = drawable.intrinsicHeight
+        if (w > 0 && h > 0) ImageAspects.remember(key, w, h)
+    }
+
     /**
      * Google Messages layout: photos and link cards run edge to edge across the bubble
      * (rounded by the bubble's own outline), with the caption/time below inside it.
@@ -646,25 +696,46 @@ class MessageAdapter(
     ) {
         val dm = bubble.resources.displayMetrics
         val d = dm.density
-        val wide = minOf((300 * d).toInt(), (dm.widthPixels * 0.66f).toInt())
-        val photo = image.isVisible && !emoji && bubble.background != null
+        val wide = ImageAspects.frameWidth(dm.widthPixels, d)
+        val sticker = image.isVisible && !emoji && ImageAspects.isSticker(item.mimeType, item.body)
+        val photo = image.isVisible && !emoji && !sticker && bubble.background != null
         val lp = image.layoutParams as LinearLayout.LayoutParams
         val pv = image as? BubblePhotoView
+        val dims = if (image.isVisible && !emoji) mediaDims(image, item) else null
         // The bubble has no padding of its own: text rows carry it, so photos and link
         // cards sit flush with the bubble edges and are clipped to its corners.
         lp.marginStart = 0
         lp.marginEnd = 0
         lp.topMargin = 0
         lp.bottomMargin = 0
-        if (photo) {
+        if (sticker) {
+            val max = (180 * d).toInt()
+            val (w, h) = if (dims != null) {
+                PhotoFit.fit(dims.width, dims.height, max, max, max)
+            } else {
+                max to max
+            }
+            lp.width = w
+            lp.height = h
+            image.scaleType = ImageView.ScaleType.FIT_CENTER
+            image.minimumHeight = 0
+            pv?.photoMode = false
+            pv?.reserveWidth = 0
+            pv?.reserveHeight = 0
+            pv?.caption = null
+            if (image.drawable == null) image.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
+        } else if (photo) {
             lp.width = ViewGroup.LayoutParams.WRAP_CONTENT
             lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
             image.scaleType = ImageView.ScaleType.FIT_XY
-            image.minimumHeight = (120 * d).toInt()
+            image.minimumHeight = if (dims != null) 0 else (120 * d).toInt()
             pv?.photoMode = true
+            pv?.reserveWidth = dims?.width ?: 0
+            pv?.reserveHeight = dims?.height ?: 0
             pv?.maxPhotoWidth = wide
             pv?.maxPhotoHeight = minOf((400 * d).toInt(), (dm.heightPixels * 0.6f).toInt())
             pv?.caption = body
+            if (image.drawable == null) image.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
         } else if (emoji && image.isVisible) {
             // Big animated emoji (Google Messages size ~64dp): a real square in the
             // layout, scaled to fit, with normal spacing so it never draws under
@@ -676,6 +747,8 @@ class MessageAdapter(
             image.scaleType = ImageView.ScaleType.FIT_CENTER
             image.minimumHeight = 0
             pv?.photoMode = false
+            pv?.reserveWidth = 0
+            pv?.reserveHeight = 0
             pv?.caption = null
             body.maxWidth = Int.MAX_VALUE
         } else {
@@ -684,6 +757,8 @@ class MessageAdapter(
             image.scaleType = ImageView.ScaleType.CENTER_CROP
             image.minimumHeight = 0
             pv?.photoMode = false
+            pv?.reserveWidth = 0
+            pv?.reserveHeight = 0
             pv?.caption = null
             body.maxWidth = Int.MAX_VALUE
         }
@@ -786,61 +861,53 @@ class MessageAdapter(
             runCatching { card.context.startActivity(intent) }
                 .onFailure { Toast.makeText(card.context, R.string.link_open_failed, Toast.LENGTH_SHORT).show() }
         }
+        (image.getTag(R.id.link_image) as? View.OnLayoutChangeListener)?.let {
+            image.removeOnLayoutChangeListener(it)
+        }
+        image.setTag(R.id.link_image, null)
         val picture = imageOf(preview)
         if (picture.isNullOrBlank()) {
             image.isVisible = false
             image.setImageDrawable(null)
         } else {
             image.isVisible = true
-            // Full image, never cropped: fit the bubble width, cap at ~60% of the screen / 400dp.
             val dm = image.resources.displayMetrics
-            // Fill the card width edge to edge (no grey side bars): height follows the
-            // image's aspect, capped; past the cap it crops minimally (centre).
             val cap = minOf((400 * dm.density).toInt(), (dm.heightPixels * 0.6f).toInt())
+            val minPx = (60 * dm.density).toInt()
+            val frame = ImageAspects.frameWidth(dm.widthPixels, dm.density)
+            if (preview.imageWidth > 0 && preview.imageHeight > 0) {
+                ImageAspects.remember(picture, preview.imageWidth, preview.imageHeight)
+            }
+            val known = knownOrMemory(image, picture, preview.imageWidth, preview.imageHeight)
+            // Videos stay 16:9 so a 4:3 thumbnail's baked-in bars fall outside the frame.
+            val height = when {
+                preview.isVideo -> ImageAspects.linkHeight(frame, 16, 9, true, minPx, cap)
+                known != null -> ImageAspects.linkHeight(frame, known.width, known.height, false, minPx, cap)
+                else -> null
+            }
             image.adjustViewBounds = false
             image.foreground = if (preview.isVideo) ContextCompat.getDrawable(image.context, R.drawable.fg_link_play) else null
             image.scaleType = ImageView.ScaleType.CENTER_CROP
             image.maxHeight = Int.MAX_VALUE
+            image.minimumHeight = 0
             val ilp = image.layoutParams
-            fun sizeTo(iw: Int, ih: Int) {
-                val w = image.width.takeIf { it > 0 } ?: card.layoutParams?.width?.takeIf { it > 0 } ?: return
-                if (iw <= 0 || ih <= 0) return
-                // Videos (YouTube 4:3 thumbnails carry baked-in black bars): show 16:9,
-                // centre-cropped, so the bars fall outside the frame.
-                val h = (if (preview.isVideo) w.toLong() * 9 / 16 else w.toLong() * ih / iw).toInt().coerceIn((60 * dm.density).toInt(), cap)
-                if (ilp.height != h) { ilp.height = h; image.layoutParams = ilp }
-            }
-            if (preview.imageWidth > 0 && preview.imageHeight > 0) {
-                image.minimumHeight = 0
-                ilp.height = ViewGroup.LayoutParams.WRAP_CONTENT
-                image.post { sizeTo(preview.imageWidth, preview.imageHeight) }
-            } else {
-                ilp.height = (160 * dm.density).toInt().coerceAtMost(cap) // placeholder until it loads
-                image.minimumHeight = 0
-            }
+            ilp.width = ViewGroup.LayoutParams.MATCH_PARENT
+            ilp.height = height ?: (160 * dm.density).toInt().coerceIn(minPx, cap)
             image.layoutParams = ilp
-            if (preview.isVideo) {
-                // YouTube: always a 16:9 centre-cropped frame (like the web card), re-applied
-                // once the card has its real width so the thumbnail's baked-in bars never show.
-                image.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                image.minimumHeight = 0
-                (image.getTag(R.id.link_image) as? View.OnLayoutChangeListener)?.let { image.removeOnLayoutChangeListener(it) }
-                val l = View.OnLayoutChangeListener { v, left, _, right, _, oldLeft, _, oldRight, _ ->
-                    if (right - left != oldRight - oldLeft) v.post { sizeTo(16, 9) }
-                }
-                image.setTag(R.id.link_image, l)
-                image.addOnLayoutChangeListener(l)
-                image.post { sizeTo(16, 9) }
-            } else {
-                (image.getTag(R.id.link_image) as? View.OnLayoutChangeListener)?.let { image.removeOnLayoutChangeListener(it) }
-                image.setTag(R.id.link_image, null)
-            }
+            if (image.drawable == null) image.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
             image.load(picture) {
-                crossfade(true)
-                stableCacheKey(picture)
+                cachedMedia(picture)
                 listener(onSuccess = { _, result ->
-                    val dr = result.drawable
-                    image.post { sizeTo(dr.intrinsicWidth, dr.intrinsicHeight) }
+                    val w = result.drawable.intrinsicWidth
+                    val h = result.drawable.intrinsicHeight
+                    if (w > 0 && h > 0) ImageAspects.remember(picture, w, h)
+                    if (height == null && !preview.isVideo && w > 0 && h > 0) {
+                        val next = ImageAspects.linkHeight(frame, w, h, false, minPx, cap)
+                        if (next != null && ilp.height != next) {
+                            ilp.height = next
+                            image.layoutParams = ilp
+                        }
+                    }
                 })
             }
         }

@@ -20,6 +20,14 @@ class BubblePhotoView @JvmOverloads constructor(
     var maxPhotoHeight = 0
     var caption: TextView? = null
 
+    /**
+     * Source pixel size known before the bitmap is painted (message fields or
+     * the URL cache). Used until the drawable itself has a size, so the first
+     * measure matches the measure after decode.
+     */
+    var reserveWidth = 0
+    var reserveHeight = 0
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         if (!photoMode || maxPhotoWidth <= 0) {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
@@ -29,9 +37,13 @@ class BubblePhotoView @JvmOverloads constructor(
         val mode = MeasureSpec.getMode(widthMeasureSpec)
         val avail = if (mode == MeasureSpec.UNSPECIFIED) maxPhotoWidth else minOf(maxPhotoWidth, specW)
         val d = drawable
-        val iw = d?.intrinsicWidth ?: -1
-        val ih = d?.intrinsicHeight ?: -1
-        val (w, h) = PhotoFit.fit(iw, ih, avail, maxPhotoHeight, minimumHeight)
+        val dw = d?.intrinsicWidth ?: -1
+        val dh = d?.intrinsicHeight ?: -1
+        val known = dw > 0 && dh > 0
+        val iw = if (known) dw else reserveWidth
+        val ih = if (known) dh else reserveHeight
+        val placeholder = if (reserveWidth > 0 && reserveHeight > 0) 0 else minimumHeight
+        val (w, h) = PhotoFit.fit(iw, ih, avail, maxPhotoHeight, placeholder)
         caption?.let { if (it.maxWidth != w) it.maxWidth = w }
         setMeasuredDimension(w, h)
     }

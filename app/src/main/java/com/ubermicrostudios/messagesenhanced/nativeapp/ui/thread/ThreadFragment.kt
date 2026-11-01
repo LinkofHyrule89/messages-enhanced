@@ -40,7 +40,15 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScroller
+import android.graphics.drawable.ColorDrawable
+import androidx.core.graphics.drawable.toDrawable
+import coil.dispose
+import coil.imageLoader
 import coil.load
+import coil.memory.MemoryCache
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.IMAGE_PLACEHOLDER_COLOR
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.ImageCacheKeys
+import com.ubermicrostudios.messagesenhanced.nativeapp.util.cachedMedia
 import com.ubermicrostudios.messagesenhanced.nativeapp.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.nativeapp.R
 import com.ubermicrostudios.messagesenhanced.nativeapp.data.model.ConversationDto
@@ -946,14 +954,27 @@ class ThreadFragment : Fragment() {
     private fun showWallpaper(url: String?) {
         if (url == wallpaperUrl) return
         wallpaperUrl = url
+        val view = binding.wallpaper
         if (url.isNullOrBlank()) {
-            binding.wallpaper.setImageDrawable(null)
-            binding.wallpaper.isVisible = false
+            view.dispose()
+            view.setImageDrawable(null)
+            view.isVisible = false
             binding.scrim.isVisible = false
+            return
+        }
+        view.isVisible = true
+        binding.scrim.isVisible = true
+        val memoryKey = MemoryCache.Key(ImageCacheKeys.diskKey(url))
+        val cached = view.context.imageLoader.memoryCache?.get(memoryKey)?.bitmap
+        if (cached != null) {
+            // Same frame as the chat switch: do not wait for Coil's coroutine.
+            view.setImageBitmap(cached)
         } else {
-            binding.wallpaper.isVisible = true
-            binding.scrim.isVisible = true
-            binding.wallpaper.load(url) { crossfade(true) }
+            view.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
+        }
+        view.load(url) {
+            cachedMedia(url)
+            if (cached != null) placeholder(cached.toDrawable(view.resources))
         }
     }
 
