@@ -342,8 +342,15 @@ body.readonly-thread .msg-menu-btn { display: none; }
   color: var(--muted); border-bottom: 1px solid var(--line); }
 .conv-section svg { width: 22px; height: 22px; margin-right: 8px; vertical-align: -3px; fill: currentColor; }
 .conv-time { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
-.conv-time.has-pin { display: grid; grid-template-columns: 30px minmax(5.4em, auto); align-items: center; column-gap: 8px; }
-.conv-time.has-pin .conv-time-text { text-align: right; }
+.conv-time.has-pin {
+  display: grid;
+  grid-template-columns: 30px 6.75em;
+  align-items: center;
+  column-gap: 8px;
+  width: calc(30px + 8px + 6.75em);
+  box-sizing: content-box;
+}
+.conv-time.has-pin .conv-time-text { text-align: right; min-width: 0; }
 .conv-pin { flex: none; width: 26px; height: 26px; fill: var(--muted); justify-self: center; }
 .conv-pin.conv-pin-phone { fill: var(--accent); }
 .conv.pressing { background: var(--panel-2); }

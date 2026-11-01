@@ -2,6 +2,7 @@
 
 ## Unreleased (web)
 
+- Web: pinned rows in the conversation list keep pin icons in one column; the time area uses a fixed width so labels like "12:00 AM", "Yesterday", and "Fri" no longer shift the pin.
 - Web: photo messages match the Android bubble: the photo is flush to the top, left and right edges, the bubble is the photo's width (capped like Android), captions wrap underneath, and tall photos are capped and cropped instead of letterboxed. Car Mode is unchanged.
 
 ## v0.7.22
