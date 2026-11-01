@@ -34,18 +34,18 @@
 -keepclasseswithmembers class **$$serializer {
     *;
 }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.**$$serializer { *; }
+-keep class com.ubermicrostudios.messagesenhanced.**$$serializer { *; }
 -if @kotlinx.serialization.Serializable class **
 -keepclassmembers class <1> {
     static <1>$Companion Companion;
 }
--keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.** {
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.** {
     *** Companion;
 }
--keepclasseswithmembers class com.ubermicrostudios.messagesenhanced.nativeapp.** {
+-keepclasseswithmembers class com.ubermicrostudios.messagesenhanced.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep @kotlinx.serialization.Serializable class com.ubermicrostudios.messagesenhanced.nativeapp.** { *; }
+-keep @kotlinx.serialization.Serializable class com.ubermicrostudios.messagesenhanced.** { *; }
 
 # Hilt
 -dontwarn dagger.hilt.android.internal.**
@@ -61,10 +61,10 @@
     @javax.inject.Inject <fields>;
     @javax.inject.Inject <methods>;
 }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.**_Factory { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.**_MembersInjector { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.**Hilt_* { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.**_HiltModules* { *; }
+-keep class com.ubermicrostudios.messagesenhanced.**_Factory { *; }
+-keep class com.ubermicrostudios.messagesenhanced.**_MembersInjector { *; }
+-keep class com.ubermicrostudios.messagesenhanced.**Hilt_* { *; }
+-keep class com.ubermicrostudios.messagesenhanced.**_HiltModules* { *; }
 -keep class hilt_aggregated_deps.** { *; }
 
 # Coil
@@ -77,29 +77,29 @@
 -keep class com.google.firebase.messaging.** { *; }
 -keep class com.google.firebase.installations.** { *; }
 -keep class com.google.firebase.components.** { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.MessagingService { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationActionReceiver { *; }
+-keep class com.ubermicrostudios.messagesenhanced.push.MessagingService { *; }
+-keep class com.ubermicrostudios.messagesenhanced.push.NotificationActionReceiver { *; }
 
 # PackageInstaller result receiver, and the relaunch after a self-update.
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateInstallReceiver { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdatePackageReplacedReceiver { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateActionReceiver { *; }
+-keep class com.ubermicrostudios.messagesenhanced.update.UpdateInstallReceiver { *; }
+-keep class com.ubermicrostudios.messagesenhanced.update.UpdatePackageReplacedReceiver { *; }
+-keep class com.ubermicrostudios.messagesenhanced.update.UpdateActionReceiver { *; }
 
 # WorkManager instantiates workers by the (Context, WorkerParameters) constructor.
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateDownloadInstallWorker { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker { *; }
--keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateDownloadInstallWorker {
+-keep class com.ubermicrostudios.messagesenhanced.update.UpdateDownloadInstallWorker { *; }
+-keep class com.ubermicrostudios.messagesenhanced.update.UpdateCheckWorker { *; }
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.update.UpdateDownloadInstallWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
--keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateCheckWorker {
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.update.UpdateCheckWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.update.UpdateWorkerEntryPoint { *; }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationActionWorker { *; }
--keepclassmembers class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationActionWorker {
+-keep class com.ubermicrostudios.messagesenhanced.update.UpdateWorkerEntryPoint { *; }
+-keep class com.ubermicrostudios.messagesenhanced.push.NotificationActionWorker { *; }
+-keepclassmembers class com.ubermicrostudios.messagesenhanced.push.NotificationActionWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
--keep class com.ubermicrostudios.messagesenhanced.nativeapp.push.NotificationWorkerEntryPoint { *; }
+-keep class com.ubermicrostudios.messagesenhanced.push.NotificationWorkerEntryPoint { *; }
 
 # Coroutines. ServiceLoader entry points and atomic updaters must keep their names.
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}

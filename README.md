@@ -2,7 +2,7 @@
 
 A native Android client for a self-hosted Messages Enhanced / OpenMessage server. It uses the server’s HTTP API for sign-in, conversations, threads, media, live events, and push. The UI is Kotlin with Views, RecyclerView, Hilt, Retrofit, OkHttp, and Material 3.
 
-Application id `com.ubermicrostudios.messagesenhanced.nativeapp`. Minimum SDK 26. Debug builds add the application id suffix `.debug`.
+Application id `com.ubermicrostudios.messagesenhanced`. Minimum SDK 26. Debug builds add the application id suffix `.debug`.
 
 ## Features
 

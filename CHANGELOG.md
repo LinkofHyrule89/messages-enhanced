@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.0
+
+- New package name `com.ubermicrostudios.messagesenhanced`. This installs as a fresh app, so uninstall the old app first. Data from `com.ubermicrostudios.messagesenhanced.nativeapp` does not carry over.
+
 ## v0.7.25
 
 - Switching chats keeps photo, GIF, sticker, and link-preview rows the same height. The view is sized from the attachment's dimensions, or from the size saved after the first decode, and a neutral placeholder fills that box until the bitmap arrives.

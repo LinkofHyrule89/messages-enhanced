@@ -148,7 +148,7 @@
             android:name=".update.UpdateInstallReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.ubermicrostudios.messagesenhanced.nativeapp.UPDATE_INSTALL" />
+                <action android:name="com.ubermicrostudios.messagesenhanced.UPDATE_INSTALL" />
             </intent-filter>
         </receiver>
 

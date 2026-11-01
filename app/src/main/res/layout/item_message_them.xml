@@ -107,7 +107,7 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <com.ubermicrostudios.messagesenhanced.nativeapp.ui.thread.BubblePhotoView
+        <com.ubermicrostudios.messagesenhanced.ui.thread.BubblePhotoView
             android:id="@+id/image"
             android:layout_width="220dp"
             android:layout_height="160dp"

@@ -32,15 +32,15 @@ abstract class CopyChangelogTask : DefaultTask() {
 }
 
 android {
-    namespace = "com.ubermicrostudios.messagesenhanced.nativeapp"
+    namespace = "com.ubermicrostudios.messagesenhanced"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.ubermicrostudios.messagesenhanced.nativeapp"
+        applicationId = "com.ubermicrostudios.messagesenhanced"
         minSdk = 26
         targetSdk = 36
-        versionCode = 41
-        versionName = "0.7.25"
+        versionCode = 42
+        versionName = "0.8.0"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
         buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced-native\"")
     }
