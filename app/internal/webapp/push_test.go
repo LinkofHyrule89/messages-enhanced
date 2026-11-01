@@ -159,15 +159,19 @@ func TestNotifierIncomingOnlyDedupedAndPerDevicePrivacy(t *testing.T) {
 	_, _ = h.Subscribe(PushSubscription{Endpoint: "https://push.example.com/visible", Keys: keysOf(p, a)}, nil)
 	_, _ = h.Subscribe(PushSubscription{Endpoint: "https://push.example.com/private", Keys: keysOf(p, a)}, &yes)
 
-	// Own message: nothing.
+	// Own message: nothing. Mutations take the source lock; the hub reads on another goroutine.
+	src.mu.Lock()
 	src.msgs = []PushMessage{{ID: "m1", Body: "on my way", FromMe: true, TimestampMS: now.UnixMilli()}}
+	src.mu.Unlock()
 	h.MessagesChanged("c1")
 	waitPush(h)
 	if len(*sent) != 0 {
 		t.Fatalf("own message pushed: %+v", *sent)
 	}
 	// Old (backfilled) message: nothing.
+	src.mu.Lock()
 	src.msgs = []PushMessage{{ID: "old", SenderName: "Ann", Body: "hi", TimestampMS: now.Add(-time.Hour).UnixMilli()}}
+	src.mu.Unlock()
 	h.MessagesChanged("c1")
 	waitPush(h)
 	if len(*sent) != 0 {
@@ -176,7 +180,9 @@ func TestNotifierIncomingOnlyDedupedAndPerDevicePrivacy(t *testing.T) {
 	// Empty conversation id (bulk refresh): ignored.
 	h.MessagesChanged("")
 	// New incoming: one push per device.
+	src.mu.Lock()
 	src.msgs = []PushMessage{{ID: "m2", SenderName: "Ann", Body: "  dinner\n at 7? ", TimestampMS: now.UnixMilli()}, src.msgs[0]}
+	src.mu.Unlock()
 	h.MessagesChanged("c1")
 	h.MessagesChanged("c1") // debounced
 	waitPush(h)
@@ -208,8 +214,10 @@ func TestNotifierIncomingOnlyDedupedAndPerDevicePrivacy(t *testing.T) {
 		t.Fatal("duplicate push")
 	}
 	// Muted conversation: nothing.
+	src.mu.Lock()
 	src.conv.NotificationMode = "muted"
 	src.msgs = []PushMessage{{ID: "m3", SenderName: "Ann", Body: "x", TimestampMS: now.UnixMilli()}}
+	src.mu.Unlock()
 	h.MessagesChanged("c1")
 	waitPush(h)
 	if len(*sent) != 0 {
