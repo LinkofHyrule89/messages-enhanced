@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0D0F12</color>
+    <color name="panel">#15181D</color>
+    <color name="panel2">#1C2027</color>
+    <color name="line">#262B33</color>
+    <color name="text">#F2F4F7</color>
+    <color name="muted">#9AA3AE</color>
+    <color name="accent">#3E8BFF</color>
+    <color name="accent2">#2A6FE0</color>
+    <color name="me">#2F6FE4</color>
+    <color name="them">#262B33</color>
+    <color name="image_placeholder">#262B33</color>
+    <color name="danger">#E5484D</color>
+    <color name="ok">#30A46C</color>
+    <color name="brand">#3E6AE1</color>
+    <color name="unread">#3E8BFF</color>
+    <color name="conv_active">#1F2A3D</color>
+    <color name="topbar">#1C1F24</color>
+    <color name="list_pane">#0E1014</color>
+    <color name="search_mark">#66F5A524</color>
+</resources>

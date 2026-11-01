@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="app_bar_height">68dp</dimen>
+    <!-- Fits "Yesterday" / "12:00 AM" at 12sp so pin icons line up in the list. -->
+    <dimen name="conversation_list_time_min_width">64dp</dimen>
+</resources>

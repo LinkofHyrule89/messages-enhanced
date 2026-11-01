@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/topbar"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/app_bar"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/app_bar_height"
+        android:background="@color/topbar"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="16dp">
+
+        <TextView
+            android:id="@+id/app_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/app_bar_title"
+            android:textColor="@color/text"
+            android:textSize="22sp" />
+
+        <ImageButton
+            android:id="@+id/search_button"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/search"
+            android:padding="8dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_search" />
+
+        <FrameLayout
+            android:id="@+id/profile"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:contentDescription="@string/profile_open_settings"
+            android:foreground="?attr/selectableItemBackgroundBorderless">
+
+            <TextView
+                android:id="@+id/profile_initials"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_profile"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/profile_photo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@null"
+                android:importantForAccessibility="no"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:baselineAligned="false"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:background="@drawable/bg_list_pane"
+            android:clipToOutline="true"
+            android:outlineProvider="background">
+
+            <FrameLayout
+                android:id="@+id/list_frame"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+                    android:id="@+id/refresh"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/list"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="@color/list_pane"
+                        android:clipToPadding="false" />
+                </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/search_results"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@color/list_pane"
+                    android:clipToPadding="false"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/empty"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:padding="24dp"
+                    android:text="@string/empty_conversations"
+                    android:textColor="@color/muted"
+                    android:visibility="gone" />
+
+                <ProgressBar
+                    android:id="@+id/progress"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:id="@+id/list_chrome"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top"
+                android:background="@drawable/bg_list_chrome"
+                android:clickable="true"
+                android:focusable="false"
+                android:importantForAccessibility="no"
+                android:orientation="vertical">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/health_banner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginBottom="4dp"
+                    android:visibility="gone"
+                    app:cardBackgroundColor="@android:color/transparent"
+                    app:cardCornerRadius="16dp"
+                    app:cardElevation="0dp"
+                    app:strokeWidth="0dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingStart="12dp"
+                        android:paddingTop="10dp"
+                        android:paddingEnd="12dp"
+                        android:paddingBottom="10dp">
+
+                        <ImageView
+                            android:id="@+id/health_banner_icon"
+                            android:layout_width="18dp"
+                            android:layout_height="18dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_health" />
+
+                        <TextView
+                            android:id="@+id/health_banner_text"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="8dp"
+                            android:layout_weight="1"
+                            android:accessibilityLiveRegion="polite"
+                            android:textColor="@color/text"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <EditText
+                    android:id="@+id/search"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="4dp"
+                    android:background="@drawable/bg_search_field"
+                    android:hint="@string/search_hint"
+                    android:imeOptions="actionSearch"
+                    android:importantForAutofill="no"
+                    android:inputType="text"
+                    android:minHeight="48dp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:textColor="@color/text"
+                    android:textColorHint="@color/muted"
+                    android:textSize="16sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/error"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="12dp"
+                    android:textColor="@color/danger"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
+                android:id="@+id/start_chat"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|bottom"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="16dp"
+                android:contentDescription="@string/start_chat"
+                android:text="@string/start_chat"
+                android:textColor="#DBE2F9"
+                app:backgroundTint="#435271"
+                app:icon="@drawable/ic_chat"
+                app:iconTint="#DBE2F9"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Fab" />
+        </FrameLayout>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/topbar" />
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3">
+
+            <TextView
+                android:id="@+id/thread_placeholder"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:text="@string/select_conversation"
+                android:textColor="@color/muted"
+                android:textSize="18sp" />
+
+            <androidx.fragment.app.FragmentContainerView
+                android:id="@+id/thread_container"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_thread_pane" />
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>

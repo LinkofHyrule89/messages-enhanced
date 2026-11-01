@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        android:background="@color/panel"
+        android:title="@string/settings" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/section_connection"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:hint="@string/server_url"
+                app:placeholderText="@string/server_url_placeholder"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/server_url"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textUri"
+                    android:importantForAutofill="no" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/save_server"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/save" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/reconnect_google"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/reconnect_google" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/auto_google_repair"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/auto_google_repair" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/auto_google_repair_desc"
+                android:textColor="@color/muted"
+                android:textSize="13sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/forget_google_session"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/forget_google_session" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/section_appearance"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/appearance_desc"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/appearance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/appearance_dark"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/section_notifications"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/show_deleted"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/show_deleted_placeholders"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/holiday_animations"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/holiday_animations"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/animated_emojis"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/animated_emojis"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/auto_clean_shared"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/auto_clean_shared_links"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/clean_rule_layout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="@string/clean_links_rule"
+                app:helperText="@string/clean_links_rule_help">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/clean_rule"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:inputType="textNoSuggestions|textVisiblePassword"
+                    android:textColor="@color/text"
+                    android:textSize="13sp" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/clean_rule_reset"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/clean_links_reset" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/notifications"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/notifications"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/hide_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/hide_message_text"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/test_notification"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/send_test_notification" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/section_sync"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/refresh_everything"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/refresh_everything" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/refresh_everything_desc"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/section_grok"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/grok_unavailable"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/grok_unavailable"
+                android:textColor="@color/muted"
+                android:textSize="14sp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/grok_controls"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/grok_enable"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/grok_enable"
+                    android:textColor="@color/text" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/groq_enable"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/groq_enable"
+                    android:textColor="@color/text" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/grok_trigger"
+                    android:textColor="@color/text"
+                    android:textSize="16sp" />
+
+                <RadioGroup
+                    android:id="@+id/grok_trigger"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/trigger_me"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/grok_trigger_me"
+                        android:textColor="@color/text" />
+
+                    <com.google.android.material.radiobutton.MaterialRadioButton
+                        android:id="@+id/trigger_everyone"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/grok_trigger_everyone"
+                        android:textColor="@color/text" />
+                </RadioGroup>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/section_account"
+                android:textAllCaps="true"
+                android:letterSpacing="0.08"
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/logout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/logout"
+                style="@style/Widget.Material3.Button.OutlinedButton" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/auto_update"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="@string/auto_update"
+                android:textColor="@color/text" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/check_updates"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="@string/check_for_updates"
+                style="@style/Widget.Material3.Button.OutlinedButton" />
+
+            <TextView
+                android:id="@+id/version"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:textColor="@color/muted"
+                android:gravity="center" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

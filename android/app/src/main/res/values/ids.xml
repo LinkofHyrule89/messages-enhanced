@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="tag_message_id" type="id" />
+    <item name="tag_body_size" type="id" />
+    <item name="tag_avatar_url" type="id" />
+</resources>

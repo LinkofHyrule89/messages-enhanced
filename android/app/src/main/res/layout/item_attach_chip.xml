@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="72dp"
+    android:layout_height="72dp"
+    android:layout_marginEnd="8dp"
+    android:background="@drawable/bg_plus_sheet">
+
+    <ImageView
+        android:id="@+id/thumb"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/name"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:maxLines="3"
+        android:padding="6dp"
+        android:textColor="@color/text"
+        android:textSize="11sp" />
+
+    <ImageButton
+        android:id="@+id/remove"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_gravity="top|end"
+        android:background="#CC1F2023"
+        android:contentDescription="@string/remove_attachment"
+        android:src="@drawable/ic_close" />
+</FrameLayout>

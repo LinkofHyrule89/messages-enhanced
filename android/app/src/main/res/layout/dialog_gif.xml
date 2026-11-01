@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="12dp"
+    android:paddingBottom="8dp">
+
+    <EditText
+        android:id="@+id/gif_search"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_search_field"
+        android:hint="@string/gif_search"
+        android:imeOptions="actionSearch"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:textColor="@color/text"
+        android:textColorHint="@color/muted"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/gif_favorites_label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="16dp"
+        android:text="@string/gif_favorites"
+        android:textColor="@color/muted"
+        android:textSize="12sp"
+        android:visibility="gone" />
+
+    <HorizontalScrollView
+        android:id="@+id/gif_favorites_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="12dp"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/gif_favorites"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <TextView
+        android:id="@+id/gif_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="@color/muted"
+        android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/gif_grid"
+        android:layout_width="match_parent"
+        android:layout_height="280dp"
+        android:clipToPadding="false"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp" />
+
+    <TextView
+        android:id="@+id/gif_more"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="8dp"
+        android:textColor="@color/muted"
+        android:textSize="13sp"
+        android:visibility="gone" />
+</LinearLayout>

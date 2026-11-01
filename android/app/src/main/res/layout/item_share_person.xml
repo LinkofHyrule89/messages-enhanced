@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="16dp"
+    android:layout_marginEnd="16dp"
+    android:foreground="?attr/selectableItemBackground"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:minHeight="64dp"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="8dp">
+
+        <FrameLayout
+            android:id="@+id/avatar_box"
+            android:layout_width="40dp"
+            android:layout_height="40dp">
+
+            <TextView
+                android:id="@+id/avatar"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:textColor="@android:color/white"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/avatar_photo"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@null"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/avatar_duo_a"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="top|start"
+                android:background="@drawable/bg_avatar_ring"
+                android:contentDescription="@null"
+                android:padding="2dp"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/avatar_duo_b"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
+                android:layout_gravity="bottom|end"
+                android:background="@drawable/bg_avatar_ring"
+                android:contentDescription="@null"
+                android:padding="2dp"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="?attr/colorOnSurface"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <View
+            android:id="@+id/radio"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/bg_share_radio" />
+    </LinearLayout>
+
+    <View
+        android:id="@+id/divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginStart="66dp"
+        android:background="?attr/colorOutlineVariant" />
+</LinearLayout>

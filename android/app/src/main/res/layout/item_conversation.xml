@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Row measurements match 0.2.0. Pin sections, badges, and the accent bar stay. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/panel">
+
+    <FrameLayout
+        android:id="@+id/row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="72dp"
+        android:foreground="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="72dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp">
+
+            <FrameLayout
+                android:id="@+id/avatar_box"
+                android:layout_width="48dp"
+                android:layout_height="48dp">
+
+                <TextView
+                    android:id="@+id/avatar"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:textColor="@android:color/white"
+                    android:textStyle="bold"
+                    android:textSize="16sp" />
+
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/avatar_photo"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone"
+                    android:contentDescription="@null"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/avatar_duo_a"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_gravity="top|start"
+                    android:padding="2dp"
+                    android:background="@drawable/bg_avatar_ring"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone"
+                    android:contentDescription="@null"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+
+                <com.google.android.material.imageview.ShapeableImageView
+                    android:id="@+id/avatar_duo_b"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_gravity="bottom|end"
+                    android:padding="2dp"
+                    android:background="@drawable/bg_avatar_ring"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone"
+                    android:contentDescription="@null"
+                    app:shapeAppearanceOverlay="@style/ShapeAppearance.MessagesEnhanced.Circle" />
+
+                <ImageView
+                    android:id="@+id/rcs_badge"
+                    android:layout_width="18dp"
+                    android:layout_height="18dp"
+                    android:layout_gravity="bottom|end"
+                    android:layout_marginEnd="-2dp"
+                    android:layout_marginBottom="-2dp"
+                    android:contentDescription="@string/composer_hint_rcs"
+                    android:src="@drawable/ic_rcs_badge"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="14dp"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/name"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textColor="@color/text"
+                        android:textSize="16sp" />
+
+                    <ImageView
+                        android:id="@+id/e2ee"
+                        android:layout_width="14dp"
+                        android:layout_height="14dp"
+                        android:layout_marginStart="8dp"
+                        android:src="@drawable/ic_lock"
+                        android:contentDescription="@string/e2ee"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/favorite"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="★"
+                        android:textColor="@color/accent"
+                        android:textSize="14sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="6dp">
+
+                    <ImageView
+                        android:id="@+id/status_icon"
+                        android:layout_width="wrap_content"
+                        android:layout_height="18dp"
+                        android:adjustViewBounds="true"
+                        android:scaleType="fitCenter"
+                        android:layout_marginEnd="8dp"
+                        android:visibility="gone"
+                        android:contentDescription="@string/status_sent" />
+
+                    <TextView
+                        android:id="@+id/preview"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textColor="@color/muted"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/muted"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:text="🔇"
+                        android:textSize="14sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:orientation="vertical"
+                android:gravity="end">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/pin"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:layout_marginEnd="8dp"
+                        android:src="@drawable/ic_pin"
+                        android:contentDescription="@string/pinned"
+                        android:visibility="gone" />
+
+                    <TextView
+                        android:id="@+id/time"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:minWidth="@dimen/conversation_list_time_min_width"
+                        android:gravity="end"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/unread"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:minWidth="20dp"
+                    android:paddingStart="6dp"
+                    android:paddingEnd="6dp"
+                    android:paddingTop="1dp"
+                    android:paddingBottom="1dp"
+                    android:gravity="center"
+                    android:background="@drawable/bg_badge"
+                    android:textColor="@android:color/white"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:visibility="gone" />
+
+                <ImageButton
+                    android:id="@+id/overflow"
+                    android:layout_width="32dp"
+                    android:layout_height="32dp"
+                    android:layout_marginTop="4dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_overflow"
+                    android:contentDescription="@string/conversation_actions"
+                    android:scaleType="center"
+                    android:visibility="gone" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <View
+            android:id="@+id/accent_bar"
+            android:layout_width="4dp"
+            android:layout_height="match_parent"
+            android:layout_gravity="start"
+            android:background="@color/accent"
+            android:visibility="gone" />
+    </FrameLayout>
+</LinearLayout>

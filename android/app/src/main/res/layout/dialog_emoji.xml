@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingTop="12dp"
+    android:paddingBottom="8dp">
+
+    <EditText
+        android:id="@+id/emoji_search"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_search_field"
+        android:hint="@string/emoji_search"
+        android:imeOptions="actionSearch"
+        android:importantForAutofill="no"
+        android:inputType="text"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:textColor="@color/text"
+        android:textColorHint="@color/muted"
+        android:textSize="15sp" />
+
+    <HorizontalScrollView
+        android:id="@+id/emoji_tab_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/emoji_tabs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+    </HorizontalScrollView>
+
+    <TextView
+        android:id="@+id/emoji_empty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:padding="24dp"
+        android:textColor="@color/muted"
+        android:visibility="gone" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/emoji_grid"
+        android:layout_width="match_parent"
+        android:layout_height="280dp"
+        android:clipToPadding="false"
+        android:paddingStart="8dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="8dp" />
+</LinearLayout>
