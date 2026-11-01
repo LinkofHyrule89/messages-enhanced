@@ -65,13 +65,13 @@ class WhatsNewPrompts @Inject constructor(
     private suspend fun githubSection(versionName: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val version = ChangelogParser.normalize(versionName) ?: return@withContext null
-            val tag = "v$version"
+            val tag = "android-v$version"
             val url =
                 "https://api.github.com/repos/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}/releases/tags/$tag"
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/vnd.github+json")
-                .header("User-Agent", "messages-enhanced-native")
+                .header("User-Agent", "messages-enhanced-android")
                 .build()
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null

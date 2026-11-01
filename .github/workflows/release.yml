@@ -1,9 +1,12 @@
 name: Release
 
+# Web tags are v*. Android tags are android-v* and are published by android-release.yml.
+# Web releases are not "latest": /releases/latest stays on the newest Android release.
+
 on:
   push:
     tags:
-      - 'v*'
+      - "v[0-9]*"
   workflow_dispatch:
     inputs:
       tag:
@@ -18,6 +21,9 @@ jobs:
     name: Build CLI binaries
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
     strategy:
       matrix:
         include:
@@ -34,7 +40,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
 
       - name: Build binary
@@ -52,19 +58,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: openmessage-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: openmessage-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
+          path: app/openmessage-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
           retention-days: 7
 
   build-macos-app:
     name: Build macOS .app + .dmg
     runs-on: macos-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
 
       # Import the Developer ID Application certificate into a temporary
@@ -150,14 +159,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenMessage-app
-          path: macos/build/OpenMessage.app
+          path: app/macos/build/OpenMessage.app
           retention-days: 7
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
           name: OpenMessage-dmg
-          path: macos/build/OpenMessage.dmg
+          path: app/macos/build/OpenMessage.dmg
           retention-days: 7
 
   release:
@@ -197,7 +206,7 @@ jobs:
         id: notes
         run: |
           tag="${{ steps.tag.outputs.tag }}"
-          previous=$(git tag --sort=-v:refname | grep -v "^${tag}$" | head -n1)
+          previous=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | grep -v "^${tag}$" | head -n1)
           if [ -z "$previous" ]; then
             git log --pretty=format:"- %s (%h)" > NOTES.md
           else
@@ -212,9 +221,10 @@ jobs:
           tag="${{ steps.tag.outputs.tag }}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" release/* --clobber
-            gh release edit "$tag" --notes-file NOTES.md
+            gh release edit "$tag" --notes-file NOTES.md --latest=false
           else
             gh release create "$tag" \
+              --latest=false \
               --title "OpenMessage ${tag}" \
               --notes-file NOTES.md \
               release/*

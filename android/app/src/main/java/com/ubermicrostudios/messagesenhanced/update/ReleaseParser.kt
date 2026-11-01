@@ -33,6 +33,8 @@ data class AppRelease(
 internal data class GithubReleaseDto(
     @SerialName("tag_name") val tagName: String = "",
     val body: String = "",
+    val draft: Boolean = false,
+    val prerelease: Boolean = false,
     val assets: List<GithubAssetDto> = emptyList(),
 )
 
@@ -47,10 +49,42 @@ internal data class GithubAssetDto(
 object ReleaseParser {
     private val SHA256 = Regex("""^[0-9a-fA-F]{64}$""")
 
+    /** List endpoint [UpdateChecker] calls. Web releases stay in the list and are filtered out. */
+    fun releasesUrl(owner: String, repo: String): String =
+        "https://api.github.com/repos/$owner/$repo/releases?per_page=100"
+
+    sealed class ListResult {
+        data class Selected(val release: ParsedRelease) : ListResult()
+        data object None : ListResult()
+        data object Unreadable : ListResult()
+    }
+
     fun parse(jsonText: String): ParsedRelease? {
         val raw = runCatching {
             JsonConfig.json.decodeFromString(GithubReleaseDto.serializer(), jsonText)
         }.getOrNull() ?: return null
+        return fromDto(raw)
+    }
+
+    /**
+     * Newest Android release from `GET /repos/{owner}/{repo}/releases`.
+     * Web tags (`vX.Y.Z`) are ignored, even when their number is higher.
+     * Drafts and prereleases are ignored. Equal versions keep the first entry,
+     * which is the newest published when GitHub's list is newest-first.
+     */
+    fun latestAndroid(jsonText: String): ListResult {
+        val raws = runCatching {
+            JsonConfig.json.decodeFromString<List<GithubReleaseDto>>(jsonText)
+        }.getOrNull() ?: return ListResult.Unreadable
+        val selected = raws
+            .asSequence()
+            .filter { !it.draft && !it.prerelease && SemVer.isAndroidReleaseTag(it.tagName) }
+            .mapNotNull(::fromDto)
+            .maxWithOrNull(compareBy { it.version })
+        return if (selected == null) ListResult.None else ListResult.Selected(selected)
+    }
+
+    private fun fromDto(raw: GithubReleaseDto): ParsedRelease? {
         val version = SemVer.parse(raw.tagName) ?: return null
         val asset = raw.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
         return ParsedRelease(

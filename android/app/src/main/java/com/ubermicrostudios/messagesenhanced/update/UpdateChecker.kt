@@ -46,8 +46,9 @@ data class AwaitingInstall(
 )
 
 /**
- * GitHub Releases updater. Uses a plain OkHttp client with no server cookie jar,
- * so a session cookie is never sent to GitHub.
+ * GitHub Releases updater. Lists this repo's releases and keeps only `android-v*`
+ * tags, so a web release is never offered. Uses a plain OkHttp client with no
+ * server cookie jar, so a session cookie is never sent to GitHub.
  */
 @Singleton
 class UpdateChecker @Inject constructor(
@@ -343,10 +344,11 @@ class UpdateChecker @Inject constructor(
     }
 
     private fun fetch(): UpdateResult {
-        val url = "https://api.github.com/repos/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}/releases/latest"
+        val url = ReleaseParser.releasesUrl(BuildConfig.GITHUB_OWNER, BuildConfig.GITHUB_REPO)
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "messages-enhanced-android")
             .build()
         val body = try {
             http.newCall(request).execute().use { response ->
@@ -359,8 +361,15 @@ class UpdateChecker @Inject constructor(
         } catch (_: IOException) {
             return UpdateResult.Failed("Couldn't reach GitHub.")
         }
-        val parsed = ReleaseParser.parse(body)
-            ?: return UpdateResult.Failed("Couldn't read the latest release.")
+        val parsed = when (val list = ReleaseParser.latestAndroid(body)) {
+            ReleaseParser.ListResult.Unreadable ->
+                return UpdateResult.Failed("Couldn't read the latest release.")
+            ReleaseParser.ListResult.None -> {
+                pendingOffer = null
+                return UpdateResult.UpToDate
+            }
+            is ReleaseParser.ListResult.Selected -> list.release
+        }
         val current = SemVer.parse(BuildConfig.VERSION_NAME)
             ?: return UpdateResult.Failed("Couldn't read this app version.")
         if (parsed.version <= current) {

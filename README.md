@@ -129,11 +129,10 @@ select more, info
 - **`extension/`**: "Messages Enhanced Cookie Sender", a small Chrome extension
   that sends your Google Messages sign-in cookies to your own Messages Enhanced
   server in one click. See [`extension/README.md`](extension/README.md).
-- **`android/`**: the "Messages Enhanced" Android app. It opens your server's
-  web app full screen (Trusted Web Activity, no URL bar) and includes a cookie
-  sender. No server is built in: you enter yours on first launch. The server
-  serves `/.well-known/assetlinks.json` for the official build automatically;
-  set `MESSAGES_ANDROID_CERT_SHA256` if you sign your own. See
+- **`android/`**: the native Android client for phones and tablets. It uses
+  this server's HTTP API (it does not embed a server). Application id
+  `com.ubermicrostudios.messagesenhanced`. In-app updates read only the
+  `android-v*` GitHub releases of this repository. See
   [`android/README.md`](android/README.md).
 
 ## Build and run
@@ -173,27 +172,20 @@ Variable names from earlier versions are still read as a fallback. More options 
 
 ## Android app
 
-The app in [`android/`](android/README.md) opens your server's web app full
-screen (Trusted Web Activity). Build it with Android Studio or
-`./gradlew assembleRelease` (JDK 21).
+The native client is in [`android/`](android/README.md). From that directory,
+with JDK 21:
 
-**Setup:** on first launch, enter your server URL (a bare domain such as
-`messages.example.com` or a full `https://` URL). The app checks that it's a
-Messages Enhanced server, finds the web app's start URL and saves it; change
-it later from the app's "Server" shortcut. Nothing is built in: the default
-server address is blank.
+```bash
+cd android
+./gradlew testDebugUnitTest assembleDebug
+```
 
-**Digital Asset Links:** the server serves `/.well-known/assetlinks.json`
-for the official signing key automatically. If you sign your own build (for
-example with a self-signed debug or release key), set the server's
-`MESSAGES_ANDROID_CERT_SHA256` to your key's SHA-256 fingerprint
-(`apksigner verify --print-certs app-release.apk`; several can be given,
-comma-separated), and `MESSAGES_ANDROID_PACKAGE` if you change the package
-name. Without a match, Android shows a URL bar instead of full screen.
-
-## Native Android app
-
-A native Kotlin Android app for tablets and phones (split layout, Material You, notifications with inline reply, in-app updates) lives in its own repo: [messages-enhanced-native](https://github.com/LinkofHyrule89/messages-enhanced-native). Download the APK from its [releases page](https://github.com/LinkofHyrule89/messages-enhanced-native/releases). It connects to this server.
+Release tags are `android-vX.Y.Z` (for example `android-v0.8.1`). Web tags stay
+`vX.Y.Z`, so the two do not collide. GitHub's `/releases/latest` is the newest
+Android release: web releases are published with latest turned off. Installed
+builds that still check
+[messages-enhanced-native](https://github.com/LinkofHyrule89/messages-enhanced-native)
+get one update from that repository's final release; the repository is archived.
 
 ## Attribution
 

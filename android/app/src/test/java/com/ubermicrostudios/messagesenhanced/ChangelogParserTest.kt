@@ -30,6 +30,20 @@ class ChangelogParserTest {
         assertEquals(expected, ChangelogParser.section(markdown, "v0.6.8"))
         assertEquals(expected, ChangelogParser.section(markdown, "  v0.6.8  "))
         assertEquals("- Encrypted credentials.", ChangelogParser.section(markdown, "0.6.7"))
+        val androidNotes = """
+            # Changelog
+
+            ## android-v0.8.1
+
+            - Updates come from this repo.
+
+            ## v0.8.0
+
+            - Previous package.
+        """.trimIndent()
+        assertEquals("- Updates come from this repo.", ChangelogParser.section(androidNotes, "0.8.1"))
+        assertEquals("- Updates come from this repo.", ChangelogParser.section(androidNotes, "android-v0.8.1"))
+        assertEquals("- Previous package.", ChangelogParser.section(androidNotes, "v0.8.0"))
     }
 
     @Test
@@ -56,8 +70,11 @@ class ChangelogParserTest {
     fun normalize_stripsVAndRejectsJunk() {
         assertEquals("0.6.8", ChangelogParser.normalize("v0.6.8"))
         assertEquals("0.6.8", ChangelogParser.normalize("0.6.8"))
+        assertEquals("0.8.1", ChangelogParser.normalize("android-v0.8.1"))
+        assertEquals("0.8.1", ChangelogParser.normalize("  android-v0.8.1  "))
         assertNull(ChangelogParser.normalize("0.6"))
         assertNull(ChangelogParser.normalize(""))
+        assertNull(ChangelogParser.normalize("android-v0.8.1-beta"))
     }
 
     @Test

@@ -1,12 +1,19 @@
-name: Release
+name: Android Release
+
+# Android tags are android-v*. Web tags stay v* and are published by release.yml.
+# This release is marked latest so /releases/latest stays on the newest Android build.
 
 on:
   push:
     tags:
-      - "v*"
+      - "android-v*"
 
 permissions:
   contents: write
+
+defaults:
+  run:
+    working-directory: android
 
 jobs:
   release:
@@ -23,7 +30,7 @@ jobs:
 
       # Firebase is configured at runtime from the server. No google-services.json is required.
       - name: Accept Android SDK licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true  # SDK is preinstalled on ubuntu-latest
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
       - name: Decode keystore
         env:
@@ -57,7 +64,12 @@ jobs:
             echo "Release APK was not produced" >&2
             exit 1
           fi
-          cp "$src" "messages-enhanced-native-${tag}.apk"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort | tail -n 1)"
+          if [ -z "$apksigner" ] || ! "$apksigner" verify "$src" >/tmp/apk-verify.txt 2>&1; then
+            echo "Release APK is not signed" >&2
+            exit 1
+          fi
+          cp "$src" "messages-enhanced-${tag}.apk"
           awk -v header="## ${tag}" '
             $0 == header { found = 1; capture = 1; next }
             capture && /^## / { capture = 0 }
@@ -78,5 +90,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: messages-enhanced-native-${{ github.ref_name }}.apk
-          body_path: release-notes.md
+          files: android/messages-enhanced-${{ github.ref_name }}.apk
+          body_path: android/release-notes.md
+          make_latest: true

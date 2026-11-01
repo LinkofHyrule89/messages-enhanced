@@ -1,11 +1,14 @@
 package com.ubermicrostudios.messagesenhanced.util
 
 /**
- * Reads the `## vX.Y.Z` section from CHANGELOG.md.
- * Headings must be a semantic version, with or without a leading `v`.
+ * Reads one version section from CHANGELOG.md.
+ * Headings are `## android-vX.Y.Z` (this repo's Android releases) or `## vX.Y.Z`.
  */
 object ChangelogParser {
-    private val heading = Regex("^##\\s+v?(\\d+\\.\\d+\\.\\d+)\\s*$", RegexOption.MULTILINE)
+    private val heading = Regex(
+        """^##\s+(?:android-)?v?(\d+\.\d+\.\d+)\s*$""",
+        setOf(RegexOption.MULTILINE, RegexOption.IGNORE_CASE),
+    )
 
     fun section(markdown: String, versionName: String): String? {
         val want = normalize(versionName) ?: return null
@@ -28,7 +31,10 @@ object ChangelogParser {
         }.trim()
 
     fun normalize(versionName: String): String? {
-        val trimmed = versionName.trim().removePrefix("v").removePrefix("V")
-        return trimmed.takeIf { it.matches(Regex("\\d+\\.\\d+\\.\\d+")) }
+        val match = Regex(
+            """^(?:android-)?v?(\d+\.\d+\.\d+)$""",
+            RegexOption.IGNORE_CASE,
+        ).matchEntire(versionName.trim()) ?: return null
+        return match.groupValues[1]
     }
 }

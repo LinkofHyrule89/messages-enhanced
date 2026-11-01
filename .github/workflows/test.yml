@@ -2,15 +2,25 @@ name: Test
 
 on:
   pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/test.yml"
   push:
     branches:
       - main
+    paths:
+      - "app/**"
+      - ".github/workflows/test.yml"
 
 permissions:
   contents: read
 
 env:
   GO_COVERAGE_MIN: "40.0"
+
+defaults:
+  run:
+    working-directory: app
 
 jobs:
   go-test:
@@ -22,7 +32,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
 
       - name: Run Go test suite with coverage
@@ -44,8 +54,8 @@ jobs:
         with:
           name: go-coverage
           path: |
-            coverage.out
-            coverage.txt
+            app/coverage.out
+            app/coverage.txt
 
   go-race:
     name: Go Race
@@ -56,7 +66,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
 
       - name: Run Go race suite
@@ -71,13 +81,14 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install Node dependencies
         run: npm ci
@@ -95,8 +106,8 @@ jobs:
           name: playwright-artifacts
           if-no-files-found: ignore
           path: |
-            playwright-report/
-            test-results/
+            app/playwright-report/
+            app/test-results/
 
   site-build:
     name: Site Build
@@ -104,7 +115,7 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: site
+        working-directory: app/site
     steps:
       - uses: actions/checkout@v4
 
@@ -112,7 +123,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: site/package-lock.json
+          cache-dependency-path: app/site/package-lock.json
 
       - name: Install site dependencies
         run: npm ci
@@ -136,7 +147,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
 
       - name: Build Swift package

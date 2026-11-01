@@ -1,5 +1,9 @@
 # Changelog
 
+## android-v0.8.1
+
+- Native Android app (versionCode 43) lives in `android/` and publishes from `android-v*` tags. In-app updates read only those releases. Web releases are not marked latest, so `/releases/latest` stays on the newest Android release.
+
 ## Unreleased (web)
 
 - Web: pinned rows in the conversation list keep pin icons in one column; the time area uses a fixed width so labels like "12:00 AM", "Yesterday", and "Fri" no longer shift the pin.

@@ -20,7 +20,7 @@ Application id `com.ubermicrostudios.messagesenhanced`. Minimum SDK 26. Debug bu
 
 ## Companion server
 
-This app is a client only. It needs a running [Messages Enhanced](https://github.com/LinkofHyrule89/messages-enhanced) server, the self-hosted Go server and web app that pairs with Google Messages. Set up that server first, then sign in here with its URL and secret. The native app's features track the server's API, so keep the server reasonably up to date.
+This app is a client only. The server and web app live in [`../app`](../README.md) in this repository ([Messages Enhanced](https://github.com/LinkofHyrule89/messages-enhanced)). Set that server up first, then sign in here with its URL and secret. The native app's features track the server's API, so keep the server reasonably up to date.
 
 ## Requirements
 
@@ -31,13 +31,13 @@ This app is a client only. It needs a running [Messages Enhanced](https://github
 
 ## Build
 
-Debug build and unit tests:
+Debug build and unit tests, from this directory:
 
 ```
 ./gradlew assembleDebug testDebugUnitTest
 ```
 
-Release builds are minified and resource-shrunk with R8. Signing is applied only when `keystore.properties` exists in the project root (the file is gitignored). Format:
+Release builds are minified and resource-shrunk with R8. Signing is applied only when `keystore.properties` exists in this directory (the file is gitignored). Format:
 
 ```
 storeFile=keys/release.jks
@@ -46,7 +46,7 @@ keyAlias=your-key-alias
 keyPassword=your-key-password
 ```
 
-`storeFile` is a path relative to the project root. Then:
+`storeFile` is a path relative to this directory (`android/`). Then:
 
 ```
 ./gradlew assembleRelease
@@ -58,11 +58,11 @@ Push is configured from `GET /api/app/push/config` after sign-in. The Android Gr
 
 ## Updates
 
-The app reads the latest GitHub release for the repository in the `GITHUB_OWNER` and `GITHUB_REPO` BuildConfig fields. On launch it checks at most every six hours. Settings has **Check for updates**, which reports “You’re up to date” when nothing newer is published.
+The app reads GitHub releases for `LinkofHyrule89/messages-enhanced` (`GITHUB_OWNER` and `GITHUB_REPO`). It lists releases and keeps only `android-vX.Y.Z` tags, so a web release is never offered. On launch it checks at most every six hours. Settings has **Check for updates**, which reports “You’re up to date” when nothing newer is published.
 
-A newer `vX.Y.Z` tag with an `.apk` asset opens a dialog with the version and the release notes. Update downloads the APK into the app cache, checks the asset size, and checks the `sha256:` digest when GitHub includes one. A mismatch deletes the file and shows an error. Install uses a `PackageInstaller` session. Android will ask you to allow installs from this app the first time.
+A newer Android tag with an `.apk` asset opens a dialog with the version and the release notes. What's new after an install reads the matching `## android-vX.Y.Z` section, then the GitHub release body for that tag. Update downloads the APK into the app cache, checks the asset size, and checks the `sha256:` digest when GitHub includes one. A mismatch deletes the file and shows an error. Install uses a `PackageInstaller` session. Android will ask you to allow installs from this app the first time.
 
-Tag pushes (`v*`) are built and published by `.github/workflows/release.yml`. The workflow expects these repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD`.
+Tag pushes (`android-v*`) are built and published by [`../.github/workflows/android-release.yml`](../.github/workflows/android-release.yml). The workflow expects these repository secrets: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, and `KEY_PASSWORD`. The release is marked latest. Web releases are not, so `/releases/latest` stays on the newest Android release.
 
 ## Attribution
 

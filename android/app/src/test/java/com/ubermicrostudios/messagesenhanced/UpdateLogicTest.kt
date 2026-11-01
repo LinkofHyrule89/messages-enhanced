@@ -24,6 +24,14 @@ class UpdateLogicTest {
         assertEquals(SemVer(1, 2, 3), SemVer.parse("1.2.3"))
         assertEquals(SemVer(1, 2, 3), SemVer.parse("V1.2.3"))
         assertEquals(SemVer(1, 2, 3), SemVer.parse("  v1.2.3  "))
+        assertEquals(SemVer(0, 8, 1), SemVer.parse("android-v0.8.1"))
+        assertEquals(SemVer(0, 8, 1), SemVer.parse("  android-v0.8.1  "))
+        assertTrue(SemVer.isAndroidReleaseTag("android-v0.8.1"))
+        assertFalse(SemVer.isAndroidReleaseTag("v0.8.1"))
+        assertFalse(SemVer.isAndroidReleaseTag("v0.7.22"))
+        assertFalse(SemVer.isAndroidReleaseTag("android-v0.8.1-beta"))
+        assertNull(SemVer.parse("android-v0.8.1-beta"))
+        assertTrue(SemVer.isNewer("android-v0.8.1", "0.8.0"))
         assertNull(SemVer.parse("1.2"))
         assertNull(SemVer.parse("v1.2.3-beta"))
         assertNull(SemVer.parse("v1.2.3.4"))
@@ -214,6 +222,139 @@ class UpdateLogicTest {
 
         assertNull(ReleaseParser.parse("""{"tag_name":"nightly","assets":[]}"""))
         assertNull(ReleaseParser.parse("not json"))
+        assertEquals(SemVer(0, 8, 1), ReleaseParser.parse("""{"tag_name":"android-v0.8.1","body":"moved"}""")?.version)
+    }
+
+    @Test
+    fun updateCheckerParsesThisReposLatestAndroidRelease() {
+        assertEquals(
+            "https://api.github.com/repos/LinkofHyrule89/messages-enhanced/releases?per_page=100",
+            ReleaseParser.releasesUrl("LinkofHyrule89", "messages-enhanced"),
+        )
+        val sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        // Shape of GET /repos/LinkofHyrule89/messages-enhanced/releases?per_page=100:
+        // the two existing web tags, a higher web tag, then android-v0.8.1 with its APK.
+        val json = """
+            [
+              {
+                "tag_name": "v0.7.22",
+                "body": "web",
+                "draft": false,
+                "prerelease": false,
+                "assets": [
+                  {"name": "openmessage-linux-amd64.tar.gz", "browser_download_url": "https://example.test/web-22.tar.gz", "size": 10}
+                ]
+              },
+              {"tag_name": "v0.7.21", "body": "web earlier", "assets": []},
+              {
+                "tag_name": "v9.0.0",
+                "body": "newer web release must not win",
+                "assets": [
+                  {"name": "web.apk", "browser_download_url": "https://example.test/web.apk", "size": 9, "digest": "sha256:$sha"}
+                ]
+              },
+              {
+                "tag_name": "android-v0.8.1",
+                "body": "In-app updates now come from this repository's Android releases.",
+                "assets": [
+                  {"name": "notes.txt", "browser_download_url": "https://example.test/notes.txt", "size": 3},
+                  {
+                    "name": "messages-enhanced-android-v0.8.1.apk",
+                    "browser_download_url": "https://github.com/LinkofHyrule89/messages-enhanced/releases/download/android-v0.8.1/messages-enhanced-android-v0.8.1.apk",
+                    "size": 3529158,
+                    "digest": "sha256:$sha"
+                  }
+                ]
+              }
+            ]
+        """.trimIndent()
+        val selected = ReleaseParser.latestAndroid(json)
+        assertTrue(selected is ReleaseParser.ListResult.Selected)
+        val parsed = (selected as ReleaseParser.ListResult.Selected).release
+        assertEquals(SemVer(0, 8, 1), parsed.version)
+        assertTrue(parsed.version > SemVer(0, 8, 0))
+        assertEquals("android-v0.8.1", parsed.tag)
+        assertTrue(SemVer.isAndroidReleaseTag(parsed.tag))
+        val apk = parsed.apk
+        assertEquals("messages-enhanced-android-v0.8.1.apk", apk?.name)
+        assertEquals(
+            "https://github.com/LinkofHyrule89/messages-enhanced/releases/download/android-v0.8.1/messages-enhanced-android-v0.8.1.apk",
+            apk?.downloadUrl,
+        )
+        assertEquals(3529158L, apk?.size)
+        assertEquals(sha, apk?.sha256)
+        assertEquals(false, apk?.digestInvalid)
+    }
+
+    @Test
+    fun installed080ReadsAVreleaseFromTheLatestEndpoint() {
+        // messages-enhanced-native 0.8.0 calls /releases/latest and parses one release object.
+        val sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        val json = """
+            {
+              "tag_name": "v0.8.1",
+              "body": "Updates now come from the Messages Enhanced repository.",
+              "assets": [
+                {
+                  "name": "messages-enhanced-android-v0.8.1.apk",
+                  "browser_download_url": "https://github.com/LinkofHyrule89/messages-enhanced-native/releases/download/v0.8.1/messages-enhanced-android-v0.8.1.apk",
+                  "size": 3529158,
+                  "digest": "sha256:$sha"
+                }
+              ]
+            }
+        """.trimIndent()
+        val parsed = ReleaseParser.parse(json)
+        assertEquals(SemVer(0, 8, 1), parsed?.version)
+        assertTrue(SemVer.isNewer("v0.8.1", "0.8.0"))
+        assertFalse(SemVer.isAndroidReleaseTag("v0.8.1"))
+        assertEquals("messages-enhanced-android-v0.8.1.apk", parsed?.apk?.name)
+        assertEquals(
+            "https://github.com/LinkofHyrule89/messages-enhanced-native/releases/download/v0.8.1/messages-enhanced-android-v0.8.1.apk",
+            parsed?.apk?.downloadUrl,
+        )
+        assertEquals(sha, parsed?.apk?.sha256)
+    }
+
+    @Test
+    fun releaseListKeepsTheNewestAndroidTagAndIgnoresWebReleases() {
+        val sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        val json = """
+            [
+              {"tag_name":"v9.9.9","body":"web","draft":false,"prerelease":false,"assets":[
+                {"name":"web.apk","browser_download_url":"https://example.test/web.apk","size":1,"digest":"sha256:$sha"}
+              ]},
+              {"tag_name":"android-v1.0.0","body":"draft","draft":true,"prerelease":false,"assets":[
+                {"name":"draft.apk","browser_download_url":"https://example.test/draft.apk","size":1}
+              ]},
+              {"tag_name":"android-v0.9.0","body":"pre","draft":false,"prerelease":true,"assets":[
+                {"name":"pre.apk","browser_download_url":"https://example.test/pre.apk","size":1}
+              ]},
+              {"tag_name":"android-v0.8.1","body":"current","assets":[
+                {"name":"messages-enhanced-android-v0.8.1.apk","browser_download_url":"https://example.test/android.apk","size":42,"digest":"sha256:$sha"}
+              ]},
+              {"tag_name":"android-v0.8.1","body":"older publish of the same version","assets":[
+                {"name":"old.apk","browser_download_url":"https://example.test/old.apk","size":1}
+              ]},
+              {"tag_name":"android-v0.8.0","body":"previous","assets":[
+                {"name":"prev.apk","browser_download_url":"https://example.test/prev.apk","size":1}
+              ]}
+            ]
+        """.trimIndent()
+        val selected = ReleaseParser.latestAndroid(json)
+        assertTrue(selected is ReleaseParser.ListResult.Selected)
+        val release = (selected as ReleaseParser.ListResult.Selected).release
+        assertEquals(SemVer(0, 8, 1), release.version)
+        assertEquals("android-v0.8.1", release.tag)
+        assertEquals("current", release.notes)
+        assertEquals("https://example.test/android.apk", release.apk?.downloadUrl)
+
+        assertTrue(ReleaseParser.latestAndroid("[]") is ReleaseParser.ListResult.None)
+        assertTrue(
+            ReleaseParser.latestAndroid("""[{"tag_name":"v0.7.22","body":"web","assets":[]}]""")
+                is ReleaseParser.ListResult.None,
+        )
+        assertTrue(ReleaseParser.latestAndroid("not json") is ReleaseParser.ListResult.Unreadable)
     }
 
     @Test

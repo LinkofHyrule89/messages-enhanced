@@ -1,9 +1,19 @@
-name: CI
+name: Android CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-ci.yml"
   pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-ci.yml"
+
+defaults:
+  run:
+    working-directory: android
 
 jobs:
   build:

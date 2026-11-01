@@ -39,10 +39,10 @@ android {
         applicationId = "com.ubermicrostudios.messagesenhanced"
         minSdk = 26
         targetSdk = 36
-        versionCode = 42
-        versionName = "0.8.0"
+        versionCode = 43
+        versionName = "0.8.1"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
-        buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced-native\"")
+        buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced\"")
     }
 
     val keystorePropertiesFile = rootProject.file("keystore.properties")

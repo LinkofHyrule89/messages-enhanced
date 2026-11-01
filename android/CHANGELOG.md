@@ -1,5 +1,10 @@
 # Changelog
 
+## android-v0.8.1
+
+- In-app updates now come from this repository's Android releases (`android-v*`). A web release is not offered as an app update.
+- versionCode 43.
+
 ## v0.8.0
 
 - New package name `com.ubermicrostudios.messagesenhanced`. This installs as a fresh app, so uninstall the old app first. Data from `com.ubermicrostudios.messagesenhanced.nativeapp` does not carry over.
