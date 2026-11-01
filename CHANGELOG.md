@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.7.24
+
+- Conversation list: pinned-row pin icons stay in one column; timestamps use a fixed minimum width so labels like "Fri" and "12:00 AM" no longer shift the pin sideways.
+
 ## v0.7.23
 
 - YouTube previews look like the web card: a 16:9 centre-cropped thumbnail with no black bars, the real video title and channel name, then the youtube.com footer. If the title failed to load, the app asks again instead of keeping "YouTube". Other preview types are unchanged.

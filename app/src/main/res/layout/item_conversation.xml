@@ -193,6 +193,8 @@
                         android:id="@+id/time"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:minWidth="@dimen/conversation_list_time_min_width"
+                        android:gravity="end"
                         android:textColor="@color/muted"
                         android:textSize="12sp" />
                 </LinearLayout>
