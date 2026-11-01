@@ -43,7 +43,9 @@ import com.ubermicrostudios.messagesenhanced.databinding.ItemMessageMeBinding
 import com.ubermicrostudios.messagesenhanced.databinding.ItemMessageThemBinding
 import com.ubermicrostudios.messagesenhanced.ui.conversations.icon
 import com.ubermicrostudios.messagesenhanced.ui.conversations.tint
+import com.ubermicrostudios.messagesenhanced.util.BareImages
 import com.ubermicrostudios.messagesenhanced.util.BubbleColors
+import com.ubermicrostudios.messagesenhanced.util.BubbleCorners
 import com.ubermicrostudios.messagesenhanced.util.CircleAvatars
 import com.ubermicrostudios.messagesenhanced.util.RecyclerIds
 import com.ubermicrostudios.messagesenhanced.util.IMAGE_PLACEHOLDER_COLOR
@@ -450,13 +452,22 @@ class MessageAdapter(
             }
         }
         // Stickers: no bubble behind the image.
-        if (image.isVisible && emojis == null && (item.mimeType.contains("webp", true) || item.body.trim().equals("[Sticker]", true))) {
+        val sticker = image.isVisible && emojis == null && ImageAspects.isSticker(item.mimeType, item.body)
+        // One photo or GIF and no caption: the picture is the message. A caption
+        // or more than one image keeps the bubble.
+        val bare = image.isVisible && emojis == null && BareImages.solo(item)
+        if (sticker) {
             bubble.background = null
             if (item.body.trim().equals("[Sticker]", true)) body.isVisible = false
         }
+        if (bare) {
+            bubble.background = null
+            body.isVisible = false
+        }
+        bubble.setPadding(0, 0, 0, if (bare) 0 else (6f * density).toInt())
 
         bindLink(item.body, linkCard, linkImage, linkSite, linkTitle, linkDesc)
-        layoutEdgeToEdge(item, bubble, image, body, linkCard, sender, emojis != null)
+        layoutEdgeToEdge(item, bubble, image, body, linkCard, sender, emojis != null, bare, fromMe, row.pos)
         bindReceipt(row, kind, receipt, receiptAvatars, receiptLabel, receiptIcon, look)
         bindTapDetail(item, locked, tapDetail, tapDetailText, tapDetailLock)
         if (image.isVisible && emojis == null) {
@@ -693,15 +704,20 @@ class MessageAdapter(
         linkCard: View,
         sender: TextView,
         emoji: Boolean,
+        bare: Boolean,
+        fromMe: Boolean,
+        pos: MessageRuns.Pos,
     ) {
         val dm = bubble.resources.displayMetrics
         val d = dm.density
         val wide = ImageAspects.frameWidth(dm.widthPixels, d)
         val sticker = image.isVisible && !emoji && ImageAspects.isSticker(item.mimeType, item.body)
-        val photo = image.isVisible && !emoji && !sticker && bubble.background != null
+        val photo = image.isVisible && !emoji && !sticker && !bare && bubble.background != null
+        val fitted = photo || bare
         val lp = image.layoutParams as LinearLayout.LayoutParams
         val pv = image as? BubblePhotoView
         val dims = if (image.isVisible && !emoji) mediaDims(image, item) else null
+        lp.gravity = if (!bare) Gravity.NO_GRAVITY else if (fromMe) Gravity.END else Gravity.START
         // The bubble has no padding of its own: text rows carry it, so photos and link
         // cards sit flush with the bubble edges and are clipped to its corners.
         lp.marginStart = 0
@@ -724,17 +740,19 @@ class MessageAdapter(
             pv?.reserveHeight = 0
             pv?.caption = null
             if (image.drawable == null) image.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
-        } else if (photo) {
+        } else if (fitted) {
             lp.width = ViewGroup.LayoutParams.WRAP_CONTENT
             lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
-            image.scaleType = ImageView.ScaleType.FIT_XY
+            // The view is already the picture's aspect, so FIT_XY fills a framed photo.
+            // A bare photo uses FIT_CENTER so a late bitmap cannot crop.
+            image.scaleType = if (bare) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.FIT_XY
             image.minimumHeight = if (dims != null) 0 else (120 * d).toInt()
             pv?.photoMode = true
             pv?.reserveWidth = dims?.width ?: 0
             pv?.reserveHeight = dims?.height ?: 0
             pv?.maxPhotoWidth = wide
             pv?.maxPhotoHeight = minOf((400 * d).toInt(), (dm.heightPixels * 0.6f).toInt())
-            pv?.caption = body
+            pv?.caption = if (photo) body else null
             if (image.drawable == null) image.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
         } else if (emoji && image.isVisible) {
             // Big animated emoji (Google Messages size ~64dp): a real square in the
@@ -777,7 +795,10 @@ class MessageAdapter(
         } else if (!photo) {
             body.maxWidth = Int.MAX_VALUE
         }
-        bubble.clipToOutline = true
+        pv?.setCornerRadii(if (bare) BubbleCorners.px(d, fromMe, pos) else BubbleCorners.Px.ZERO)
+        // A bare picture clips itself. The bubble outline would square it off
+        // once the fill is gone.
+        bubble.clipToOutline = !bare
     }
 
     /**
@@ -1066,39 +1087,9 @@ class MessageAdapter(
     }
 
     private fun bubbleDrawable(density: Float, fromMe: Boolean, pos: MessageRuns.Pos, color: Int): GradientDrawable {
-        val radius = 20f * density
-        val tail = 4f * density
-        val radii = FloatArray(8) { radius }
-        fun tailTop() {
-            if (fromMe) {
-                radii[2] = tail
-                radii[3] = tail
-            } else {
-                radii[0] = tail
-                radii[1] = tail
-            }
-        }
-        fun tailBottom() {
-            if (fromMe) {
-                radii[4] = tail
-                radii[5] = tail
-            } else {
-                radii[6] = tail
-                radii[7] = tail
-            }
-        }
-        when (pos) {
-            MessageRuns.Pos.SOLO -> Unit
-            MessageRuns.Pos.FIRST -> tailBottom()
-            MessageRuns.Pos.MID -> {
-                tailTop()
-                tailBottom()
-            }
-            MessageRuns.Pos.LAST -> tailTop()
-        }
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadii = radii
+            cornerRadii = BubbleCorners.px(density, fromMe, pos).toArray()
             setColor(color)
         }
     }

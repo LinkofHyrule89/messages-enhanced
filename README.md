@@ -180,7 +180,7 @@ cd android
 ./gradlew testDebugUnitTest assembleDebug
 ```
 
-Release tags are `android-vX.Y.Z` (for example `android-v0.8.1`). Web tags stay
+Release tags are `android-vX.Y.Z` (for example `android-v0.8.2`). Web tags stay
 `vX.Y.Z`, so the two do not collide. GitHub's `/releases/latest` is the newest
 Android release: web releases are published with latest turned off. Installed
 builds that still check

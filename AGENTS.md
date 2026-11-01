@@ -5,7 +5,7 @@ Messages Enhanced is a monorepo. Run commands from the directory that owns them.
 ## Layout
 
 - `app/` — Go server and web client (module `github.com/maxghenis/openmessage`). Build, test, and e2e from `app/`. Web release tags are `vX.Y.Z`.
-- `android/` — native Android client, application id `com.ubermicrostudios.messagesenhanced`. Gradle commands run from `android/`. Release tags are `android-vX.Y.Z` (versionName `0.8.1` is tag `android-v0.8.1`).
+- `android/` — native Android client, application id `com.ubermicrostudios.messagesenhanced`. Gradle commands run from `android/`. Release tags are `android-vX.Y.Z` (versionName `0.8.2` is tag `android-v0.8.2`).
 - `extension/` — Chrome extension that sends Google cookies to the user's own server.
 - `.github/workflows/` — web workflows (`test.yml`, `release.yml`, `gmessages-fork-drift.yml`) and Android workflows (`android-ci.yml`, `android-release.yml`).
 

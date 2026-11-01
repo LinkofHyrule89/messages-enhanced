@@ -1490,3 +1490,41 @@ html.desk .msg-row .bubble.has-image:not(.sticker) > .media-image ~ * { contain:
 html.desk .msg-row .bubble.has-image:not(.sticker) > .sender:first-child { margin-top: 12px; }
 html.desk .msg-row .bubble.has-image:not(.sticker) > .media-image + .body { margin-top: 10px; }
 html.desk .msg-row .bubble.has-image:not(.sticker) > .reply-quote ~ .media-image { margin-top: 6px; }
+
+/* A single photo or GIF with no caption: no bubble fill or padding. The picture
+   keeps the bubble's corner radii, fits inside the same max width and height,
+   and is never cropped. Captioned photos and multi-image messages stay in the
+   bubble above. The unloaded box still reserves space so the row does not jump. */
+html .msg-row .bubble.image-only {
+  display: flex; flex-direction: column; align-items: flex-start;
+  width: fit-content; max-width: min(760px, 72%);
+  background: transparent; box-shadow: none; padding: 0; overflow: visible;
+}
+html .msg-row.me .bubble.image-only { align-items: flex-end; }
+html .msg-row .bubble.image-only > .reply-quote { margin: 0 0 8px; width: auto; min-width: 0; max-width: 100%; }
+html .msg-row .bubble.image-only > .media-image {
+  display: block; margin: 0; padding: 0; border: 0; width: auto; max-width: min(760px, 72%);
+  min-width: 0; border-radius: inherit; overflow: hidden; background: transparent;
+}
+html .msg-row .bubble.image-only > .media-image:not(.loaded) {
+  min-width: 320px; min-height: 240px; background: rgba(0,0,0,.28);
+}
+html .msg-row .bubble.image-only > .media-image img {
+  display: block; width: auto; max-width: min(760px, 72%); height: auto; min-height: 0;
+  max-height: min(60vh, 520px); margin: 0; object-fit: contain; object-position: center; border-radius: inherit;
+}
+html.desk .msg-row .bubble.has-image.image-only:not(.sticker) {
+  width: fit-content; max-width: min(18.75em, 66vw); padding: 0; overflow: visible; background: transparent; box-shadow: none;
+}
+html.desk .msg-row .bubble.has-image.image-only:not(.sticker) > .media-image {
+  display: block; width: auto; max-width: min(18.75em, 66vw); min-width: 0;
+  margin: 0; padding: 0; border: 0; border-radius: inherit; background: transparent;
+}
+html.desk .msg-row .bubble.has-image.image-only:not(.sticker) > .media-image:not(.loaded) {
+  width: min(18.75em, 66vw); min-height: 10em; max-width: min(18.75em, 66vw); background: rgba(0,0,0,.28);
+}
+html.desk .msg-row .bubble.has-image.image-only:not(.sticker) > .media-image img {
+  display: block; width: auto; max-width: min(18.75em, 66vw); height: auto; min-height: 0;
+  max-height: min(60vh, 25em); margin: 0; object-fit: contain; object-position: center; border-radius: inherit;
+}
+html.desk .msg-row .bubble.has-image.image-only:not(.sticker) > .media-image ~ * { contain: none; }

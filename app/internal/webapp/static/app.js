@@ -1981,6 +1981,19 @@
     }
   }
   function isSticker(m) { return (/image\/webp/i.test(m.MimeType || "") || String(m.Body || "").trim() === "[Sticker]") && !imageCaption(m); }
+  // A message is one attachment. A payload that already lists several images
+  // stays in the bubble (there is no bare multi-image layout).
+  function imageAttachmentCount(m) {
+    var lists = [m && m.images, m && m.Images, m && m.attachments, m && m.Attachments];
+    for (var i = 0; i < lists.length; i++) {
+      if (lists[i] && typeof lists[i].length === "number" && lists[i].length > 1) return lists[i].length;
+    }
+    return isImageMessage(m) ? 1 : 0;
+  }
+  // One photo or GIF and no caption. Stickers already drop the bubble on their own.
+  function isBareImage(m) {
+    return imageAttachmentCount(m) === 1 && !isSticker(m) && !imageCaption(m);
+  }
   // One-time code / payment chips under a received text.
   function textChips(m) {
     if (m.IsFromMe || !m.Body) return null;
@@ -2253,6 +2266,7 @@
       } else if (isImageMessage(m)) {
         bubble.classList.add("has-media", "has-image");
         if (isSticker(m)) { bubble.classList.add("sticker"); row.classList.add("sticker-row"); }
+        else if (isBareImage(m)) bubble.classList.add("image-only");
         bubble.appendChild(imageNode(m));
         if (imageCaption(m)) appendBodyWithPreview(bubble, m, m.Body);
       } else if (isMMSDownload(m)) {

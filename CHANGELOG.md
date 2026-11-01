@@ -1,11 +1,16 @@
 # Changelog
 
+## android-v0.8.2
+
+- A photo or GIF that is the whole message, with no caption, draws without the chat bubble: no background and no padding. The picture keeps its shape, fits inside the same width and height limits, and is never cropped. Its corners match the bubble. Group names and avatars, the time, reactions, reply and long-press, and tap-to-open stay. A caption, or more than one image, still uses the bubble. Stickers are unchanged. versionCode 44.
+
 ## android-v0.8.1
 
 - Native Android app (versionCode 43) lives in `android/` and publishes from `android-v*` tags. In-app updates read only those releases. Web releases are not marked latest, so `/releases/latest` stays on the newest Android release.
 
 ## Unreleased (web)
 
+- Web: a photo or GIF with no caption draws without the chat bubble. The picture is full and uncropped, sized within the same width and height limits, with the bubble's corner radius on the image. Group names and avatars, the time, reactions, reply and long-press, and tap-to-open stay. The unloaded box still reserves its space. A caption, or more than one image, still uses the bubble. Stickers are unchanged. Car Mode uses the same rule.
 - Web: pinned rows in the conversation list keep pin icons in one column; the time area uses a fixed width so labels like "12:00 AM", "Yesterday", and "Fri" no longer shift the pin.
 - Web: photo messages match the Android bubble: the photo is flush to the top, left and right edges, the bubble is the photo's width (capped like Android), captions wrap underneath, and tall photos are capped and cropped instead of letterboxed. Car Mode is unchanged.
 

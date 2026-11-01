@@ -1,5 +1,10 @@
 # Changelog
 
+## android-v0.8.2
+
+- A photo or GIF that is the whole message, with no caption, draws without the chat bubble: no background and no padding. The picture keeps its shape, fits inside the same width and height limits, and is never cropped. Its corners match the bubble. Group names and avatars, the time, reactions, reply and long-press, and tap-to-open stay. A caption, or more than one image, still uses the bubble. Stickers are unchanged.
+- versionCode 44.
+
 ## android-v0.8.1
 
 - In-app updates now come from this repository's Android releases (`android-v*`). A web release is not offered as an app update.

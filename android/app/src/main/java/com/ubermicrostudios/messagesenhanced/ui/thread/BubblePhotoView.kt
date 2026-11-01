@@ -3,7 +3,10 @@ package com.ubermicrostudios.messagesenhanced.ui.thread
 import android.content.Context
 import android.util.AttributeSet
 import android.widget.TextView
-import androidx.appcompat.widget.AppCompatImageView
+import com.google.android.material.imageview.ShapeableImageView
+import com.google.android.material.shape.CornerFamily
+import com.google.android.material.shape.ShapeAppearanceModel
+import com.ubermicrostudios.messagesenhanced.util.BubbleCorners
 
 /**
  * Photo that fills the top of a bubble edge to edge, Google Messages style: it takes the
@@ -14,7 +17,7 @@ import androidx.appcompat.widget.AppCompatImageView
 class BubblePhotoView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-) : AppCompatImageView(context, attrs) {
+) : ShapeableImageView(context, attrs) {
     var photoMode = false
     var maxPhotoWidth = 0
     var maxPhotoHeight = 0
@@ -27,6 +30,19 @@ class BubblePhotoView @JvmOverloads constructor(
      */
     var reserveWidth = 0
     var reserveHeight = 0
+
+    /** Per-corner radii in pixels. Zero leaves clipping to the bubble outline. */
+    fun setCornerRadii(radii: BubbleCorners.Px) {
+        shapeAppearanceModel = ShapeAppearanceModel.builder()
+            .setTopLeftCorner(CornerFamily.ROUNDED, radii.topLeft)
+            .setTopRightCorner(CornerFamily.ROUNDED, radii.topRight)
+            .setBottomRightCorner(CornerFamily.ROUNDED, radii.bottomRight)
+            .setBottomLeftCorner(CornerFamily.ROUNDED, radii.bottomLeft)
+            .build()
+        val round = radii.topLeft > 0f || radii.topRight > 0f || radii.bottomRight > 0f || radii.bottomLeft > 0f
+        strokeWidth = 0f
+        clipToOutline = round
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         if (!photoMode || maxPhotoWidth <= 0) {
