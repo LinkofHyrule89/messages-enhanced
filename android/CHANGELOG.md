@@ -1,5 +1,10 @@
 # Changelog
 
+## android-v0.8.4
+
+- Photos and link-preview images that were not already saved no longer fail immediately. The app was asking the cache only, so a missing picture never reached the server and the refresh icon flashed. A picture that is already loading is left alone when its row is bound again. Failed pictures are still not kept.
+- versionCode 46.
+
 ## android-v0.8.3
 
 - Link previews that fail, including a server 502 during an outage, retry after 30 seconds, 2 minutes, 10 minutes, and then 30 minutes, instead of staying blank until the app restarts. Other 4xx responses (except 408 and 429) wait longer. X and YouTube cards recover when the server is back. A preview that loaded stays cached.

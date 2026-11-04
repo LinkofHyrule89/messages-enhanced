@@ -3348,6 +3348,71 @@ func TestLinkPreviewEndpoint(t *testing.T) {
 	}
 }
 
+func TestLinkPreviewErrorsAreNotStored(t *testing.T) {
+	ts := newTestServerWithOptions(t, APIOptions{
+		FetchLinkPreview: func(ctx context.Context, rawURL string) (*LinkPreview, error) {
+			switch rawURL {
+			case "https://example.com/down":
+				return nil, errors.New("origin down")
+			case "https://example.com/bad":
+				return nil, ErrInvalidLinkPreviewURL
+			default:
+				t.Fatalf("unexpected preview URL %q", rawURL)
+				return nil, nil
+			}
+		},
+		FetchLinkPreviewImage: func(ctx context.Context, rawURL string) ([]byte, string, error) {
+			switch rawURL {
+			case "https://cdn.example.com/down.png":
+				return nil, "", errors.New("origin down")
+			case "https://cdn.example.com/missing.png":
+				return nil, "", ErrNoLinkPreview
+			case "https://cdn.example.com/blocked.png":
+				return nil, "", ErrBlockedLinkPreviewURL
+			case "https://cdn.example.com/ok.png":
+				return []byte("png"), "image/png", nil
+			default:
+				t.Fatalf("unexpected image URL %q", rawURL)
+				return nil, "", nil
+			}
+		},
+	})
+
+	assertNoStore := func(path string, want int) {
+		t.Helper()
+		resp, err := http.Get(ts.server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != want {
+			t.Fatalf("%s status = %d, want %d", path, resp.StatusCode, want)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("%s Cache-Control = %q, want no-store", path, got)
+		}
+	}
+	assertNoStore("/api/link-preview?url="+url.QueryEscape("https://example.com/down"), http.StatusBadGateway)
+	assertNoStore("/api/link-preview?url="+url.QueryEscape("https://example.com/bad"), http.StatusBadRequest)
+	assertNoStore("/api/link-preview", http.StatusBadRequest)
+	assertNoStore("/api/link-preview-image?url="+url.QueryEscape("https://cdn.example.com/down.png"), http.StatusBadGateway)
+	assertNoStore("/api/link-preview-image?url="+url.QueryEscape("https://cdn.example.com/missing.png"), http.StatusNotFound)
+	assertNoStore("/api/link-preview-image?url="+url.QueryEscape("https://cdn.example.com/blocked.png"), http.StatusBadRequest)
+	assertNoStore("/api/link-preview-image", http.StatusBadRequest)
+
+	resp, err := http.Get(ts.server.URL + "/api/link-preview-image?url=" + url.QueryEscape("https://cdn.example.com/ok.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("success status = %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Cache-Control"); got != "private, max-age=86400" {
+		t.Fatalf("success Cache-Control = %q", got)
+	}
+}
+
 func TestLinkPreviewEndpointRequiresURL(t *testing.T) {
 	ts := newTestServer(t)
 

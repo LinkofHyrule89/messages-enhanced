@@ -1653,7 +1653,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 	mux.HandleFunc("/api/link-preview", func(w http.ResponseWriter, r *http.Request) {
 		rawURL := r.URL.Query().Get("url")
 		if rawURL == "" {
-			httpError(w, "query parameter 'url' is required", 400)
+			writePreviewError(w, "query parameter 'url' is required", 400)
 			return
 		}
 		preview, err := fetchLinkPreview(r.Context(), rawURL)
@@ -1663,10 +1663,10 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 				writeJSON(w, map[string]any{})
 				return
 			case errors.Is(err, ErrInvalidLinkPreviewURL), errors.Is(err, ErrBlockedLinkPreviewURL):
-				httpError(w, err.Error(), 400)
+				writePreviewError(w, err.Error(), 400)
 				return
 			default:
-				httpError(w, "link preview: "+err.Error(), 502)
+				writePreviewError(w, "link preview: "+err.Error(), 502)
 				return
 			}
 		}
@@ -1688,20 +1688,20 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 	mux.HandleFunc("/api/link-preview-image", func(w http.ResponseWriter, r *http.Request) {
 		rawURL := r.URL.Query().Get("url")
 		if rawURL == "" {
-			httpError(w, "query parameter 'url' is required", 400)
+			writePreviewError(w, "query parameter 'url' is required", 400)
 			return
 		}
 		data, contentType, err := fetchLinkPreviewImage(r.Context(), rawURL)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrNoLinkPreview):
-				httpError(w, "link preview image unavailable", 404)
+				writePreviewError(w, "link preview image unavailable", 404)
 				return
 			case errors.Is(err, ErrInvalidLinkPreviewURL), errors.Is(err, ErrBlockedLinkPreviewURL):
-				httpError(w, err.Error(), 400)
+				writePreviewError(w, err.Error(), 400)
 				return
 			default:
-				httpError(w, "link preview image: "+err.Error(), 502)
+				writePreviewError(w, "link preview image: "+err.Error(), 502)
 				return
 			}
 		}
@@ -3613,6 +3613,14 @@ func httpError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// writePreviewError is an error from /api/link-preview or /api/link-preview-image.
+// no-store keeps a 4xx/5xx from being reused as the picture. Successes keep their
+// own cache headers.
+func writePreviewError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Cache-Control", "no-store")
+	httpError(w, msg, code)
 }
 
 func normalizeMIME(mimeType string) string {

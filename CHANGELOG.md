@@ -1,5 +1,9 @@
 # Changelog
 
+## android-v0.8.4
+
+- Android: photos and link-preview images that were not already saved no longer fail immediately. Coil was asked for the cache only, so a missing picture returned a local 504 and never reached the server, and the refresh icon flashed. A picture already loading is left alone when its row is bound again. Failed pictures are still dropped from the cache. Link-preview errors are sent with `Cache-Control: no-store`. versionCode 46.
+
 ## android-v0.8.3
 
 - Android: link previews that fail, including a server 502, retry after 30 seconds, 2 minutes, 10 minutes, and then 30 minutes instead of staying blank until the app restarts. Other 4xx responses except 408 and 429 wait longer. Photos and preview images that fail are not cached as errors; they keep their size and retry after 2 seconds, 10 seconds, and 30 seconds, then on tap, and again when the network, the app, or Google Messages reconnects. versionCode 45.

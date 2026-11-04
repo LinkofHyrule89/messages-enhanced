@@ -39,8 +39,8 @@ android {
         applicationId = "com.ubermicrostudios.messagesenhanced"
         minSdk = 26
         targetSdk = 36
-        versionCode = 45
-        versionName = "0.8.3"
+        versionCode = 46
+        versionName = "0.8.4"
         buildConfigField("String", "GITHUB_OWNER", "\"LinkofHyrule89\"")
         buildConfigField("String", "GITHUB_REPO", "\"messages-enhanced\"")
     }

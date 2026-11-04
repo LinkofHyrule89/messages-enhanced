@@ -6,7 +6,6 @@ import android.widget.ImageView
 import coil.annotation.ExperimentalCoilApi
 import coil.imageLoader
 import coil.load
-import coil.request.CachePolicy
 import coil.request.Disposable
 import coil.request.ImageRequest
 import com.ubermicrostudios.messagesenhanced.R
@@ -60,6 +59,16 @@ object RetryingImages {
     ) {
         if (url.isBlank()) return
         val previous = image.getTag(R.id.tag_media_load) as? Load
+        // Rebinding the same URL must not dispose a request that is still running.
+        // Cancelling it fails the row, and the replacement starts over.
+        if (previous != null &&
+            previous.url == url &&
+            !previous.failed &&
+            previous.runnable == null &&
+            previous.request?.isDisposed == false
+        ) {
+            return
+        }
         previous?.runnable?.let { image.removeCallbacks(it) }
         previous?.request?.dispose()
         if (previous?.chromeOn == true) {
@@ -165,8 +174,9 @@ object RetryingImages {
             if (load.applyCachedMedia) cachedMedia(url)
             error(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
             load.configure(this)
-            // Successes stay in Coil's disk cache. An HTTP cache must not store a 502/503.
-            networkCachePolicy(CachePolicy.DISABLED)
+            // ENABLED on purpose. DISABLED is cache-only in Coil 2.7 and 504s a miss.
+            // Failures are dropped below via forget(), not by disabling the network cache.
+            networkCachePolicy(mediaNetworkCachePolicy)
             listener(
                 onStart = {
                     if (current(image, url, token)) load.onStart()

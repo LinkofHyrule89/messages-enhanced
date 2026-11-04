@@ -23,6 +23,7 @@ import com.ubermicrostudios.messagesenhanced.data.model.MessageDto
 import com.ubermicrostudios.messagesenhanced.databinding.ItemViewerPageBinding
 import com.ubermicrostudios.messagesenhanced.util.ImageStore
 import com.ubermicrostudios.messagesenhanced.util.RetryingImages
+import com.ubermicrostudios.messagesenhanced.util.mediaNetworkCachePolicy
 import com.ubermicrostudios.messagesenhanced.util.stableCacheKey
 import java.io.File
 
@@ -99,7 +100,7 @@ class ImagePageAdapter(
         holder.binding.backdrop.load(data, imageLoader) {
             if (legacy) size(96) else size(Size.ORIGINAL)
             diskCachePolicy(CachePolicy.ENABLED)
-            networkCachePolicy(CachePolicy.DISABLED)
+            networkCachePolicy(mediaNetworkCachePolicy)
             crossfade(false)
             stableCacheKey(data)
         }
@@ -137,7 +138,7 @@ class ImagePageAdapter(
                 photo.load(data, imageLoader) {
                     size(Size.ORIGINAL)
                     diskCachePolicy(CachePolicy.ENABLED)
-                    networkCachePolicy(CachePolicy.DISABLED)
+                    networkCachePolicy(mediaNetworkCachePolicy)
                     crossfade(false)
                     stableCacheKey(data)
                     listener(

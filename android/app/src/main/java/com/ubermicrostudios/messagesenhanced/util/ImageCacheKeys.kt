@@ -95,15 +95,21 @@ fun ImageRequest.Builder.stableCacheKey(data: Any?): ImageRequest.Builder {
 const val IMAGE_PLACEHOLDER_COLOR = 0xFF262B33.toInt()
 
 /**
+ * Network cache policy for message and preview images.
+ *
+ * Coil 2.7 maps [CachePolicy.DISABLED] to OkHttp `only-if-cached` whenever the disk
+ * cache is still readable. An uncached URL then fails in-process with HTTP 504 and
+ * never reaches the server. [CachePolicy.ENABLED] is a normal fetch. Successes stay
+ * in Coil's disk cache ([coil.ImageLoader.Builder.respectCacheHeaders] is false).
+ * Failed responses are not written there, and image loads drop those keys on error.
+ */
+val mediaNetworkCachePolicy: CachePolicy = CachePolicy.ENABLED
+
+/**
  * Message and wallpaper loads: stable disk and memory keys, and a crossfade
  * only when [NetworkCrossfadeFactory] sees [coil.decode.DataSource.NETWORK].
  * The memory key is also the placeholder key, so a hit is set synchronously
  * inside Coil's enqueue on the main thread.
- *
- * The loader keeps successes ([coil.ImageLoader.Builder.respectCacheHeaders] is false).
- * [CachePolicy.DISABLED] for the network cache stops an HTTP cache from storing a 502 or 503
- * under the same URL. Coil does not write failed responses to its disk cache; image loads
- * also drop those keys in [RetryingImages].
  */
 fun ImageRequest.Builder.cachedMedia(url: String): ImageRequest.Builder {
     val disk = ImageCacheKeys.diskKey(url)
@@ -112,7 +118,7 @@ fun ImageRequest.Builder.cachedMedia(url: String): ImageRequest.Builder {
     memoryCacheKey(memory)
     placeholderMemoryCacheKey(memory)
     placeholder(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
-    networkCachePolicy(CachePolicy.DISABLED)
+    networkCachePolicy(mediaNetworkCachePolicy)
     transitionFactory(NetworkCrossfadeFactory())
     return this
 }
