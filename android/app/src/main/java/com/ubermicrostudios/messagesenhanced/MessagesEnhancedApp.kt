@@ -14,6 +14,7 @@ import com.ubermicrostudios.messagesenhanced.push.MessagingService
 import com.ubermicrostudios.messagesenhanced.push.Push
 import com.ubermicrostudios.messagesenhanced.update.UpdateCheckWorker
 import com.ubermicrostudios.messagesenhanced.util.EmojiCatalog
+import com.ubermicrostudios.messagesenhanced.util.MediaRecovery
 import com.ubermicrostudios.messagesenhanced.util.bindPhoneDisplay
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -30,6 +31,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
     @Inject lateinit var cookieJar: PersistentCookieJar
     @Inject lateinit var prefs: AppPreferences
     @Inject lateinit var networkGate: NetworkGate
+    @Inject lateinit var mediaRecovery: MediaRecovery
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -43,6 +45,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
         val app = this
         appScope.launch(Dispatchers.IO) {
             runCatching { networkGate.start() }
+            runCatching { mediaRecovery.start() }
             runCatching { prefs.warmSecure() }
             runCatching { cookieJar.warm() }
             runCatching { Push.warm(app) }
@@ -50,6 +53,7 @@ class MessagesEnhancedApp : Application(), ImageLoaderFactory {
         Looper.getMainLooper().queue.addIdleHandler {
             appScope.launch(Dispatchers.IO) {
                 runCatching { networkGate.start() }
+                runCatching { mediaRecovery.start() }
                 runCatching { EmojiCatalog.load(app) }
                 runCatching { MessagingService.ensureChannels(app) }
                 runCatching {

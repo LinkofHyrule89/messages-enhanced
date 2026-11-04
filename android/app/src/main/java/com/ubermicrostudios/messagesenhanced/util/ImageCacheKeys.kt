@@ -4,6 +4,7 @@ import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import coil.key.Keyer
 import coil.memory.MemoryCache
+import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.request.Options
 import coil.transform.CircleCropTransformation
@@ -98,6 +99,11 @@ const val IMAGE_PLACEHOLDER_COLOR = 0xFF262B33.toInt()
  * only when [NetworkCrossfadeFactory] sees [coil.decode.DataSource.NETWORK].
  * The memory key is also the placeholder key, so a hit is set synchronously
  * inside Coil's enqueue on the main thread.
+ *
+ * The loader keeps successes ([coil.ImageLoader.Builder.respectCacheHeaders] is false).
+ * [CachePolicy.DISABLED] for the network cache stops an HTTP cache from storing a 502 or 503
+ * under the same URL. Coil does not write failed responses to its disk cache; image loads
+ * also drop those keys in [RetryingImages].
  */
 fun ImageRequest.Builder.cachedMedia(url: String): ImageRequest.Builder {
     val disk = ImageCacheKeys.diskKey(url)
@@ -106,6 +112,7 @@ fun ImageRequest.Builder.cachedMedia(url: String): ImageRequest.Builder {
     memoryCacheKey(memory)
     placeholderMemoryCacheKey(memory)
     placeholder(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
+    networkCachePolicy(CachePolicy.DISABLED)
     transitionFactory(NetworkCrossfadeFactory())
     return this
 }

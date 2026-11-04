@@ -126,6 +126,7 @@
     <string name="image_delete_failed">Couldn\'t delete that message</string>
     <string name="comment_failed">Couldn\'t send that comment</string>
     <string name="image_load_failed">Couldn\'t load that photo</string>
+    <string name="image_tap_retry">Couldn\'t load image. Tap to retry</string>
     <string name="image_share_failed">Couldn\'t share that photo</string>
     <string name="image_save_failed">Couldn\'t save that photo</string>
     <string name="image_saved">Saved to Pictures/Messages Enhanced</string>

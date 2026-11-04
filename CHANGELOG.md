@@ -1,5 +1,9 @@
 # Changelog
 
+## android-v0.8.3
+
+- Android: link previews that fail, including a server 502, retry after 30 seconds, 2 minutes, 10 minutes, and then 30 minutes instead of staying blank until the app restarts. Other 4xx responses except 408 and 429 wait longer. Photos and preview images that fail are not cached as errors; they keep their size and retry after 2 seconds, 10 seconds, and 30 seconds, then on tap, and again when the network, the app, or Google Messages reconnects. versionCode 45.
+
 ## android-v0.8.2
 
 - A photo or GIF that is the whole message, with no caption, draws without the chat bubble: no background and no padding. The picture keeps its shape, fits inside the same width and height limits, and is never cropped. Its corners match the bubble. Group names and avatars, the time, reactions, reply and long-press, and tap-to-open stay. A caption, or more than one image, still uses the bubble. Stickers are unchanged. versionCode 44.

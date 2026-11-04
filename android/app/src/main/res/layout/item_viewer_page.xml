@@ -33,4 +33,17 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:visibility="gone" />
+
+    <ImageButton
+        android:id="@+id/page_retry"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_retry_button"
+        android:contentDescription="@string/image_tap_retry"
+        android:padding="12dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_refresh"
+        android:tint="#FFFFFFFF"
+        android:visibility="gone" />
 </FrameLayout>

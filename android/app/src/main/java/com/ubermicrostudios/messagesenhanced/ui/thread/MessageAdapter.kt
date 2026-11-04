@@ -52,7 +52,7 @@ import com.ubermicrostudios.messagesenhanced.util.IMAGE_PLACEHOLDER_COLOR
 import com.ubermicrostudios.messagesenhanced.util.ImageAspects
 import com.ubermicrostudios.messagesenhanced.util.ImageCacheKeys
 import com.ubermicrostudios.messagesenhanced.util.LocalImageBounds
-import com.ubermicrostudios.messagesenhanced.util.cachedMedia
+import com.ubermicrostudios.messagesenhanced.util.RetryingImages
 import com.ubermicrostudios.messagesenhanced.util.circleAvatar
 import com.ubermicrostudios.messagesenhanced.util.stableCacheKey
 import com.ubermicrostudios.messagesenhanced.util.ConversationEncryption
@@ -205,6 +205,8 @@ class MessageAdapter(
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        holder.itemView.findViewById<ImageView>(R.id.image)?.let { RetryingImages.cancel(it) }
+        holder.itemView.findViewById<ImageView>(R.id.link_image)?.let { RetryingImages.cancel(it) }
         onRecycled(holder.itemView)
         super.onViewRecycled(holder)
     }
@@ -302,6 +304,8 @@ class MessageAdapter(
         tapDetailText: TextView,
         tapDetailLock: ImageView,
     ) {
+        RetryingImages.cancel(image)
+        RetryingImages.cancel(linkImage)
         val item = row.message
         val look = chrome()
         val density = bubble.resources.displayMetrics.density
@@ -406,10 +410,10 @@ class MessageAdapter(
                 attachment.isVisible = false
                 val src = item.localPreview
                 if (src.startsWith("http://") || src.startsWith("https://")) {
-                    image.load(src) {
-                        cachedMedia(src)
-                        listener(onSuccess = { _, result -> rememberDecoded(src, result.drawable) })
-                    }
+                    RetryingImages.load(image, src, onSuccess = { drawable ->
+                        rememberDecoded(src, drawable)
+                        holdReserve(image, drawable)
+                    })
                 } else {
                     val path = src.removePrefix("file://")
                     image.load(File(path)) {
@@ -421,10 +425,10 @@ class MessageAdapter(
                 image.isVisible = true
                 attachment.isVisible = false
                 val url = mediaUrl(item)
-                image.load(url) {
-                    cachedMedia(url)
-                    listener(onSuccess = { _, result -> rememberDecoded(url, result.drawable) })
-                }
+                RetryingImages.load(image, url, onSuccess = { drawable ->
+                    rememberDecoded(url, drawable)
+                    holdReserve(image, drawable)
+                })
             }
             // The attachment is the link/location preview itself: show just the card, no label.
             item.hasAttachment() && !item.mimeType.startsWith("audio/") && !item.mimeType.startsWith("video/") &&
@@ -471,7 +475,10 @@ class MessageAdapter(
         bindReceipt(row, kind, receipt, receiptAvatars, receiptLabel, receiptIcon, look)
         bindTapDetail(item, locked, tapDetail, tapDetailText, tapDetailLock)
         if (image.isVisible && emojis == null) {
-            image.setOnClickListener { if (!selecting) onImage(item) }
+            image.setOnClickListener {
+                if (selecting) return@setOnClickListener
+                if (RetryingImages.failed(image)) RetryingImages.retryNow(image) else onImage(item)
+            }
         } else {
             image.setOnClickListener(null)
         }
@@ -690,6 +697,17 @@ class MessageAdapter(
         val w = drawable.intrinsicWidth
         val h = drawable.intrinsicHeight
         if (w > 0 && h > 0) ImageAspects.remember(key, w, h)
+    }
+
+    /** Keep the measured box after a failed decode replaces the bitmap with a fill. */
+    private fun holdReserve(image: ImageView, drawable: Drawable) {
+        val photo = image as? BubblePhotoView ?: return
+        val w = drawable.intrinsicWidth
+        val h = drawable.intrinsicHeight
+        if (w > 0 && h > 0) {
+            photo.reserveWidth = w
+            photo.reserveHeight = h
+        }
     }
 
     /**
@@ -916,21 +934,19 @@ class MessageAdapter(
             ilp.height = height ?: (160 * dm.density).toInt().coerceIn(minPx, cap)
             image.layoutParams = ilp
             if (image.drawable == null) image.setImageDrawable(ColorDrawable(IMAGE_PLACEHOLDER_COLOR))
-            image.load(picture) {
-                cachedMedia(picture)
-                listener(onSuccess = { _, result ->
-                    val w = result.drawable.intrinsicWidth
-                    val h = result.drawable.intrinsicHeight
-                    if (w > 0 && h > 0) ImageAspects.remember(picture, w, h)
-                    if (height == null && !preview.isVideo && w > 0 && h > 0) {
-                        val next = ImageAspects.linkHeight(frame, w, h, false, minPx, cap)
-                        if (next != null && ilp.height != next) {
-                            ilp.height = next
-                            image.layoutParams = ilp
-                        }
+            // Height is already reserved. A failed thumbnail keeps that box and retries.
+            RetryingImages.load(image, picture, tapRetries = true, onSuccess = { drawable ->
+                val w = drawable.intrinsicWidth
+                val h = drawable.intrinsicHeight
+                if (w > 0 && h > 0) ImageAspects.remember(picture, w, h)
+                if (height == null && !preview.isVideo && w > 0 && h > 0) {
+                    val next = ImageAspects.linkHeight(frame, w, h, false, minPx, cap)
+                    if (next != null && ilp.height != next) {
+                        ilp.height = next
+                        image.layoutParams = ilp
                     }
-                })
-            }
+                }
+            })
         }
         val siteLabel = preview.footerLabel()
         site.isVisible = siteLabel.isNotBlank()

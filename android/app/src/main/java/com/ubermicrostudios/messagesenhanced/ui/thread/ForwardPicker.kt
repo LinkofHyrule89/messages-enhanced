@@ -25,7 +25,7 @@ import coil.load
 import coil.request.Disposable
 import coil.request.ImageRequest
 import com.ubermicrostudios.messagesenhanced.util.CircleAvatars
-import com.ubermicrostudios.messagesenhanced.util.cachedMedia
+import com.ubermicrostudios.messagesenhanced.util.RetryingImages
 import com.ubermicrostudios.messagesenhanced.util.circleAvatar
 import com.google.android.material.color.MaterialColors
 import com.ubermicrostudios.messagesenhanced.R
@@ -195,7 +195,7 @@ object ForwardPicker {
         if (thumbnail.isBlank()) {
             binding.thumb.setImageDrawable(null)
         } else if (thumbnail.startsWith("http://") || thumbnail.startsWith("https://")) {
-            binding.thumb.load(thumbnail) { cachedMedia(thumbnail) }
+            RetryingImages.load(binding.thumb, thumbnail)
         } else {
             val path = if (thumbnail.startsWith("file://")) thumbnail.removePrefix("file://") else thumbnail
             binding.thumb.load(File(path))

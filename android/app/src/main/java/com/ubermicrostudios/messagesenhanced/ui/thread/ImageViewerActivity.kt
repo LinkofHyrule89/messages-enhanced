@@ -166,9 +166,6 @@ class ImageViewerActivity : SessionActivity() {
                 binding.bottomStack.alpha = alpha
             },
             onDismiss = { close() },
-            onLoadError = { position ->
-                if (position == binding.pager.currentItem && !isFinishing) toast(R.string.image_load_failed)
-            },
         )
         binding.pager.adapter = pageAdapter
         binding.pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {

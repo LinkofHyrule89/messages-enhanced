@@ -1,11 +1,13 @@
 package com.ubermicrostudios.messagesenhanced.ui.thread
 
+import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.graphics.drawable.Animatable
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.view.LayoutInflater
 import android.view.View
@@ -20,6 +22,7 @@ import coil.size.Size
 import com.ubermicrostudios.messagesenhanced.data.model.MessageDto
 import com.ubermicrostudios.messagesenhanced.databinding.ItemViewerPageBinding
 import com.ubermicrostudios.messagesenhanced.util.ImageStore
+import com.ubermicrostudios.messagesenhanced.util.RetryingImages
 import com.ubermicrostudios.messagesenhanced.util.stableCacheKey
 import java.io.File
 
@@ -33,7 +36,6 @@ class ImagePageAdapter(
     private val onZoomed: (Int, Boolean) -> Unit,
     private val onDrag: (Float) -> Unit,
     private val onDismiss: () -> Unit,
-    private val onLoadError: (Int) -> Unit,
 ) : RecyclerView.Adapter<ImagePageAdapter.Page>() {
 
     private var items: List<MessageDto> = emptyList()
@@ -76,6 +78,7 @@ class ImagePageAdapter(
         }
         photo.onDrag = onDrag
         photo.onDismiss = onDismiss
+        RetryingImages.cancel(photo)
         val source = ImageStore.openSource(message, mediaUrl(message))
         val data: Any? = when (source) {
             is ImageStore.Source.Local -> File(source.path)
@@ -86,35 +89,72 @@ class ImagePageAdapter(
         if (data == null) {
             photo.setImageDrawable(null)
             holder.binding.backdrop.setImageDrawable(null)
+            holder.binding.pageRetry.isVisible = false
+            holder.binding.pageProgress.isVisible = false
             return
         }
         val legacy = Build.VERSION.SDK_INT < 31
+        holder.binding.pageRetry.setOnClickListener { RetryingImages.retryNow(photo) }
+        holder.binding.pageRetry.isVisible = false
         holder.binding.backdrop.load(data, imageLoader) {
             if (legacy) size(96) else size(Size.ORIGINAL)
             diskCachePolicy(CachePolicy.ENABLED)
+            networkCachePolicy(CachePolicy.DISABLED)
             crossfade(false)
             stableCacheKey(data)
         }
-        photo.load(data, imageLoader) {
-            size(Size.ORIGINAL)
-            diskCachePolicy(CachePolicy.ENABLED)
-            crossfade(false)
-            stableCacheKey(data)
-            listener(
-                onSuccess = { _, result ->
-                    holder.binding.pageProgress.isVisible = false
-                    val animated = (photo.drawable as? Animatable) ?: (result.drawable as? Animatable)
-                    animated?.start()
-                },
-                onError = { _, _ ->
-                    holder.binding.pageProgress.isVisible = false
-                    val index = holder.bindingAdapterPosition
-                    if (index != RecyclerView.NO_POSITION) onLoadError(index)
-                },
-                onCancel = {
-                    holder.binding.pageProgress.isVisible = false
-                },
-            )
+        when (source) {
+            is ImageStore.Source.Remote -> {
+                holder.binding.pageProgress.isVisible = true
+                RetryingImages.load(
+                    image = photo,
+                    url = source.url,
+                    chrome = false,
+                    applyCachedMedia = false,
+                    onStart = {
+                        holder.binding.pageRetry.isVisible = false
+                        holder.binding.pageProgress.isVisible = true
+                    },
+                    onSuccess = {
+                        holder.binding.pageProgress.isVisible = false
+                        holder.binding.pageRetry.isVisible = false
+                        val animated = (photo.drawable as? Animatable)
+                        animated?.start()
+                    },
+                    onFailed = { _, _ ->
+                        holder.binding.pageProgress.isVisible = false
+                        holder.binding.pageRetry.isVisible = true
+                    },
+                ) {
+                    size(Size.ORIGINAL)
+                    diskCachePolicy(CachePolicy.ENABLED)
+                    crossfade(false)
+                    stableCacheKey(source.url)
+                    error(ColorDrawable(Color.BLACK))
+                }
+            }
+            else -> {
+                photo.load(data, imageLoader) {
+                    size(Size.ORIGINAL)
+                    diskCachePolicy(CachePolicy.ENABLED)
+                    networkCachePolicy(CachePolicy.DISABLED)
+                    crossfade(false)
+                    stableCacheKey(data)
+                    listener(
+                        onSuccess = { _, result ->
+                            holder.binding.pageProgress.isVisible = false
+                            val animated = (photo.drawable as? Animatable) ?: (result.drawable as? Animatable)
+                            animated?.start()
+                        },
+                        onError = { _, _ ->
+                            holder.binding.pageProgress.isVisible = false
+                        },
+                        onCancel = {
+                            holder.binding.pageProgress.isVisible = false
+                        },
+                    )
+                }
+            }
         }
     }
 
@@ -132,9 +172,11 @@ class ImagePageAdapter(
     }
 
     override fun onViewRecycled(holder: Page) {
+        RetryingImages.cancel(holder.binding.photo)
         (holder.binding.photo.drawable as? Animatable)?.stop()
         holder.binding.photo.setImageDrawable(null)
         holder.binding.backdrop.setImageDrawable(null)
+        holder.binding.pageRetry.isVisible = false
     }
 
     class Page(val binding: ItemViewerPageBinding) : RecyclerView.ViewHolder(binding.root)

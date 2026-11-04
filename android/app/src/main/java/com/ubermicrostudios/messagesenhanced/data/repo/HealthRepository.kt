@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -46,6 +47,10 @@ class HealthRepository @Inject constructor(
 
     private val _banner = MutableStateFlow<HealthBanner.Banner?>(null)
     val banner: StateFlow<HealthBanner.Banner?> = _banner
+
+    /** Latest `google.connected` from GET /api/app/pairing. Null until a sample arrives. */
+    private val _googleConnected = MutableStateFlow<Boolean?>(null)
+    val googleConnected: StateFlow<Boolean?> = _googleConnected.asStateFlow()
 
     @Volatile private var foreground = false
     private var healthSnapshot: HealthResponse? = null
@@ -84,6 +89,7 @@ class HealthRepository @Inject constructor(
                 pairingSnapshot = null
                 condition = null
                 _banner.value = null
+                _googleConnected.value = null
             }
         }
     }
@@ -129,6 +135,7 @@ class HealthRepository @Inject constructor(
     private fun publishLocked() {
         val now = System.currentTimeMillis()
         condition = HealthBanner.nextClock(condition, pairingSnapshot, now)
+        _googleConnected.value = pairingSnapshot?.google?.connected
         _banner.value = HealthBanner.banner(
             health = healthSnapshot,
             pairing = pairingSnapshot,

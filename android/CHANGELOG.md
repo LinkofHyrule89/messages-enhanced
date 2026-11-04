@@ -1,5 +1,11 @@
 # Changelog
 
+## android-v0.8.3
+
+- Link previews that fail, including a server 502 during an outage, retry after 30 seconds, 2 minutes, 10 minutes, and then 30 minutes, instead of staying blank until the app restarts. Other 4xx responses (except 408 and 429) wait longer. X and YouTube cards recover when the server is back. A preview that loaded stays cached.
+- Photos and link-preview images that fail (503 when Google is disconnected, or 502) are not kept as errors. The reserved size stays put. While the picture is on screen it retries after 2 seconds, 10 seconds, and 30 seconds, then a tap retries. They also retry when the network returns, the app is opened again, or Google Messages connects.
+- versionCode 45.
+
 ## android-v0.8.2
 
 - A photo or GIF that is the whole message, with no caption, draws without the chat bubble: no background and no padding. The picture keeps its shape, fits inside the same width and height limits, and is never cropped. Its corners match the bubble. Group names and avatars, the time, reactions, reply and long-press, and tap-to-open stay. A caption, or more than one image, still uses the bubble. Stickers are unchanged.
