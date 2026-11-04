@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"golang.org/x/net/html"
+	"golang.org/x/net/proxy"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -51,6 +53,10 @@ const (
 	linkPreviewImageMemCap  = 64 << 20  // 64 MB
 	linkPreviewImageDiskCap = 300 << 20 // 300 MB
 	linkPreviewImageDirName = "link-preview-images"
+
+	// linkPreviewProxyEnv is a SOCKS5 host:port (for example 127.0.0.1:1080).
+	// When set, only link-preview dials use it. Unset dials directly.
+	linkPreviewProxyEnv = "MESSAGES_PREVIEW_PROXY"
 )
 
 type LinkPreview struct {
@@ -81,6 +87,7 @@ type LinkPreviewService struct {
 	logger            zerolog.Logger
 	client            *http.Client
 	imageClient       *http.Client
+	proxyDialer       proxy.ContextDialer // nil: dial the resolved IP directly
 	ttl               time.Duration
 	failureTTL        time.Duration
 	maxEntries        int
@@ -139,7 +146,66 @@ func NewLinkPreviewService(logger zerolog.Logger) *LinkPreviewService {
 		CheckRedirect: linkPreviewRedirect,
 		Transport:     transport,
 	}
+	if raw := strings.TrimSpace(os.Getenv(linkPreviewProxyEnv)); raw != "" {
+		if err := s.setPreviewProxy(raw); err != nil {
+			// Do not include the raw value: it may carry userinfo.
+			s.logger.Warn().Msg("MESSAGES_PREVIEW_PROXY is invalid; link previews dial directly")
+		}
+	}
 	return s
+}
+
+// setPreviewProxy installs a SOCKS5 dialer for link-preview connections.
+// An empty address clears it. The dial to the proxy itself is direct, so a
+// loopback proxy is not rejected by the private-address guard.
+func (s *LinkPreviewService) setPreviewProxy(raw string) error {
+	addr, err := parsePreviewProxyAddr(raw)
+	if err != nil {
+		return err
+	}
+	if addr == "" {
+		s.proxyDialer = nil
+		return nil
+	}
+	// Forward dialer is a plain net.Dialer, not guardedDialContext. Using the
+	// guarded dialer here would reject 127.0.0.1 and recurse.
+	forward := &net.Dialer{Timeout: linkPreviewDialTimeout}
+	dialer, err := proxy.SOCKS5("tcp", addr, nil, forward)
+	if err != nil {
+		return err
+	}
+	contextDialer, ok := dialer.(proxy.ContextDialer)
+	if !ok {
+		return errors.New("socks5 proxy dialer has no context")
+	}
+	s.proxyDialer = contextDialer
+	return nil
+}
+
+func parsePreviewProxyAddr(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if strings.Contains(raw, "://") {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return "", err
+		}
+		if parsed.User != nil {
+			return "", errors.New("preview proxy credentials are not supported")
+		}
+		switch strings.ToLower(parsed.Scheme) {
+		case "socks5", "socks5h":
+		default:
+			return "", fmt.Errorf("unsupported preview proxy scheme %q", parsed.Scheme)
+		}
+		raw = parsed.Host
+	}
+	if _, _, err := net.SplitHostPort(raw); err != nil {
+		return "", err
+	}
+	return raw, nil
 }
 
 func linkPreviewRedirect(req *http.Request, via []*http.Request) error {
@@ -154,6 +220,11 @@ func linkPreviewRedirect(req *http.Request, via []*http.Request) error {
 // IP it validated — so there is no second, unchecked DNS resolution. TLS still
 // verifies against the original hostname (the transport sets ServerName from
 // the request URL, not the dialed address).
+//
+// When a preview proxy is configured, that dial goes through SOCKS5. The
+// proxy is asked to connect to the already-checked IP, not the hostname, so
+// it cannot reach a private address the guard rejected. This dialer is only
+// installed on the link-preview HTTP clients.
 func (s *LinkPreviewService) guardedDialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -173,11 +244,18 @@ func (s *LinkPreviewService) guardedDialContext(ctx context.Context, network, ad
 	dialer := &net.Dialer{Timeout: linkPreviewDialTimeout}
 	var lastErr error
 	for _, ip := range ips {
-		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
-		if err == nil {
+		target := net.JoinHostPort(ip.IP.String(), port)
+		var conn net.Conn
+		var dialErr error
+		if s.proxyDialer != nil {
+			conn, dialErr = s.proxyDialer.DialContext(ctx, network, target)
+		} else {
+			conn, dialErr = dialer.DialContext(ctx, network, target)
+		}
+		if dialErr == nil {
 			return conn, nil
 		}
-		lastErr = err
+		lastErr = dialErr
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no addresses for preview host %q", host)

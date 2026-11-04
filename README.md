@@ -165,6 +165,7 @@ included here):
 | `GROQ_API_KEY` | Groq key: server speech-to-text and the optional @Groq replies (then turn them on in Settings). |
 | `GROQ_CHAT_MODEL` | Optional model for @Groq (default `openai/gpt-oss-120b`). |
 | `MESSAGES_GROQ_BASE_URL` | Optional Groq API base URL (e.g. a loopback `stt-proxy`, which forwards transcription and @Groq chat calls). |
+| `MESSAGES_PREVIEW_PROXY` | Optional SOCKS5 `host:port` (for example `127.0.0.1:1080`). Link-preview pages and images dial through it. Unset dials directly. Google Messages is unchanged. |
 | `GROK_TIMEZONE` | Optional IANA time zone for @Grok's and @Groq's notion of "now" (e.g. `America/New_York`; default: server local time). |
 | `GROK_USER_NAME`, `GROK_USER_LOCATION` | Optional: your name and home area, so @Grok and @Groq can answer "near me" questions. |
 

@@ -115,6 +115,7 @@ OpenMessage (loopback-only UI at `/`).
 | `MESSAGES_NTFY_URL` | (off) | e.g. `https://ntfy.sh/<long-random-topic>`. When set, the pairing emoji is pushed there too. |
 | `OPENMESSAGES_HOST` / `OPENMESSAGES_PORT` | `127.0.0.1` / `7007` | Listen address. Keep loopback and put a tunnel/reverse proxy in front. |
 | `OPENMESSAGES_DATA_DIR` | `~/.local/share/openmessage` | Session, SQLite DB, cookie vault. |
+| `MESSAGES_PREVIEW_PROXY` | (unset) | Optional SOCKS5 `host:port` or `socks5://host:port` (for example `127.0.0.1:1080`). When set, link-preview pages and images resolve the host, reject private addresses, then dial that IP through the proxy. The Google Messages client stays direct. Credentials in the URL are rejected. |
 
 ## Pasting Google cookies and pairing
 
