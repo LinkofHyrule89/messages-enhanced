@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"golang.org/x/net/html"
+	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -28,6 +30,28 @@ var (
 )
 
 const maxLinkPreviewImageBytes = 5 << 20
+
+const (
+	// Page HTML is small. Preview images (a few hundred KB, often fetched
+	// through a VPN) need their own budget; the old shared 6s client gave up
+	// while the download was still in flight.
+	linkPreviewPageTimeout  = 10 * time.Second
+	linkPreviewImageTimeout = 25 * time.Second
+	linkPreviewDialTimeout  = 5 * time.Second
+	linkPreviewTLSTimeout   = 5 * time.Second
+
+	// Successful previews and images expire 7 days after the fetch and are
+	// not refreshed before that. Failures are kept only briefly so the next
+	// view (a scroll back onto the message) fetches again. The byte caps
+	// evict earlier when the cache is full.
+	linkPreviewSuccessTTL   = 7 * 24 * time.Hour
+	linkPreviewFailureTTL   = time.Minute
+	linkPreviewCleanupEvery = time.Hour
+
+	linkPreviewImageMemCap  = 64 << 20  // 64 MB
+	linkPreviewImageDiskCap = 300 << 20 // 300 MB
+	linkPreviewImageDirName = "link-preview-images"
+)
 
 type LinkPreview struct {
 	URL         string `json:"url,omitempty"`
@@ -47,6 +71,8 @@ type LinkPreviewImageFetcher func(ctx context.Context, rawURL string) ([]byte, s
 
 type linkPreviewCacheEntry struct {
 	preview   *LinkPreview
+	err       error
+	failed    bool
 	expiresAt time.Time
 	touchedAt time.Time
 }
@@ -54,44 +80,73 @@ type linkPreviewCacheEntry struct {
 type LinkPreviewService struct {
 	logger            zerolog.Logger
 	client            *http.Client
+	imageClient       *http.Client
 	ttl               time.Duration
+	failureTTL        time.Duration
 	maxEntries        int
 	allowPrivateHosts bool
+	now               func() time.Time
+	cleanupEvery      time.Duration
 
 	mu    sync.Mutex
 	cache map[string]linkPreviewCacheEntry
+
+	images      previewImageCache
+	imageFlight singleflight.Group
+
+	maintMu      sync.Mutex
+	maintStarted bool
+	maintStop    chan struct{}
 }
 
 func NewLinkPreviewService(logger zerolog.Logger) *LinkPreviewService {
 	s := &LinkPreviewService{
-		logger:     logger,
-		ttl:        6 * time.Hour,
-		maxEntries: 256,
-		cache:      make(map[string]linkPreviewCacheEntry),
+		logger:       logger,
+		ttl:          linkPreviewSuccessTTL,
+		failureTTL:   linkPreviewFailureTTL,
+		maxEntries:   256,
+		cleanupEvery: linkPreviewCleanupEvery,
+		cache:        make(map[string]linkPreviewCacheEntry),
+		images: previewImageCache{
+			mem:     make(map[string]*previewImageEntry),
+			disk:    make(map[string]diskPreviewImage),
+			memCap:  linkPreviewImageMemCap,
+			diskCap: linkPreviewImageDiskCap,
+		},
+	}
+	// One transport so dial, TLS, and the private-host guard stay shared.
+	// The clients differ only in their total timeout: page HTML versus images.
+	transport := &http.Transport{
+		// Validate AND connect to the same resolved IP, closing the
+		// resolve-then-fetch TOCTOU (DNS-rebinding) gap where a hostname
+		// could resolve to a public IP for the guard check and a private
+		// IP for the actual connection. This covers the initial request
+		// and every redirect in one place.
+		DialContext:           s.guardedDialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   linkPreviewTLSTimeout,
+		ExpectContinueTimeout: time.Second,
 	}
 	s.client = &http.Client{
-		Timeout: 6 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return errors.New("too many redirects")
-			}
-			return nil
-		},
-		Transport: &http.Transport{
-			// Validate AND connect to the same resolved IP, closing the
-			// resolve-then-fetch TOCTOU (DNS-rebinding) gap where a hostname
-			// could resolve to a public IP for the guard check and a private
-			// IP for the actual connection. This covers the initial request
-			// and every redirect in one place.
-			DialContext:           s.guardedDialContext,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          10,
-			IdleConnTimeout:       30 * time.Second,
-			TLSHandshakeTimeout:   5 * time.Second,
-			ExpectContinueTimeout: time.Second,
-		},
+		Timeout:       linkPreviewPageTimeout,
+		CheckRedirect: linkPreviewRedirect,
+		Transport:     transport,
+	}
+	s.imageClient = &http.Client{
+		Timeout:       linkPreviewImageTimeout,
+		CheckRedirect: linkPreviewRedirect,
+		Transport:     transport,
 	}
 	return s
+}
+
+func linkPreviewRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("too many redirects")
+	}
+	return nil
 }
 
 // guardedDialContext resolves the target host, rejects it if any resolved
@@ -115,7 +170,7 @@ func (s *LinkPreviewService) guardedDialContext(ctx context.Context, network, ad
 			}
 		}
 	}
-	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	dialer := &net.Dialer{Timeout: linkPreviewDialTimeout}
 	var lastErr error
 	for _, ip := range ips {
 		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.IP.String(), port))
@@ -141,8 +196,8 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 		}
 	}
 
-	if preview := s.cached(normalizedURL); preview != nil {
-		return preview, nil
+	if preview, cachedErr, ok := s.cached(normalizedURL); ok {
+		return preview, cachedErr
 	}
 
 	if id := youTubeVideoID(parsedURL); id != "" {
@@ -152,9 +207,23 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 		if preview.Title != "YouTube" {
 			s.store(normalizedURL, preview)
 		}
+		s.prewarmPreviewImage(preview.ImageURL)
 		return cloneLinkPreview(preview), nil
 	}
 
+	preview, err := s.fetchPage(ctx, normalizedURL, parsedURL)
+	if err != nil {
+		if cacheablePreviewFailure(err) {
+			s.storeFailure(normalizedURL, err)
+		}
+		return nil, err
+	}
+	s.store(normalizedURL, preview)
+	s.prewarmPreviewImage(preview.ImageURL)
+	return cloneLinkPreview(preview), nil
+}
+
+func (s *LinkPreviewService) fetchPage(ctx context.Context, normalizedURL string, parsedURL *url.URL) (*LinkPreview, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalizedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidLinkPreviewURL, err)
@@ -164,7 +233,8 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetch link preview: %w", err)
+		s.logFetchFailure("page", normalizedURL, 0, err)
+		return nil, previewTransportError("fetch link preview", err)
 	}
 	defer resp.Body.Close()
 
@@ -174,18 +244,25 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 		}
 	}
 
+	final := normalizedURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		final = resp.Request.URL.String()
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		s.logFetchFailure("page", final, resp.StatusCode, nil)
 		return nil, fmt.Errorf("fetch link preview: unexpected status %d", resp.StatusCode)
 	}
 
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
 	if contentType != "" && !strings.Contains(contentType, "text/html") && !strings.Contains(contentType, "application/xhtml+xml") {
+		s.logFetchFailure("page", final, resp.StatusCode, ErrNoLinkPreview)
 		return nil, ErrNoLinkPreview
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 3<<20))
 	if err != nil {
-		return nil, fmt.Errorf("read link preview: %w", err)
+		s.logFetchFailure("page", final, 0, err)
+		return nil, previewTransportError("read link preview", err)
 	}
 
 	finalURL := parsedURL
@@ -195,6 +272,7 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 
 	preview, err := extractLinkPreview(body, finalURL)
 	if err != nil {
+		s.logFetchFailure("page", final, resp.StatusCode, err)
 		return nil, err
 	}
 	preview.URL = finalURL.String()
@@ -202,9 +280,7 @@ func (s *LinkPreviewService) Fetch(ctx context.Context, rawURL string) (*LinkPre
 	if preview.SiteName == "" {
 		preview.SiteName = prettifyPreviewHost(finalURL.Hostname())
 	}
-
-	s.store(normalizedURL, preview)
-	return cloneLinkPreview(preview), nil
+	return preview, nil
 }
 
 func (s *LinkPreviewService) FetchImage(ctx context.Context, rawURL string) ([]byte, string, error) {
@@ -218,6 +294,41 @@ func (s *LinkPreviewService) FetchImage(ctx context.Context, rawURL string) ([]b
 		}
 	}
 
+	key := previewImageKey(normalizedURL)
+	if data, contentType, cachedErr, ok := s.images.get(key, s.clock()); ok {
+		if cachedErr != nil {
+			return nil, "", cachedErr
+		}
+		return bytes.Clone(data), contentType, nil
+	}
+
+	v, err, _ := s.imageFlight.Do(key, func() (any, error) {
+		if data, contentType, cachedErr, ok := s.images.get(key, s.clock()); ok {
+			if cachedErr != nil {
+				return nil, cachedErr
+			}
+			return fetchedPreviewImage{data: data, contentType: contentType}, nil
+		}
+		data, contentType, fetchErr := s.fetchImage(ctx, normalizedURL)
+		if fetchErr != nil {
+			if cacheablePreviewFailure(fetchErr) {
+				s.images.putFailure(key, fetchErr, s.clock(), s.failureTTL)
+			}
+			return nil, fetchErr
+		}
+		if putErr := s.images.put(key, contentType, data, s.clock(), s.ttl); putErr != nil {
+			s.logger.Warn().Str("host", previewHost(normalizedURL)).Str("error", sanitizePreviewError(putErr)).Msg("link preview image cache write failed")
+		}
+		return fetchedPreviewImage{data: data, contentType: contentType}, nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	img := v.(fetchedPreviewImage)
+	return bytes.Clone(img.data), img.contentType, nil
+}
+
+func (s *LinkPreviewService) fetchImage(ctx context.Context, normalizedURL string) ([]byte, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalizedURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("%w: %v", ErrInvalidLinkPreviewURL, err)
@@ -225,9 +336,10 @@ func (s *LinkPreviewService) FetchImage(ctx context.Context, rawURL string) ([]b
 	req.Header.Set("User-Agent", "OpenMessage/1.0 (+https://openmessage.ai)")
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/png,image/jpeg,image/gif,*/*;q=0.8")
 
-	resp, err := s.client.Do(req)
+	resp, err := s.imageClient.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("fetch link preview image: %w", err)
+		s.logFetchFailure("image", normalizedURL, 0, err)
+		return nil, "", previewTransportError("fetch link preview image", err)
 	}
 	defer resp.Body.Close()
 
@@ -236,7 +348,12 @@ func (s *LinkPreviewService) FetchImage(ctx context.Context, rawURL string) ([]b
 			return nil, "", err
 		}
 	}
+	final := normalizedURL
+	if resp.Request != nil && resp.Request.URL != nil {
+		final = resp.Request.URL.String()
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusBadRequest {
+		s.logFetchFailure("image", final, resp.StatusCode, nil)
 		return nil, "", fmt.Errorf("fetch link preview image: unexpected status %d", resp.StatusCode)
 	}
 
@@ -246,15 +363,19 @@ func (s *LinkPreviewService) FetchImage(ctx context.Context, rawURL string) ([]b
 	}
 	contentType = strings.ToLower(strings.TrimSpace(contentType))
 	if !isAllowedLinkPreviewImageType(contentType) {
+		s.logFetchFailure("image", final, resp.StatusCode, ErrNoLinkPreview)
 		return nil, "", ErrNoLinkPreview
 	}
 	limited := io.LimitReader(resp.Body, maxLinkPreviewImageBytes+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
-		return nil, "", fmt.Errorf("read link preview image: %w", err)
+		s.logFetchFailure("image", final, 0, err)
+		return nil, "", previewTransportError("read link preview image", err)
 	}
 	if len(data) > maxLinkPreviewImageBytes {
-		return nil, "", fmt.Errorf("link preview image exceeds %d bytes", maxLinkPreviewImageBytes)
+		err := fmt.Errorf("link preview image exceeds %d bytes", maxLinkPreviewImageBytes)
+		s.logFetchFailure("image", final, resp.StatusCode, err)
+		return nil, "", err
 	}
 	return data, contentType, nil
 }
@@ -268,31 +389,65 @@ func isAllowedLinkPreviewImageType(contentType string) bool {
 	}
 }
 
-func (s *LinkPreviewService) cached(rawURL string) *LinkPreview {
+func (s *LinkPreviewService) cached(rawURL string) (*LinkPreview, error, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	entry, ok := s.cache[rawURL]
 	if !ok {
-		return nil
+		return nil, nil, false
 	}
-	if time.Now().After(entry.expiresAt) {
+	now := s.clock()
+	if now.After(entry.expiresAt) {
 		delete(s.cache, rawURL)
-		return nil
+		return nil, nil, false
 	}
-	entry.touchedAt = time.Now()
+	// Touch time feeds the entry cap. It does not extend expiresAt: a hit
+	// must not refresh a preview that was fetched earlier.
+	entry.touchedAt = now
 	s.cache[rawURL] = entry
-	return cloneLinkPreview(entry.preview)
+	if entry.failed {
+		err := entry.err
+		if err == nil {
+			err = ErrNoLinkPreview
+		}
+		return nil, err, true
+	}
+	return cloneLinkPreview(entry.preview), nil, true
 }
 
 func (s *LinkPreviewService) store(rawURL string, preview *LinkPreview) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
+	now := s.clock()
 	s.pruneExpiredLocked(now)
 	s.cache[rawURL] = linkPreviewCacheEntry{
 		preview:   cloneLinkPreview(preview),
 		expiresAt: now.Add(s.ttl),
+		touchedAt: now,
+	}
+	s.evictIfNeededLocked()
+}
+
+func (s *LinkPreviewService) storeFailure(rawURL string, err error) {
+	if err == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.clock()
+	if existing, ok := s.cache[rawURL]; ok && !existing.failed && !now.After(existing.expiresAt) {
+		return
+	}
+	s.pruneExpiredLocked(now)
+	ttl := s.failureTTL
+	if ttl <= 0 || ttl > linkPreviewFailureTTL {
+		ttl = linkPreviewFailureTTL
+	}
+	s.cache[rawURL] = linkPreviewCacheEntry{
+		failed:    true,
+		err:       err,
+		expiresAt: now.Add(ttl),
 		touchedAt: now,
 	}
 	s.evictIfNeededLocked()
@@ -323,6 +478,165 @@ func (s *LinkPreviewService) evictIfNeededLocked() {
 			return
 		}
 		delete(s.cache, oldestURL)
+	}
+}
+
+func (s *LinkPreviewService) clock() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+// SetDataDir enables the on-disk preview image cache under dataDir.
+// Expired files are removed as the directory is loaded.
+func (s *LinkPreviewService) SetDataDir(dataDir string) {
+	dataDir = strings.TrimSpace(dataDir)
+	if dataDir == "" {
+		return
+	}
+	if err := s.images.open(dataDir, s.clock()); err != nil {
+		s.logger.Warn().Err(err).Msg("link preview image disk cache unavailable")
+	}
+}
+
+// StartMaintenance drops expired preview JSON and images now, then again
+// every cleanup interval (an hour unless a test shortens it).
+func (s *LinkPreviewService) StartMaintenance() {
+	s.maintMu.Lock()
+	if s.maintStarted {
+		s.maintMu.Unlock()
+		return
+	}
+	s.maintStarted = true
+	if s.cleanupEvery <= 0 {
+		s.cleanupEvery = linkPreviewCleanupEvery
+	}
+	interval := s.cleanupEvery
+	stop := make(chan struct{})
+	s.maintStop = stop
+	s.maintMu.Unlock()
+
+	s.cleanupExpired()
+	go s.maintenanceLoop(interval, stop)
+}
+
+// StopMaintenance ends the periodic sweep. It is safe to call more than once.
+func (s *LinkPreviewService) StopMaintenance() {
+	s.maintMu.Lock()
+	defer s.maintMu.Unlock()
+	if s.maintStop != nil {
+		close(s.maintStop)
+		s.maintStop = nil
+	}
+}
+
+func (s *LinkPreviewService) maintenanceLoop(interval time.Duration, stop <-chan struct{}) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			s.cleanupExpired()
+		}
+	}
+}
+
+func (s *LinkPreviewService) cleanupExpired() {
+	now := s.clock()
+	s.mu.Lock()
+	s.pruneExpiredLocked(now)
+	s.mu.Unlock()
+	s.images.prune(now)
+}
+
+func (s *LinkPreviewService) prewarmPreviewImage(raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), linkPreviewImageTimeout)
+		defer cancel()
+		_, _, _ = s.FetchImage(ctx, raw)
+	}()
+}
+
+func (s *LinkPreviewService) logFetchFailure(kind, rawURL string, status int, err error) {
+	ev := s.logger.Warn().Str("host", previewHost(rawURL)).Str("kind", kind)
+	if status > 0 {
+		ev = ev.Int("status", status)
+	}
+	if err != nil {
+		ev = ev.Str("error", sanitizePreviewError(err))
+	}
+	ev.Msg("link preview fetch failed")
+}
+
+func cacheablePreviewFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrInvalidLinkPreviewURL) || errors.Is(err, ErrBlockedLinkPreviewURL) {
+		return false
+	}
+	// The caller went away. The next request has its own context and should
+	// try the origin again immediately.
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	return true
+}
+
+func previewTransportError(prefix string, err error) error {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return fmt.Errorf("%s: %w", prefix, context.Canceled)
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("%s: %w", prefix, context.DeadlineExceeded)
+	default:
+		return fmt.Errorf("%s: %s", prefix, sanitizePreviewError(err))
+	}
+}
+
+func previewHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
+}
+
+func sanitizePreviewError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		msg := ue.Op
+		if ue.Err != nil {
+			if inner := sanitizePreviewError(ue.Err); inner != "" {
+				msg += ": " + inner
+			}
+		}
+		return stripURLQuery(msg)
+	}
+	return stripURLQuery(err.Error())
+}
+
+func stripURLQuery(msg string) string {
+	for {
+		i := strings.IndexByte(msg, '?')
+		if i < 0 {
+			return msg
+		}
+		j := strings.IndexAny(msg[i:], " \t\"'")
+		if j < 0 {
+			return msg[:i]
+		}
+		msg = msg[:i] + msg[i+j:]
 	}
 }
 
@@ -636,10 +950,12 @@ func (s *LinkPreviewService) fetchYouTube(ctx context.Context, link, id string) 
 	req.Header.Set("User-Agent", "OpenMessage/1.0 (+https://openmessage.ai)")
 	resp, err := s.client.Do(req)
 	if err != nil {
+		s.logFetchFailure("page", "https://www.youtube.com/oembed", 0, err)
 		return preview
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		s.logFetchFailure("page", "https://www.youtube.com/oembed", resp.StatusCode, nil)
 		return preview
 	}
 	var o struct {

@@ -698,6 +698,7 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		if opts.web {
 			httpHandler = web.APIHandlerWithOptions(a.Store, nil, logger, mcpHTTPHandler, web.APIOptions{
 				Auth:                  controlAuth,
+				DataDir:               a.DataDir,
 				V2:                    v2Options,
 				V2IngestCounters:      v2IngestCounters,
 				MarkReadOnGoogle:      a.MarkReadOnGoogle,

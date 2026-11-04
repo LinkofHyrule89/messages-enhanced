@@ -103,6 +103,7 @@ type UnpairFunc func() error
 // APIOptions holds optional callbacks for the API handler.
 type APIOptions struct {
 	Auth             *ControlAuth
+	DataDir          string // app data dir; preview images are cached on disk here
 	V2               *V2Options
 	V2IngestCounters func() map[string]ingest.CounterSnapshot
 	Reads            readsource.ReadSource
@@ -620,6 +621,8 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 		return msg, nil
 	}
 	linkPreviewService := NewLinkPreviewService(logger)
+	linkPreviewService.SetDataDir(opts.DataDir)
+	linkPreviewService.StartMaintenance()
 	fetchLinkPreview := opts.FetchLinkPreview
 	if fetchLinkPreview == nil {
 		fetchLinkPreview = linkPreviewService.Fetch
