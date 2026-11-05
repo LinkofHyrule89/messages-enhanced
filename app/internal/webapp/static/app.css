@@ -864,6 +864,7 @@ html.desk .thread-view > .messages { margin-bottom: calc(-1 * var(--dock-h, 0.0p
 html.desk .thread-view > .compose, html.desk .thread-view > .quick-replies { position: relative; z-index: 3; background: transparent; border-top: 0;
   pointer-events: none; }
 html.desk .thread-view > .compose > *, html.desk .thread-view > .quick-replies > * { pointer-events: auto; }
+html.desk .thread-view > .compose > .compose-mention-layer { pointer-events: none; }
 html.desk .thread-view > .compose .compose-input { background: var(--panel); border-color: transparent; box-shadow: 0 3px 19px rgba(0, 0, 0, .4); }
 html.desk .thread-view > .compose .compose-input:focus { border-color: var(--accent); }
 html.desk .thread-view > .compose > .btn, html.desk .thread-view > .compose > button { box-shadow: 0 3px 16px rgba(0, 0, 0, .35); }

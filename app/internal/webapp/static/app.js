@@ -603,10 +603,14 @@
   function listStatusKind(c) {
     if (!c.last_from_me || !c.last_status || state.folder) return "";
     var kind = statusKind({ Status: c.last_status, MessageID: "" });
-    if (kind === "read" && c.IsGroup) {
+    if (kind && c.IsGroup && kind !== "failed" && kind !== "sending") {
       var names = readByNames({ status_text: c.last_status_text });
-      var others = currentMembers(c).others.length;
-      if (names && names.length && others && names.length < others) kind = "delivered";
+      // "Read by All" is everyone, including when the enum is still delivered.
+      if (names && names.length === 1 && names[0] === "__all__") return "read";
+      if (kind === "read") {
+        var others = currentMembers(c).others.length;
+        if (names && names.length && others && names.length < others) kind = "delivered";
+      }
     }
     return kind;
   }
@@ -2556,11 +2560,15 @@
     return w;
   }
   // Names from Google's "Read by Alice, Bob" / "Seen by Alice" (null: not
-  // that kind of text). Real data: first names exactly as in the group's
-  // participants (first_name).
+  // that kind of text). "Read by All" / "Seen by Everyone" is fully read,
+  // not a person named All: ["__all__"] draws the read checks and no avatar.
+  // An empty list would fall through to statusIcon(kind), which is the
+  // delivered icon when Status is not yet OUTGOING_DISPLAYED. Real data:
+  // first names exactly as in the group's participants (first_name).
   function readByNames(m) {
     var r = /^(?:read|seen) by\s+(.+)$/i.exec(String(m.status_text || "").trim());
     if (!r) return null;
+    if (/^(all|everyone)$/i.test(r[1].trim())) return ["__all__"];
     return r[1].split(/\s*,\s*|\s+and\s+|\s*&\s*/).map(function (x) { return x.trim(); }).filter(Boolean);
   }
   // One entry per reader (same name, or same number), at most 4.
@@ -2596,6 +2604,8 @@
     if (!kind) return null;
     var box = el("div", "msg-status rcpt-row");
     var names = groupChat && kind !== "failed" && kind !== "sending" ? dedupeReaders(readByNames(m)) : null;
+    var everyoneRead = names && names.length === 1 && names[0] === "__all__";
+    if (everyoneRead) names = [];
     if (!groupChat && kind === "read" && c) {
       // 1:1: one face for the reader (photo, or initials) rather than the dot pair.
       var other = conversationParticipants(c).filter(function (x) { return x && !isMe(x); })[0];
@@ -2625,7 +2635,7 @@
       box.appendChild(el("span", "rb-text", String(m.status_text).trim()));
       return box;
     }
-    box.appendChild(statusIcon(names && names.length ? "read" : kind));
+    box.appendChild(statusIcon(everyoneRead || (names && names.length) ? "read" : kind));
     return box;
   }
   // Tap details (non-car): status in words + time (+ lock), under the bubble.
