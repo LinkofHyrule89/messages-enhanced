@@ -58,4 +58,54 @@ object Mentions {
             q.isEmpty() || n.lowercase().startsWith(q) || n.lowercase().split(' ').any { it.startsWith(q) }
         }.take(8)
     }
+
+    /** Vertical padding on each side of a suggestion row. Matches the picker row. */
+    const val SUGGESTION_PAD_V_DP = 10
+
+    /** Avatar diameter in a suggestion row. */
+    const val SUGGESTION_AVATAR_DP = 32
+
+    /** Suggestion label size, in sp. */
+    const val SUGGESTION_TEXT_SP = 16f
+
+    /** Rows kept on screen; further matches scroll. */
+    const val SUGGESTION_MAX_ROWS = 5
+
+    /**
+     * Name at [position] in the list currently shown.
+     * [position] indexes that filtered list, not the full member list.
+     * Out of range is null so a stale index cannot insert a different person.
+     */
+    fun selectedSuggestion(visible: List<String>, position: Int): String? =
+        if (position < 0) null else visible.getOrNull(position)
+
+    /**
+     * Replace the "@query" at the cursor with the suggestion the user tapped.
+     * [visible] is the filtered rows on screen and [position] is the tapped row.
+     */
+    fun insertSuggestion(text: String, cursor: Int, visible: List<String>, position: Int): Pair<String, Int>? {
+        val name = selectedSuggestion(visible, position) ?: return null
+        return insert(text, cursor, name)
+    }
+
+    /**
+     * Popup height for [matchCount] rows. Grows by one row per match and stops
+     * at [SUGGESTION_MAX_ROWS], which is when the list scrolls.
+     * [density] is px per dp. [fontScale] grows the row when the label is taller than the avatar.
+     */
+    fun suggestionPanelHeightPx(matchCount: Int, density: Float, fontScale: Float = 1f): Int {
+        if (matchCount <= 0 || density <= 0f) return 0
+        val row = suggestionRowHeightPx(density, fontScale)
+        if (row <= 0) return 0
+        return row * matchCount.coerceAtMost(SUGGESTION_MAX_ROWS)
+    }
+
+    /** One suggestion row: vertical padding plus the taller of the avatar and the label. */
+    fun suggestionRowHeightPx(density: Float, fontScale: Float = 1f): Int {
+        if (density <= 0f) return 0
+        val pad = SUGGESTION_PAD_V_DP * 2f * density
+        val avatar = SUGGESTION_AVATAR_DP * density
+        val text = SUGGESTION_TEXT_SP * fontScale.coerceAtLeast(0f) * density * 1.4f
+        return (pad + maxOf(avatar, text)).toInt().coerceAtLeast(1)
+    }
 }

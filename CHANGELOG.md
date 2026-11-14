@@ -1,5 +1,9 @@
 # Changelog
 
+## android-v0.8.5
+
+- Android: the group-chat @mention list sizes to the matching names and scrolls after five, instead of staying a tall empty panel. A tap inserts the name that was tapped, replacing the partial @. versionCode 47.
+
 ## android-v0.8.4
 
 - Android: photos and link-preview images that were not already saved no longer fail immediately. Coil was asked for the cache only, so a missing picture returned a local 504 and never reached the server, and the refresh icon flashed. A picture already loading is left alone when its row is bound again. Failed pictures are still dropped from the cache. Link-preview errors are sent with `Cache-Control: no-store`. versionCode 46.

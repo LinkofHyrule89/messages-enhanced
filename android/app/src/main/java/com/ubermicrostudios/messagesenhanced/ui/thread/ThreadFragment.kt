@@ -988,6 +988,7 @@ class ThreadFragment : Fragment() {
     }
 
     private var mentionPopup: android.widget.ListPopupWindow? = null
+    private var mentionClicks: android.widget.AdapterView.OnItemClickListener? = null
 
     private fun mentionNames(): List<String> {
         val st = viewModel.state.value
@@ -1010,21 +1011,26 @@ class ThreadFragment : Fragment() {
         private val origin: String,
         private val density: Float,
     ) : android.widget.BaseAdapter() {
+        /** Filtered rows this adapter is drawing. A tap must read this, not an older list. */
+        fun visibleNames(): List<String> = names
+
         override fun getCount() = names.size
         override fun getItem(position: Int) = names[position]
         override fun getItemId(position: Int) = position.toLong()
         override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
             val ctx = parent.context
             val px = { dp: Int -> (dp * density).toInt() }
+            val avatar = px(Mentions.SUGGESTION_AVATAR_DP)
             val row = (convertView as? android.widget.LinearLayout) ?: android.widget.LinearLayout(ctx).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(px(20), px(10), px(20), px(10))
-                addView(android.widget.ImageView(ctx), android.widget.LinearLayout.LayoutParams(px(32), px(32)))
+                val padV = px(Mentions.SUGGESTION_PAD_V_DP)
+                setPadding(px(20), padV, px(20), padV)
+                addView(android.widget.ImageView(ctx), android.widget.LinearLayout.LayoutParams(avatar, avatar))
                 addView(
                     android.widget.TextView(ctx).apply {
                         setTextColor(0xFFE3E3E3.toInt())
-                        textSize = 16f
+                        textSize = Mentions.SUGGESTION_TEXT_SP
                         maxLines = 1
                         ellipsize = android.text.TextUtils.TruncateAt.END
                     },
@@ -1035,7 +1041,7 @@ class ThreadFragment : Fragment() {
             val photo = row.getChildAt(0) as android.widget.ImageView
             (row.getChildAt(1) as android.widget.TextView).text = "@$name"
             val p = people[name]
-            val fallback = com.ubermicrostudios.messagesenhanced.util.InitialsBitmap.of(name, p?.id?.ifBlank { name } ?: name, px(32))
+            val fallback = com.ubermicrostudios.messagesenhanced.util.InitialsBitmap.of(name, p?.id?.ifBlank { name } ?: name, avatar)
             photo.setImageBitmap(fallback)
             val url = p?.let {
                 Participants.avatarUrl(
@@ -1108,7 +1114,7 @@ class ThreadFragment : Fragment() {
             mentionPopup?.dismiss()
             return
         }
-        val popup = mentionPopup ?: android.widget.ListPopupWindow(requireContext()).also { mentionPopup = it }
+        val popup = ensureMentionPopup()
         val density = resources.displayMetrics.density
         // Google Messages style: rounded dark card above the composer, photo + "@Full Name" rows.
         val anchor = binding.composerDock
@@ -1122,19 +1128,49 @@ class ThreadFragment : Fragment() {
         popup.setAdapter(MentionPickerAdapter(names, mentionPeople(), viewModel.baseUrl.origin(), density))
         popup.horizontalOffset = (8 * density).toInt()
         popup.width = (anchor.width - (16 * density).toInt()).coerceAtLeast((240 * density).toInt())
+        // ListPopupWindow keeps the first click listener and the first measured height.
+        // Set both from the rows on screen, then show() so a shorter filter shrinks the card.
+        popup.height = Mentions.suggestionPanelHeightPx(names.size, density, resources.configuration.fontScale)
+        popup.show()
+        popup.listView?.apply {
+            divider = null
+            dividerHeight = 0
+            setPadding(0, 0, 0, 0)
+            onItemClickListener = mentionClicks
+        }
+    }
+
+    /**
+     * One listener for the life of the popup. ListPopupWindow copies the click
+     * listener onto its list only when that list is first created, so a listener
+     * that closed over the names from the first "@" would keep inserting those
+     * people after the list had been filtered. This one reads the adapter that
+     * is drawing the rows.
+     */
+    private fun ensureMentionPopup(): android.widget.ListPopupWindow {
+        mentionPopup?.let { return it }
+        val popup = android.widget.ListPopupWindow(requireContext())
+        val clicks = android.widget.AdapterView.OnItemClickListener { parent, _, position, _ ->
+            pickMention(parent?.adapter, position)
+        }
+        mentionClicks = clicks
+        popup.setOnItemClickListener(clicks)
         popup.isModal = false
         popup.setDropDownGravity(android.view.Gravity.START)
         popup.inputMethodMode = android.widget.PopupWindow.INPUT_METHOD_NEEDED
-        popup.setOnItemClickListener { _, _, pos, _ ->
-            val cur = edit.text?.toString().orEmpty()
-            val res = Mentions.insert(cur, edit.selectionStart, names[pos])
-            popup.dismiss()
-            if (res != null) {
-                edit.setText(res.first)
-                edit.setSelection(res.second.coerceIn(0, res.first.length))
-            }
-        }
-        if (!popup.isShowing) popup.show()
+        mentionPopup = popup
+        return popup
+    }
+
+    /** Insert [position] from the adapter on screen, replacing the "@query" at the cursor. */
+    private fun pickMention(adapter: android.widget.Adapter?, position: Int) {
+        val edit = _binding?.composer ?: return
+        val visible = (adapter as? MentionPickerAdapter)?.visibleNames().orEmpty()
+        val res = Mentions.insertSuggestion(edit.text?.toString().orEmpty(), edit.selectionStart, visible, position)
+        mentionPopup?.dismiss()
+        if (res == null || _binding == null) return
+        edit.setText(res.first)
+        edit.setSelection(res.second.coerceIn(0, res.first.length))
     }
 
     private fun bindComposerPaste() {

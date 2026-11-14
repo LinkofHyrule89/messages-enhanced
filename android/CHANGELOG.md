@@ -1,5 +1,10 @@
 # Changelog
 
+## android-v0.8.5
+
+- Group chats: the @mention list now hugs the matching names, and scrolls after five, instead of staying a tall empty panel. Tapping a name inserts that person, replacing the @ you were typing.
+- versionCode 47.
+
 ## android-v0.8.4
 
 - Photos and link-preview images that were not already saved no longer fail immediately. The app was asking the cache only, so a missing picture never reached the server and the refresh icon flashed. A picture that is already loading is left alone when its row is bound again. Failed pictures are still not kept.
