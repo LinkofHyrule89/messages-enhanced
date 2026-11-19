@@ -1,6 +1,9 @@
 package db
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 const phBase = int64(1_790_738_307_000) // ~2026-09-29 21:18 MDT
 
@@ -193,6 +196,58 @@ func TestDeleteKnownOutgoingPlaceholderIfEchoed(t *testing.T) {
 		t.Fatalf("prefix helper realID = %q, err = %v", realID, err)
 	}
 	assertPresent(t, s, "request-hex-2", true)
+}
+
+func TestGetMessagesByConversationPrefersRealRowOverPlaceholder(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UnixMilli()
+	mustStore(t, s,
+		placeholderMsg("tmp_264794425382", "4", "group hi", now),
+		realOwnMsg("200342", "4", "group hi", now+307),
+	)
+	msgs, err := s.GetMessagesByConversation("4", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].MessageID != "200342" {
+		t.Fatalf("messages = %+v, want only 200342", msgs)
+	}
+	if left, _ := s.GetMessageByID("tmp_264794425382"); left == nil {
+		t.Fatal("read dedupe must not delete the placeholder row")
+	}
+}
+
+func TestExpireUnmatchedOutgoingPlaceholder(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UnixMilli()
+	mustStore(t, s,
+		placeholderMsg("tmp_stale", "4", "never echoed", now-10*60*1000),
+		placeholderMsg("tmp_fresh", "4", "still sending", now),
+		realOwnMsg("kept-failed", "4", "nope", now-10*60*1000),
+	)
+	// realOwnMsg is OUTGOING_DELIVERED, not a placeholder. A failed send stays.
+	failed := placeholderMsg("tmp_failed", "4", "carrier rejected", now-10*60*1000)
+	failed.Status = "OUTGOING_FAILED"
+	mustStore(t, s, failed)
+
+	if n, err := s.ExpireUnmatchedOutgoingPlaceholders([]string{"4"}, now); err != nil || n != 1 {
+		t.Fatalf("expired %d, %v", n, err)
+	}
+	assertPresent(t, s, "tmp_stale", false)
+	assertPresent(t, s, "tmp_fresh", true)
+	assertPresent(t, s, "tmp_failed", true)
+	assertPresent(t, s, "kept-failed", true)
+}
+
+func TestDedupePersonMessagesPrefersRealEcho(t *testing.T) {
+	now := time.Now().UnixMilli()
+	got := dedupePersonMessages([]*Message{
+		{MessageID: "tmp_264794425382", Body: "group hi", TimestampMS: now, IsFromMe: true},
+		{MessageID: "200342", Body: "group hi", TimestampMS: now + 307, IsFromMe: true},
+	})
+	if len(got) != 1 || got[0].MessageID != "200342" {
+		t.Fatalf("deduped = %+v", got)
+	}
 }
 
 func TestCleanupMatchedOutgoingPlaceholders(t *testing.T) {

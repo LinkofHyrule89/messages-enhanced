@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 
 	"github.com/maxghenis/openmessage/internal/app"
 	"github.com/maxghenis/openmessage/internal/db"
+	"github.com/maxghenis/openmessage/internal/v2read"
 )
 
 func listConversationsTool() mcp.Tool {
@@ -28,7 +28,7 @@ func listConversationsHandler(a *app.App, configured ...Options) server.ToolHand
 	options := resolvedOptions(a, configured)
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		limit := intArg(args, "limit", 20)
+		limit := boundedLimit(intArg(args, "limit", 20), 20, 100)
 		platform := strArg(args, "source_platform")
 
 		var convs []*db.Conversation
@@ -39,14 +39,19 @@ func listConversationsHandler(a *app.App, configured ...Options) server.ToolHand
 			convs, err = a.Store.ListConversations(limit)
 		} else if platform == "" {
 			convs, err = options.Reads.ListConversations(limit)
-		} else if limit <= 0 {
-			convs = []*db.Conversation{}
+		} else if src, ok := options.Reads.(*v2read.Source); ok {
+			// Filtering after ListConversations(math.MaxInt) mapped every
+			// conversation on every account, one participant query each.
+			convs, err = src.ListConversationsByPlatform(normalizedPlatform(platform), limit)
 		} else {
-			// ReadSource intentionally mirrors only the canonical legacy methods;
-			// filter the v2 cross-account recency result here rather than widening
-			// the cutover seam with a platform-specific convenience query.
+			// A non-v2 read source has no platform query. Scan a bounded
+			// recency window instead of the whole store.
+			scan := limit * 25
+			if scan < limit || scan > 500 {
+				scan = 500
+			}
 			var candidates []*db.Conversation
-			candidates, err = options.Reads.ListConversations(math.MaxInt)
+			candidates, err = options.Reads.ListConversations(scan)
 			if err == nil {
 				for _, conversation := range candidates {
 					if conversation != nil && normalizedPlatform(conversation.SourcePlatform) == normalizedPlatform(platform) {

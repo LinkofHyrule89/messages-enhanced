@@ -64,13 +64,10 @@ func resolveContactRoutesHandler(a *app.App) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		query := strings.TrimSpace(strArg(args, "query"))
-		limit := intArg(args, "limit", 10)
+		limit := boundedLimit(intArg(args, "limit", 10), 10, 50)
 
 		if query == "" {
 			return errorResult("query is required"), nil
-		}
-		if limit <= 0 {
-			limit = 10
 		}
 
 		contacts, err := a.Store.ListContacts("", 1)

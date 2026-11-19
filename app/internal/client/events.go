@@ -255,11 +255,17 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 
 	// Whether this own message is new decides if the placeholder fallback
 	// below may run (a status-only re-delivery must not consume a placeholder).
-	isNew := false
-	if exists, err := h.Store.MessageExists(dbMsg.MessageID); err == nil {
-		isNew = !exists
+	// A first echo that arrived with an empty body, then a later copy that
+	// fills the body, is still the send's real row and may clear the placeholder.
+	prevBody := ""
+	isNew := true
+	if existing, err := h.Store.GetMessageByID(dbMsg.MessageID); err != nil {
+		isNew = false
+	} else if existing != nil {
+		isNew = false
+		prevBody = existing.Body
 	}
-	isNewOwn := dbMsg.IsFromMe && isNew
+	bodyArrived := strings.TrimSpace(prevBody) == "" && strings.TrimSpace(dbMsg.Body) != ""
 
 	if err := h.Store.UpsertMessage(dbMsg); err != nil {
 		h.Logger.Error().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to store message")
@@ -273,12 +279,11 @@ func (h *EventHandler) handleMessage(evt *libgm.WrappedMessage) {
 	}
 
 	// When our sent message echoes back with a real server ID, clean up the
-	// placeholder we stored at send time to avoid duplicates: by the echo's
-	// TmpID first, else (no TmpID, or the placeholder wasn't written yet /
-	// has another ID) by content match on a "tm-" placeholder in this
-	// conversation. See db.ReconcileOwnEcho.
+	// placeholder we stored at send time. Match every tm-/tmp_ id the echo
+	// carries (group/MMS often omits Message.tmpID), then the same
+	// conversation, from-me, and body within the match window.
 	if dbMsg.IsFromMe {
-		if removed, err := h.Store.ReconcileOwnEcho(dbMsg, msg.GetTmpID(), isNewOwn); err != nil {
+		if removed, err := h.Store.ReconcileOwnEchoIDs(dbMsg, PlaceholderIDs(msg), isNew || bodyArrived); err != nil {
 			h.Logger.Warn().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to clean up send placeholder")
 		} else if removed != "" {
 			h.Logger.Debug().Str("tmp_id", removed).Str("msg_id", dbMsg.MessageID).Str("conv_id", dbMsg.ConversationID).Msg("Cleaned up tmp message")

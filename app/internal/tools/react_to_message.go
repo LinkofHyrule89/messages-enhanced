@@ -10,6 +10,7 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 
 	"github.com/maxghenis/openmessage/internal/app"
+	"github.com/maxghenis/openmessage/internal/db"
 )
 
 var (
@@ -63,6 +64,9 @@ func reactToMessageHandler(a *app.App) server.ToolHandlerFunc {
 		}
 		if emoji == "" {
 			return errorResult("emoji is required"), nil
+		}
+		if db.IsOutgoingPlaceholderID(messageID) {
+			return errorResult("message " + messageID + " is still sending. Wait until the thread shows the delivered copy, then react to that message id."), nil
 		}
 
 		conv, err := a.Store.GetConversation(conversationID)

@@ -29,7 +29,7 @@ func getConversationHandler(a *app.App, configured ...Options) server.ToolHandle
 		if convID == "" {
 			return errorResult("conversation_id is required"), nil
 		}
-		limit := intArg(args, "limit", 50)
+		limit := boundedLimit(intArg(args, "limit", 50), 50, 200)
 
 		// In v2-primary the conversation list emits v2 ids, so this "read a
 		// thread" tool must resolve against the same store the ids came from.

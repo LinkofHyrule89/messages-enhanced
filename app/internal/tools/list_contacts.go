@@ -26,7 +26,7 @@ func listContactsHandler(a *app.App) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		query := strArg(args, "query")
-		limit := intArg(args, "limit", 50)
+		limit := boundedLimit(intArg(args, "limit", 50), 50, 200)
 
 		// If no contacts in DB yet, try fetching from phone
 		contacts, err := a.Store.ListContacts("", 1)

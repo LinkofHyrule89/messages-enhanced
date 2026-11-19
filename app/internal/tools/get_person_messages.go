@@ -51,17 +51,20 @@ func getPersonMessagesHandler(a *app.App, configured ...Options) server.ToolHand
 		}
 
 		// Build a map of conversation metadata for display
-		convMap := make(map[string]*struct{ name, platform string })
+		wanted := make(map[string]struct{}, len(matchingConvIDs))
+		for _, id := range matchingConvIDs {
+			wanted[id] = struct{}{}
+		}
+		convMap := make(map[string]*struct{ name, platform string }, len(matchingConvIDs))
 		for _, c := range allConvs {
-			for _, id := range matchingConvIDs {
-				if c.ConversationID == id {
-					platform := c.SourcePlatform
-					if platform == "" {
-						platform = "sms"
-					}
-					convMap[id] = &struct{ name, platform string }{personConversationLabel(c), platform}
-				}
+			if _, ok := wanted[c.ConversationID]; !ok {
+				continue
 			}
+			platform := c.SourcePlatform
+			if platform == "" {
+				platform = "sms"
+			}
+			convMap[c.ConversationID] = &struct{ name, platform string }{personConversationLabel(c), platform}
 		}
 
 		// Batch fetch all messages in one query

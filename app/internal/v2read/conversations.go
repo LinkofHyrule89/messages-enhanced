@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/maxghenis/openmessage/internal/db"
 	"github.com/maxghenis/openmessage/internal/storage/sqlite"
@@ -24,6 +26,53 @@ func (s *Source) ListConversations(limit int) ([]*db.Conversation, error) {
 	}
 	mapped := make([]*db.Conversation, 0, len(conversations))
 	for _, conversation := range conversations {
+		dto, err := s.mapConversation(conversation, accounts)
+		if err != nil {
+			return nil, err
+		}
+		mapped = append(mapped, dto)
+	}
+	return mapped, nil
+}
+
+// ListConversationsByPlatform returns the newest conversations for one
+// platform. It loads only the accounts that serve that platform, then maps
+// at most limit rows. Callers used to list every account with no cap and map
+// each conversation before throwing the other platforms away.
+func (s *Source) ListConversationsByPlatform(platform string, limit int) ([]*db.Conversation, error) {
+	if err := s.ready(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return []*db.Conversation{}, nil
+	}
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	accounts, err := s.accountIndex()
+	if err != nil {
+		return nil, fmt.Errorf("list %s conversations: %w", platform, err)
+	}
+	matched := make([]sqlite.Conversation, 0)
+	for _, account := range accounts {
+		if strings.ToLower(platformForBridgeKey(account.BridgeKey)) != platform {
+			continue
+		}
+		rows, err := s.store.ListConversationsByRecency(account.AccountID)
+		if err != nil {
+			return nil, fmt.Errorf("list %s conversations: %w", platform, err)
+		}
+		matched = append(matched, rows...)
+	}
+	sort.Slice(matched, func(i, j int) bool {
+		if matched[i].LastMessageAtMS != matched[j].LastMessageAtMS {
+			return matched[i].LastMessageAtMS > matched[j].LastMessageAtMS
+		}
+		return matched[i].ConversationID < matched[j].ConversationID
+	})
+	if len(matched) > limit {
+		matched = matched[:limit]
+	}
+	mapped := make([]*db.Conversation, 0, len(matched))
+	for _, conversation := range matched {
 		dto, err := s.mapConversation(conversation, accounts)
 		if err != nil {
 			return nil, err

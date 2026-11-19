@@ -33,7 +33,7 @@ func searchMessagesHandler(a *app.App, configured ...Options) server.ToolHandler
 			return errorResult("query is required"), nil
 		}
 		phone := strArg(args, "phone_number")
-		limit := intArg(args, "limit", 20)
+		limit := boundedLimit(intArg(args, "limit", 20), 20, 100)
 
 		var (
 			msgs []*db.Message
