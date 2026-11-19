@@ -24,6 +24,31 @@ import (
 	"github.com/maxghenis/openmessage/internal/storage/sqlite"
 )
 
+func TestV2SendIsVisibleToLegacyThreadRead(t *testing.T) {
+	const body = "visible before the echo"
+	harness := newV2ToolHarness(t, v2ToolSendStep{result: bridge.SendResult{
+		RemoteMessageID: "remote-visible",
+	}})
+	_, err := sendToConversationHandler(harness.app, &harness.deps)(context.Background(), v2ToolCall(map[string]any{
+		"conversation_id": v2ToolConversationID,
+		"message":         body,
+		"idempotency_key": "mcp-visible-key",
+	}))
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	result, err := getConversationHandler(harness.app)(context.Background(), v2ToolCall(map[string]any{
+		"conversation_id": v2ToolConversationID,
+	}))
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("get_conversation = %+v, %v", result, err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, body) {
+		t.Fatalf("legacy thread read missed the sent message:\n%s", text)
+	}
+}
+
 func TestV2SendToConversationReturnsConfirmedDelivery(t *testing.T) {
 	harness := newV2ToolHarness(t, v2ToolSendStep{result: bridge.SendResult{
 		RemoteMessageID: "remote-confirmed",
@@ -265,13 +290,15 @@ func TestV2SendMessageGoogleKeepsLegacyConversationLookupButUsesV2Transport(t *t
 	if err != nil {
 		t.Fatalf("load legacy messages: %v", err)
 	}
-	if len(legacyMessages) != 0 {
-		t.Fatalf("legacy send persisted messages = %#v, want none", legacyMessages)
-	}
 	requests := harness.sender.snapshotRequests()
 	if len(requests) != 1 || requests[0].Conversation.RemoteID != v2ToolDirectConversationID ||
 		requests[0].Body != "direct through v2" {
 		t.Fatalf("v2 transport requests = %+v, want direct Google conversation/body", requests)
+	}
+	if len(legacyMessages) != 1 || legacyMessages[0].MessageID != requests[0].RequestID ||
+		legacyMessages[0].Body != "direct through v2" || !legacyMessages[0].IsFromMe ||
+		legacyMessages[0].Status != "OUTGOING_SENDING" {
+		t.Fatalf("legacy send persisted messages = %#v, want one sending placeholder", legacyMessages)
 	}
 }
 
@@ -329,13 +356,15 @@ func TestV2SendGroupMessageKeepsLegacyConversationLookupButUsesV2Transport(t *te
 	if err != nil {
 		t.Fatalf("load legacy group messages: %v", err)
 	}
-	if len(legacyMessages) != 0 {
-		t.Fatalf("legacy group send persisted messages = %#v, want none", legacyMessages)
-	}
 	requests := harness.sender.snapshotRequests()
 	if len(requests) != 1 || requests[0].Conversation.RemoteID != v2ToolGroupConversationID ||
 		requests[0].Body != "group through v2" {
 		t.Fatalf("v2 transport requests = %+v, want group Google conversation/body", requests)
+	}
+	if len(legacyMessages) != 1 || legacyMessages[0].MessageID != requests[0].RequestID ||
+		legacyMessages[0].Body != "group through v2" || !legacyMessages[0].IsFromMe ||
+		legacyMessages[0].Status != "OUTGOING_SENDING" {
+		t.Fatalf("legacy group send persisted messages = %#v, want one sending placeholder", legacyMessages)
 	}
 }
 

@@ -97,10 +97,21 @@ func absInt64(v int64) int64 {
 // for the real (Google) copy real, by the rule described at the top of this
 // file.
 func OutgoingPlaceholderMatches(placeholder, real *Message) bool {
+	return outgoingEchoMatch(placeholder, real, true)
+}
+
+// outgoingEchoMatch is the content rule for a local send stand-in. requireLocalID
+// keeps the sweep and the echo-side fallback limited to tm-/tmp_ ids. A durable
+// send's transport request id is not one of those prefixes, but it is still a
+// placeholder the send path just wrote; that path passes requireLocalID false.
+func outgoingEchoMatch(placeholder, real *Message, requireLocalID bool) bool {
 	if placeholder == nil || real == nil {
 		return false
 	}
-	if !IsOutgoingPlaceholderID(placeholder.MessageID) || isLocalOutgoingID(real.MessageID) || placeholder.MessageID == real.MessageID {
+	if placeholder.MessageID == real.MessageID || isLocalOutgoingID(real.MessageID) {
+		return false
+	}
+	if requireLocalID && !IsOutgoingPlaceholderID(placeholder.MessageID) {
 		return false
 	}
 	if !placeholder.IsFromMe || !real.IsFromMe {
@@ -224,6 +235,19 @@ func (s *Store) DeleteOutgoingPlaceholderIfEchoed(placeholderID string, notBefor
 	if !IsOutgoingPlaceholderID(placeholderID) {
 		return "", nil
 	}
+	return s.deleteOutgoingPlaceholderIfEchoed(placeholderID, notBeforeMS, true)
+}
+
+// DeleteKnownOutgoingPlaceholderIfEchoed is DeleteOutgoingPlaceholderIfEchoed
+// for a placeholder whose id is a transport request id rather than tm-/tmp_.
+func (s *Store) DeleteKnownOutgoingPlaceholderIfEchoed(placeholderID string, notBeforeMS int64) (string, error) {
+	if strings.TrimSpace(placeholderID) == "" {
+		return "", nil
+	}
+	return s.deleteOutgoingPlaceholderIfEchoed(placeholderID, notBeforeMS, false)
+}
+
+func (s *Store) deleteOutgoingPlaceholderIfEchoed(placeholderID string, notBeforeMS int64, requireLocalID bool) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return "", err
@@ -245,7 +269,7 @@ func (s *Store) DeleteOutgoingPlaceholderIfEchoed(placeholderID string, notBefor
 	}
 	var match *Message
 	for _, r := range reals {
-		if OutgoingPlaceholderMatches(p, r) {
+		if outgoingEchoMatch(p, r, requireLocalID) {
 			if match == nil || absInt64(r.TimestampMS-p.TimestampMS) < absInt64(match.TimestampMS-p.TimestampMS) {
 				match = r
 			}

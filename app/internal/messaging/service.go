@@ -1220,11 +1220,12 @@ func readPayloadHash(deviceID, lastReadMessageID string) (string, error) {
 
 func submissionFromItem(item sqlite.OutboxItem, disposition sqlite.EnqueueDisposition) Submission {
 	return Submission{
-		OutboxID:       item.OutboxID,
-		LocalMessageID: stringValue(item.LocalMessageID),
-		State:          item.State,
-		ScheduledFor:   time.UnixMilli(item.ScheduledForMS),
-		Deduplicated:   disposition == sqlite.EnqueueExisting,
+		OutboxID:           item.OutboxID,
+		LocalMessageID:     stringValue(item.LocalMessageID),
+		TransportRequestID: item.TransportRequestID,
+		State:              item.State,
+		ScheduledFor:       time.UnixMilli(item.ScheduledForMS),
+		Deduplicated:       disposition == sqlite.EnqueueExisting,
 	}
 }
 

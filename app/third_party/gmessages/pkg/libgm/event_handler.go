@@ -251,8 +251,11 @@ func (c *Client) handleUpdatesEvent(msg *IncomingRPCMessage) {
 
 		case *gmproto.UpdateEvents_ConversationEvent:
 			for _, part := range evt.ConversationEvent.GetData() {
+				// continue, not return: a repeated conversation id in this
+				// batch shares the payload hash, so it looks like a duplicate
+				// and must not drop the conversations after it.
 				if c.deduplicateUpdate(part.GetConversationID(), msg) {
-					return
+					continue
 				} else if msg.IsOld {
 					c.Logger.Debug().Str("conv_id", part.ConversationID).Msg("Ignoring old conversation event")
 					continue
@@ -262,8 +265,13 @@ func (c *Client) handleUpdatesEvent(msg *IncomingRPCMessage) {
 
 		case *gmproto.UpdateEvents_MessageEvent:
 			for _, part := range evt.MessageEvent.GetData() {
+				// continue, not return: Google often repeats a message id in
+				// the same event (the bubble plus its status). That second
+				// copy hashes equal to the first, and returning here dropped
+				// every later message in the batch — including new ones in a
+				// group thread.
 				if c.deduplicateUpdate(part.GetMessageID(), msg) {
-					return
+					continue
 				}
 				c.triggerEvent(&WrappedMessage{
 					Message: part,

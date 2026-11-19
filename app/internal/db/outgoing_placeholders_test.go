@@ -177,6 +177,24 @@ func TestDeleteOutgoingPlaceholderIfEchoed(t *testing.T) {
 	}
 }
 
+func TestDeleteKnownOutgoingPlaceholderIfEchoed(t *testing.T) {
+	s := newTestStore(t)
+	mustStore(t, s, placeholderMsg("request-hex", "5", "on my way", phBase))
+	mustStore(t, s, realOwnMsg("g-real", "5", "on my way", phBase+500))
+	if realID, err := s.DeleteKnownOutgoingPlaceholderIfEchoed("request-hex", phBase-5000); err != nil || realID != "g-real" {
+		t.Fatalf("realID = %q, err = %v", realID, err)
+	}
+	assertPresent(t, s, "request-hex", false)
+
+	// The prefix-only helper must not treat an arbitrary id as a placeholder.
+	mustStore(t, s, placeholderMsg("request-hex-2", "5", "later", phBase+10000))
+	mustStore(t, s, realOwnMsg("g-real-2", "5", "later", phBase+10500))
+	if realID, err := s.DeleteOutgoingPlaceholderIfEchoed("request-hex-2", phBase); err != nil || realID != "" {
+		t.Fatalf("prefix helper realID = %q, err = %v", realID, err)
+	}
+	assertPresent(t, s, "request-hex-2", true)
+}
+
 func TestCleanupMatchedOutgoingPlaceholders(t *testing.T) {
 	s := newTestStore(t)
 	mustStore(t, s,

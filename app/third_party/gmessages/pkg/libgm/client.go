@@ -152,12 +152,33 @@ func NewAuthData() *AuthData {
 	}
 }
 
+// dialPreferIPv4 dials tcp4 first and only then tcp6. See NewClient.
+func dialPreferIPv4(ctx context.Context, network, addr string) (net.Conn, error) {
+	if network != "tcp" {
+		return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, addr)
+	}
+	conn, err4 := (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, "tcp4", addr)
+	if err4 == nil {
+		return conn, nil
+	}
+	conn, err6 := (&net.Dialer{Timeout: 4 * time.Second}).DialContext(ctx, "tcp6", addr)
+	if err6 == nil {
+		return conn, nil
+	}
+	return nil, err4
+}
+
 func NewClient(authData *AuthData, pk *PushKeys, logger zerolog.Logger) *Client {
 	sessionHandler := &SessionHandler{
 		responseWaiters: make(map[string]chan<- *IncomingRPCMessage),
 	}
 	transport := &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		// Messages Enhanced patch: try IPv4 before IPv6. Happy Eyeballs races
+		// the TCP connect, then sticks with whichever handshake it picked. On
+		// a VPN that blackholes IPv6 (Mullvad: "no route to host", TLS
+		// handshake timeout) that sticks the Google RPC on a dead address for
+		// the whole handshake timeout even when IPv4 would have worked.
+		DialContext:           dialPreferIPv4,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 20 * time.Second,
 	}

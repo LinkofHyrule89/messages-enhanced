@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/maxghenis/openmessage/internal/app"
 	"github.com/maxghenis/openmessage/internal/bridge"
+	"github.com/maxghenis/openmessage/internal/db"
 	"github.com/maxghenis/openmessage/internal/messaging"
 	"github.com/maxghenis/openmessage/internal/storage/sqlite"
 	"github.com/maxghenis/openmessage/internal/v2wire"
@@ -148,7 +150,52 @@ func submitV2Text(
 	if err != nil {
 		return errorResult(fmt.Sprintf("failed to submit message: %v", err))
 	}
+	// v2-primary reads already see the optimistic row. Legacy reads do not:
+	// the echo that would copy it across is the same long-poll that was down,
+	// so a follow-up get_conversation missed the message that had been sent.
+	if !v2.V2Primary && !submission.Deduplicated {
+		recordLegacyOutgoingPlaceholder(a, conversationID, body, submission.TransportRequestID)
+	}
 	return waitForV2Delivery(ctx, v2, submission, key)
+}
+
+// recordLegacyOutgoingPlaceholder puts the just-queued Google send into the
+// legacy store under its transport request id. The echo's TmpID is that same
+// id, so ReconcileOwnEcho deletes this row when the real copy arrives.
+func recordLegacyOutgoingPlaceholder(a *app.App, conversationID, body, requestID string) {
+	if a == nil || a.Store == nil {
+		return
+	}
+	requestID = strings.TrimSpace(requestID)
+	body = strings.TrimSpace(body)
+	conversationID = strings.TrimSpace(conversationID)
+	if requestID == "" || body == "" || conversationID == "" {
+		return
+	}
+	conv, err := a.Store.GetConversation(conversationID)
+	if err != nil || conv == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(conv.SourcePlatform)) {
+	case "", "sms":
+	default:
+		return
+	}
+	now := time.Now().UnixMilli()
+	msg := &db.Message{
+		MessageID:      requestID,
+		ConversationID: conversationID,
+		Body:           body,
+		IsFromMe:       true,
+		TimestampMS:    now,
+		Status:         "OUTGOING_SENDING",
+		SourcePlatform: "sms",
+	}
+	if err := a.Store.RecordOutgoingMessage(msg, ""); err != nil {
+		a.Logger.Warn().Err(err).Str("conversation_id", conversationID).Msg("Failed to record outgoing placeholder for legacy reads")
+		return
+	}
+	a.DropKnownPlaceholderIfEchoed(msg.MessageID, msg.TimestampMS)
 }
 
 // waitForV2Delivery reports the durable send's outcome. The intent is already
