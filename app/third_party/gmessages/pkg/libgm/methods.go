@@ -1,6 +1,10 @@
 package libgm
 
 import (
+	"errors"
+
+	"github.com/rs/zerolog"
+
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 )
 
@@ -84,7 +88,28 @@ func (c *Client) FetchMessages(conversationID string, count int64, cursor *gmpro
 
 func (c *Client) SendMessage(payload *gmproto.SendMessageRequest) (*gmproto.SendMessageResponse, error) {
 	actionType := gmproto.ActionType_SEND_MESSAGE
-	return typedResponse[*gmproto.SendMessageResponse](c.sessionHandler.sendMessage(actionType, payload))
+	resp, err := typedResponse[*gmproto.SendMessageResponse](c.sessionHandler.sendMessage(actionType, payload))
+	return finishSendMessage(c.Logger, payload, resp, err)
+}
+
+// finishSendMessage turns a missing long-poll ack into success. The HTTP RPC
+// has already been accepted, and the phone often sends the message before
+// that ack arrives. Reporting an error here makes callers retry and tell the
+// user the message was not sent. An explicit non-success status still fails.
+func finishSendMessage(logger zerolog.Logger, payload *gmproto.SendMessageRequest, resp *gmproto.SendMessageResponse, err error) (*gmproto.SendMessageResponse, error) {
+	if !errors.Is(err, ErrResponseTimeout) {
+		return resp, err
+	}
+	tmpID, conversationID := "", ""
+	if payload != nil {
+		tmpID = payload.GetTmpID()
+		conversationID = payload.GetConversationID()
+	}
+	logger.Warn().
+		Str("tmp_id", tmpID).
+		Str("conversation_id", conversationID).
+		Msg("SendMessage was accepted but the update stream did not ack in time; reporting success so the send is not retried")
+	return &gmproto.SendMessageResponse{Status: gmproto.SendMessageResponse_SUCCESS}, nil
 }
 
 func (c *Client) GetParticipantThumbnail(participantIDs ...string) (*gmproto.GetThumbnailResponse, error) {
@@ -156,10 +181,11 @@ func (c *Client) IsBugleDefault() (*gmproto.IsBugleDefaultResponse, error) {
 }
 
 func (c *Client) NotifyDittoActivity() (<-chan *IncomingRPCMessage, error) {
-	return c.sessionHandler.sendAsyncMessage(SendMessageParams{
+	_, ch, err := c.sessionHandler.sendAsyncMessage(SendMessageParams{
 		Action: gmproto.ActionType_NOTIFY_DITTO_ACTIVITY,
 		Data:   &gmproto.NotifyDittoActivityRequest{Success: true},
 	})
+	return ch, err
 }
 
 func (c *Client) ackBrowserPresence() {

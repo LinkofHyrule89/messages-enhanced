@@ -11,7 +11,7 @@ import (
 )
 
 func TestMCPV2Dependencies(t *testing.T) {
-	if got := mcpV2Dependencies(nil); len(got) != 0 {
+	if got := mcpV2Dependencies(nil, true); len(got) != 0 {
 		t.Fatalf("mcpV2Dependencies(nil) returned %d dependencies, want zero", len(got))
 	}
 
@@ -22,7 +22,7 @@ func TestMCPV2Dependencies(t *testing.T) {
 		Service:  service,
 		Store:    store,
 		Registry: registry,
-	})
+	}, true)
 	if len(got) != 1 {
 		t.Fatalf("mcpV2Dependencies(stack) returned %d dependencies, want one", len(got))
 	}
@@ -30,8 +30,11 @@ func TestMCPV2Dependencies(t *testing.T) {
 	if deps == nil {
 		t.Fatal("mcpV2Dependencies(stack) returned a nil dependency")
 	}
-	if !deps.Enabled {
-		t.Fatal("mcpV2Dependencies(stack) returned disabled dependencies")
+	if !deps.Enabled || !deps.V2Primary {
+		t.Fatal("mcpV2Dependencies(stack, true) did not enable native v2 sends")
+	}
+	if legacy := mcpV2Dependencies(&v2Stack{Service: service, Store: store, Registry: registry}, false); len(legacy) != 1 || legacy[0].V2Primary {
+		t.Fatal("mcpV2Dependencies(stack, false) must keep legacy conversation ids")
 	}
 	if deps.Service != service {
 		t.Fatal("mcpV2Dependencies(stack) did not preserve the message service pointer")

@@ -75,15 +75,16 @@ func (o serveOptions) transportsEnabled() bool {
 	return !o.mcpClientShape()
 }
 
-func mcpV2Dependencies(stack *v2Stack) []*tools.V2Dependencies {
+func mcpV2Dependencies(stack *v2Stack, primary bool) []*tools.V2Dependencies {
 	if stack == nil {
 		return nil
 	}
 	return []*tools.V2Dependencies{{
-		Enabled:  true,
-		Service:  stack.Service,
-		V2Store:  stack.Store,
-		Registry: stack.Registry,
+		Enabled:   true,
+		V2Primary: primary,
+		Service:   stack.Service,
+		V2Store:   stack.Store,
+		Registry:  stack.Registry,
 	}}
 }
 
@@ -623,7 +624,7 @@ func RunServe(logger zerolog.Logger, args ...string) error {
 		v2SendStack = nil
 	}
 	var mcpV2 *tools.V2Dependencies
-	if dependencies := mcpV2Dependencies(v2SendStack); len(dependencies) > 0 {
+	if dependencies := mcpV2Dependencies(v2SendStack, v2Primary); len(dependencies) > 0 {
 		mcpV2 = dependencies[0]
 	}
 	tools.RegisterWithOptions(mcpSrv, a, tools.Options{

@@ -507,7 +507,7 @@ func (c *Client) sendGaiaPairingMessage(ctx context.Context, sess *PairingSessio
 		reqContainer.ProposedVerificationCodeVersion = 1
 		reqContainer.ProposedKeyDerivationVersion = 1
 	}
-	respCh, err := c.sessionHandler.sendAsyncMessage(SendMessageParams{
+	_, respCh, err := c.sessionHandler.sendAsyncMessage(SendMessageParams{
 		Action:      action,
 		Data:        reqContainer,
 		DontEncrypt: true,

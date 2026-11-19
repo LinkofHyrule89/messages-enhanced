@@ -2,6 +2,7 @@ package libgm
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -14,6 +15,22 @@ import (
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/gmproto"
 	"go.mau.fi/mautrix-gmessages/pkg/libgm/util"
 )
+
+// The phone's RPC reply arrives on the long-poll, not in the HTTP response.
+// The HTTP call only means Google accepted the request. A dead or reconnecting
+// update stream used to block forever after a 5s nudge (the "TODO hard
+// timeout" below), so a send whose RPC had already succeeded was reported as
+// a failure once the caller gave up. Soft wait still nudges the phone; the
+// hard wait bounds every RPC.
+var (
+	rpcResponseSoftWait = 5 * time.Second
+	rpcResponseHardWait = 20 * time.Second
+)
+
+// ErrResponseTimeout means Google accepted the RPC but the update stream did
+// not deliver the phone's reply before rpcResponseHardWait. For a send, the
+// message may already be on its way and must not be retried.
+var ErrResponseTimeout = errors.New("google messages accepted the request but the update stream returned no response")
 
 type SessionHandler struct {
 	client *Client
@@ -52,10 +69,10 @@ func (s *SessionHandler) sendMessageNoResponse(params SendMessageParams) error {
 	return err
 }
 
-func (s *SessionHandler) sendAsyncMessage(params SendMessageParams) (<-chan *IncomingRPCMessage, error) {
+func (s *SessionHandler) sendAsyncMessage(params SendMessageParams) (string, <-chan *IncomingRPCMessage, error) {
 	requestID, payload, err := s.buildMessage(params)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
 	ch := s.waitResponse(requestID)
@@ -72,9 +89,9 @@ func (s *SessionHandler) sendAsyncMessage(params SendMessageParams) (<-chan *Inc
 	)
 	if err != nil {
 		s.cancelResponse(requestID, ch)
-		return nil, err
+		return "", nil, err
 	}
-	return ch, nil
+	return requestID, ch, nil
 }
 
 func typedResponse[T proto.Message](resp *IncomingRPCMessage, err error) (casted T, retErr error) {
@@ -103,6 +120,47 @@ func (s *SessionHandler) cancelResponse(requestID string, ch chan *IncomingRPCMe
 	close(ch)
 	delete(s.responseWaiters, requestID)
 	s.responseWaitersLock.Unlock()
+}
+
+// abandonResponse drops a waiter without closing its channel. Closing races
+// receiveResponse, which may already be sending on that channel. A late reply
+// then falls through to the normal event path instead of panicking the poll.
+func (s *SessionHandler) abandonResponse(requestID string) {
+	s.responseWaitersLock.Lock()
+	delete(s.responseWaiters, requestID)
+	s.responseWaitersLock.Unlock()
+}
+
+// waitForRPCResponse waits for the phone's reply. ping is invoked once, at
+// the soft wait, so a slow phone is nudged before the hard deadline.
+func waitForRPCResponse(ch <-chan *IncomingRPCMessage, ping func(), soft, hard time.Duration) (*IncomingRPCMessage, error) {
+	if hard < soft {
+		hard = soft
+	}
+	softTimer := time.NewTimer(soft)
+	defer softTimer.Stop()
+	select {
+	case resp, ok := <-ch:
+		if !ok || resp == nil {
+			return nil, errors.New("google messages response waiter closed")
+		}
+		return resp, nil
+	case <-softTimer.C:
+		if ping != nil {
+			ping()
+		}
+	}
+	hardTimer := time.NewTimer(hard - soft)
+	defer hardTimer.Stop()
+	select {
+	case resp, ok := <-ch:
+		if !ok || resp == nil {
+			return nil, errors.New("google messages response waiter closed")
+		}
+		return resp, nil
+	case <-hardTimer.C:
+		return nil, ErrResponseTimeout
+	}
 }
 
 func (s *SessionHandler) receiveResponse(msg *IncomingRPCMessage) bool {
@@ -149,23 +207,33 @@ func (s *SessionHandler) receiveResponse(msg *IncomingRPCMessage) bool {
 }
 
 func (s *SessionHandler) sendMessageWithParams(params SendMessageParams) (*IncomingRPCMessage, error) {
-	ch, err := s.sendAsyncMessage(params)
+	requestID, ch, err := s.sendAsyncMessage(params)
 	if err != nil {
 		return nil, err
 	}
 
-	select {
-	case resp := <-ch:
-		return resp, nil
-	case <-time.After(5 * time.Second):
-		// Notify the pinger in order to trigger an event that the phone isn't responding
+	resp, err := waitForRPCResponse(ch, func() {
+		// Notify the pinger in order to trigger an event that the phone isn't responding.
 		select {
 		case s.client.pingShortCircuit <- struct{}{}:
 		default:
 		}
+	}, rpcResponseSoftWait, rpcResponseHardWait)
+	if !errors.Is(err, ErrResponseTimeout) {
+		return resp, err
 	}
-	// TODO hard timeout?
-	return <-ch, nil
+	// The HTTP RPC already succeeded. Stop waiting on the update stream so a
+	// reconnecting long-poll cannot pin the caller, but honor a reply that
+	// landed in the same instant.
+	s.abandonResponse(requestID)
+	select {
+	case late, ok := <-ch:
+		if ok && late != nil {
+			return late, nil
+		}
+	default:
+	}
+	return nil, ErrResponseTimeout
 }
 
 func (s *SessionHandler) sendMessage(actionType gmproto.ActionType, encryptedData proto.Message) (*IncomingRPCMessage, error) {

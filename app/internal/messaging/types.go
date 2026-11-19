@@ -98,11 +98,12 @@ type MarkReadCommand struct {
 }
 
 type Submission struct {
-	OutboxID       string
-	LocalMessageID string
-	State          OutboxState
-	ScheduledFor   time.Time
-	Deduplicated   bool
+	OutboxID           string
+	LocalMessageID     string
+	TransportRequestID string
+	State              OutboxState
+	ScheduledFor       time.Time
+	Deduplicated       bool
 }
 
 type Delivery struct {
