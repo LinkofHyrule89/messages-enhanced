@@ -170,6 +170,19 @@ const (
 	maxPersonMessagesRangeLimit = 2000
 )
 
+// boundedLimit keeps an agent-supplied page size in [1, max]. Missing, zero,
+// and negative values use def. SQLite treats a negative LIMIT as "no limit",
+// so an unclamped tool argument can dump an entire table.
+func boundedLimit(n, def, max int) int {
+	if n < 1 {
+		return def
+	}
+	if n > max {
+		return max
+	}
+	return n
+}
+
 // clampLimit bounds n to [1, max].
 func clampLimit(n, max int) int {
 	if n < 1 {

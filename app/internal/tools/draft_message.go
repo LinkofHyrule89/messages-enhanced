@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -36,7 +38,12 @@ func draftMessageHandler(a *app.App) server.ToolHandlerFunc {
 		}
 
 		now := time.Now()
-		draftID := fmt.Sprintf("draft_%d", now.UnixMilli())
+		var suffix [4]byte
+		if _, err := rand.Read(suffix[:]); err != nil {
+			return errorResult(fmt.Sprintf("failed to create draft: %v", err)), nil
+		}
+		// Milliseconds alone collide when two drafts are saved in the same ms.
+		draftID := fmt.Sprintf("draft_%d_%s", now.UnixMilli(), hex.EncodeToString(suffix[:]))
 
 		err := a.Store.UpsertDraft(&db.Draft{
 			DraftID:        draftID,

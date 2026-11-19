@@ -148,6 +148,7 @@ func messageSearchBodyTx(tx *sql.Tx, messageID string) (string, error) {
 }
 
 func (s *Store) GetMessagesByConversation(conversationID string, limit int) ([]*Message, error) {
+	s.expireConversationPlaceholders(conversationID)
 	rows, err := s.db.Query(`
 		SELECT `+messageColumns+`
 		FROM messages
@@ -159,10 +160,11 @@ func (s *Store) GetMessagesByConversation(conversationID string, limit int) ([]*
 		return nil, err
 	}
 	defer rows.Close()
-	return scanMessages(rows)
+	return s.finishConversationMessages(scanMessages(rows))
 }
 
 func (s *Store) GetMessagesByConversationBefore(conversationID string, beforeMS int64, beforeID string, limit int) ([]*Message, error) {
+	s.expireConversationPlaceholders(conversationID)
 	query := `
 		SELECT ` + messageColumns + `
 		FROM messages
@@ -186,10 +188,11 @@ func (s *Store) GetMessagesByConversationBefore(conversationID string, beforeMS 
 		return nil, err
 	}
 	defer rows.Close()
-	return scanMessages(rows)
+	return s.finishConversationMessages(scanMessages(rows))
 }
 
 func (s *Store) GetMessagesByConversationAfter(conversationID string, afterMS int64, afterID string, limit int) ([]*Message, error) {
+	s.expireConversationPlaceholders(conversationID)
 	query := `
 		SELECT ` + messageColumns + `
 		FROM messages
@@ -213,7 +216,7 @@ func (s *Store) GetMessagesByConversationAfter(conversationID string, afterMS in
 		return nil, err
 	}
 	defer rows.Close()
-	return scanMessages(rows)
+	return s.finishConversationMessages(scanMessages(rows))
 }
 
 func (s *Store) GetMessages(phoneNumber string, afterMS, beforeMS int64, limit int) ([]*Message, error) {
@@ -245,7 +248,7 @@ func (s *Store) GetMessages(phoneNumber string, afterMS, beforeMS int64, limit i
 		return nil, fmt.Errorf("query messages: %w", err)
 	}
 	defer rows.Close()
-	return scanMessages(rows)
+	return s.finishConversationMessages(scanMessages(rows))
 }
 
 // SearchFilter narrows a text search beyond the query string. Zero values mean
@@ -548,6 +551,7 @@ func (s *Store) GetMessagesByConversations(conversationIDs []string, limit int) 
 	if len(conversationIDs) == 0 {
 		return nil, nil
 	}
+	s.expireConversationPlaceholders(conversationIDs...)
 	placeholders := make([]string, len(conversationIDs))
 	args := make([]any, len(conversationIDs))
 	for i, id := range conversationIDs {
@@ -571,7 +575,7 @@ func (s *Store) GetMessagesByConversations(conversationIDs []string, limit int) 
 		return nil, err
 	}
 	defer rows.Close()
-	return scanMessages(rows)
+	return s.finishConversationMessages(scanMessages(rows))
 }
 
 // GetMessagesByConversationsRange returns messages from multiple conversations
@@ -580,6 +584,7 @@ func (s *Store) GetMessagesByConversationsRange(conversationIDs []string, afterM
 	if len(conversationIDs) == 0 {
 		return nil, nil
 	}
+	s.expireConversationPlaceholders(conversationIDs...)
 	placeholders := make([]string, len(conversationIDs))
 	args := make([]any, len(conversationIDs))
 	for i, id := range conversationIDs {
@@ -613,7 +618,21 @@ func (s *Store) GetMessagesByConversationsRange(conversationIDs []string, afterM
 		return nil, err
 	}
 	defer rows.Close()
-	return scanMessages(rows)
+	return s.finishConversationMessages(scanMessages(rows))
+}
+
+func (s *Store) expireConversationPlaceholders(conversationIDs ...string) {
+	if len(conversationIDs) == 0 {
+		return
+	}
+	_, _ = s.ExpireUnmatchedOutgoingPlaceholders(conversationIDs, time.Now().UnixMilli())
+}
+
+func (s *Store) finishConversationMessages(msgs []*Message, err error) ([]*Message, error) {
+	if err != nil {
+		return nil, err
+	}
+	return dropMatchedOutgoingPlaceholders(msgs), nil
 }
 
 // DeleteTmpMessages removes locally-created tmp_ messages for a conversation.

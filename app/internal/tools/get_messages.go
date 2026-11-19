@@ -29,7 +29,7 @@ func getMessagesHandler(a *app.App, configured ...Options) server.ToolHandlerFun
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		phone := strArg(args, "phone_number")
-		limit := intArg(args, "limit", 20)
+		limit := boundedLimit(intArg(args, "limit", 20), 20, 200)
 
 		// Same parser as the CLI, /api/search/messages, and the person tools,
 		// so one date string selects the same local-time window everywhere.

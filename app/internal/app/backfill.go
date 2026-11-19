@@ -738,10 +738,14 @@ func (a *App) storeMessage(msg *gmproto.Message) {
 		return
 	}
 
+	prevBody := ""
 	isNewOwn := false
 	if dbMsg.IsFromMe {
-		exists, err := a.Store.MessageExists(dbMsg.MessageID)
-		isNewOwn = err == nil && !exists
+		existing, err := a.Store.GetMessageByID(dbMsg.MessageID)
+		isNewOwn = err == nil && existing == nil
+		if existing != nil {
+			prevBody = existing.Body
+		}
 	}
 	if err := a.Store.UpsertMessage(dbMsg); err != nil {
 		a.Logger.Error().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to store backfill message")
@@ -749,10 +753,12 @@ func (a *App) storeMessage(msg *gmproto.Message) {
 	}
 	// Own messages fetched here (recent reconcile, backfill, pending-media
 	// refresh) replace the send placeholder too, just like live echoes in
-	// client.EventHandler; fetched copies often carry no TmpID, so the
-	// content-matching fallback is what normally applies.
+	// client.EventHandler. Fetched copies often carry the temporary id on a
+	// field other than Message.tmpID, and a later page can be the first copy
+	// that has the body.
 	if dbMsg.IsFromMe {
-		if removed, err := a.Store.ReconcileOwnEcho(dbMsg, msg.GetTmpID(), isNewOwn); err != nil {
+		bodyArrived := strings.TrimSpace(prevBody) == "" && strings.TrimSpace(dbMsg.Body) != ""
+		if removed, err := a.Store.ReconcileOwnEchoIDs(dbMsg, client.PlaceholderIDs(msg), isNewOwn || bodyArrived); err != nil {
 			a.Logger.Warn().Err(err).Str("msg_id", dbMsg.MessageID).Msg("Failed to clean up send placeholder")
 		} else if removed != "" {
 			a.Logger.Debug().Str("tmp_id", removed).Str("msg_id", dbMsg.MessageID).Str("conv_id", dbMsg.ConversationID).Msg("Cleaned up tmp message (fetched copy)")

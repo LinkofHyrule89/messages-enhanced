@@ -26,8 +26,9 @@ import (
 // conversation, both from me, placeholder still in a sending state, timestamps
 // within OutgoingPlaceholderMatchWindowMS, and either the same trimmed text
 // (no media on either side) or media on both sides with a compatible MIME
-// type. A placeholder with no matching real message is never touched: it may
-// be a genuinely failed send the user needs to see.
+// type. A still-sending placeholder older than that window, and still
+// unmatched, is expired: the echo is not coming. OUTGOING_FAILED and
+// OUTGOING_CANCELLED stay, because those are the sends the user needs to see.
 
 const (
 	// OutgoingPlaceholderPrefix is the web/car UI idempotency-key prefix
@@ -295,11 +296,33 @@ func (s *Store) deleteOutgoingPlaceholderIfEchoed(placeholderID string, notBefor
 // re-deliveries of an already-known message can't consume another pending
 // placeholder. Returns the deleted placeholder ID ("" if none).
 func (s *Store) ReconcileOwnEcho(real *Message, tmpID string, isNew bool) (string, error) {
+	return s.ReconcileOwnEchoIDs(real, []string{tmpID}, isNew)
+}
+
+// ReconcileOwnEchoIDs is ReconcileOwnEcho for every temporary id the echo
+// actually carries. Only tm-/tmp_ ids are deleted: a group/MMS echo sometimes
+// names some other message id in the tmp field, and deleting that row used to
+// skip the content fallback, leaving the real placeholder in the thread.
+// When the placeholder lives in the conversation the user sent to and the echo
+// was stored under a different id, the real row moves onto the send's
+// conversation before the placeholder is removed. allowContentMatch is false
+// for a status-only redelivery of a message that already had a body, so that
+// update cannot consume a later identical send.
+func (s *Store) ReconcileOwnEchoIDs(real *Message, tmpIDs []string, allowContentMatch bool) (string, error) {
 	if real == nil || !real.IsFromMe || isLocalOutgoingID(real.MessageID) {
 		return "", nil
 	}
-	if tmpID != "" && tmpID != real.MessageID {
-		deleted, err := s.DeleteMessageIfExists(tmpID)
+	seen := map[string]struct{}{}
+	for _, tmpID := range tmpIDs {
+		tmpID = strings.TrimSpace(tmpID)
+		if tmpID == "" || tmpID == real.MessageID || !IsOutgoingPlaceholderID(tmpID) {
+			continue
+		}
+		if _, ok := seen[tmpID]; ok {
+			continue
+		}
+		seen[tmpID] = struct{}{}
+		deleted, err := s.deletePlaceholderForEcho(real, tmpID)
 		if err != nil {
 			return "", err
 		}
@@ -307,10 +330,170 @@ func (s *Store) ReconcileOwnEcho(real *Message, tmpID string, isNew bool) (strin
 			return tmpID, nil
 		}
 	}
-	if !isNew {
+	if !allowContentMatch {
 		return "", nil
 	}
 	return s.DeleteMatchingOutgoingPlaceholder(real)
+}
+
+// deletePlaceholderForEcho removes one known placeholder. If that placeholder
+// was filed in a different conversation than the echo, the echo moves there
+// first so the thread the user sent in is the one that keeps the real row.
+func (s *Store) deletePlaceholderForEcho(real *Message, placeholderID string) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	rows, err := queryMessagesTx(tx, `SELECT `+messageColumns+` FROM messages WHERE message_id = ?`, placeholderID)
+	if err != nil || len(rows) == 0 {
+		return false, err
+	}
+	placeholder := rows[0]
+	if !IsOutgoingPlaceholderID(placeholder.MessageID) {
+		return false, nil
+	}
+	if placeholder.ConversationID != "" && placeholder.ConversationID != real.ConversationID {
+		if _, err := tx.Exec(`UPDATE messages SET conversation_id = ? WHERE message_id = ?`, placeholder.ConversationID, real.MessageID); err != nil {
+			return false, err
+		}
+		if real.TimestampMS > 0 {
+			if _, err := tx.Exec(`
+				UPDATE conversations
+				SET last_message_ts = CASE WHEN last_message_ts < ? THEN ? ELSE last_message_ts END
+				WHERE conversation_id = ?
+			`, real.TimestampMS, real.TimestampMS, placeholder.ConversationID); err != nil {
+				return false, err
+			}
+		}
+		real.ConversationID = placeholder.ConversationID
+	}
+	if _, err := s.deleteMessages(tx, `message_id = ?`, placeholder.MessageID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ExpireUnmatchedOutgoingPlaceholders deletes still-sending tm-/tmp_ rows
+// older than the match window. A placeholder that never meets its echo would
+// otherwise stay in the thread as "Sending" with no sender name.
+func (s *Store) ExpireUnmatchedOutgoingPlaceholders(conversationIDs []string, nowMS int64) (int, error) {
+	if len(conversationIDs) == 0 || nowMS <= 0 {
+		return 0, nil
+	}
+	cutoff := nowMS - OutgoingPlaceholderMatchWindowMS
+	holders := make([]string, len(conversationIDs))
+	args := make([]any, 0, len(conversationIDs)+3)
+	for i, id := range conversationIDs {
+		holders[i] = "?"
+		args = append(args, id)
+	}
+	args = append(args, cutoff, OutgoingPlaceholderPrefix, OutgoingServerTmpPrefix)
+	rows, err := s.db.Query(`
+		SELECT message_id, status
+		FROM messages
+		WHERE conversation_id IN (`+strings.Join(holders, ",")+`)
+		  AND is_from_me = 1
+		  AND timestamp_ms > 0
+		  AND timestamp_ms < ?
+		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ?)
+	`, args...)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id, status string
+		if err := rows.Scan(&id, &status); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if isPlaceholderSendingStatus(status) {
+			ids = append(ids, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	in := make([]string, len(ids))
+	delArgs := make([]any, len(ids))
+	for i, id := range ids {
+		in[i] = "?"
+		delArgs[i] = id
+	}
+	if _, err := s.deleteMessages(tx, `message_id IN (`+strings.Join(in, ",")+`)`, delArgs...); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
+
+// dropMatchedOutgoingPlaceholders hides a sending placeholder when the real
+// Google row is in the same result. The real row wins even if the placeholder
+// is newer in the list.
+func dropMatchedOutgoingPlaceholders(msgs []*Message) []*Message {
+	if len(msgs) < 2 {
+		return msgs
+	}
+	type pair struct {
+		placeholderID string
+		realID        string
+		dist          int64
+	}
+	var pairs []pair
+	for _, placeholder := range msgs {
+		if placeholder == nil || !IsOutgoingPlaceholderID(placeholder.MessageID) || !isPlaceholderSendingStatus(placeholder.Status) {
+			continue
+		}
+		for _, real := range msgs {
+			if real == nil || !OutgoingPlaceholderMatches(placeholder, real) {
+				continue
+			}
+			pairs = append(pairs, pair{placeholder.MessageID, real.MessageID, absInt64(placeholder.TimestampMS - real.TimestampMS)})
+		}
+	}
+	if len(pairs) == 0 {
+		return msgs
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].dist != pairs[j].dist {
+			return pairs[i].dist < pairs[j].dist
+		}
+		return pairs[i].placeholderID < pairs[j].placeholderID
+	})
+	drop := map[string]bool{}
+	usedReal := map[string]bool{}
+	for _, pair := range pairs {
+		if drop[pair.placeholderID] || usedReal[pair.realID] {
+			continue
+		}
+		drop[pair.placeholderID] = true
+		usedReal[pair.realID] = true
+	}
+	out := make([]*Message, 0, len(msgs)-len(drop))
+	for _, msg := range msgs {
+		if msg == nil || drop[msg.MessageID] {
+			continue
+		}
+		out = append(out, msg)
+	}
+	return out
 }
 
 // DeleteMessageIfExists deletes one message by ID and reports whether a row
