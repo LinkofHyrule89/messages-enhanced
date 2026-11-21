@@ -464,6 +464,14 @@ func repairStartupArtifacts(logger zerolog.Logger, store *db.Store) {
 	} else if ran {
 		logger.Info().Int("removed", removed).Msg("One-time cleanup of stuck send placeholders that already have a delivered copy")
 	}
+	// Android idempotency keys are UUIDs, and v2 transport request ids are 32
+	// hex characters. The prefix sweep above does not see them, so each one
+	// stayed in the thread next to Google's copy.
+	if ran, removed, err := store.CleanupClientIdempotencyPlaceholdersOnce(time.Now().UnixMilli()); err != nil {
+		logger.Warn().Err(err).Msg("Failed to clean up idempotency-key send placeholders")
+	} else if ran {
+		logger.Info().Int("removed", removed).Msg("One-time cleanup of Android and transport-request send placeholders")
+	}
 	if removed, err := store.RepairEmptyStubMessages(); err != nil {
 		logger.Warn().Err(err).Msg("Failed to remove empty stub messages")
 	} else if removed > 0 {

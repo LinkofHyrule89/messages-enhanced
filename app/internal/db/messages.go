@@ -303,10 +303,14 @@ func (s *Store) SearchMessagesFiltered(query string, f SearchFilter) ([]*Message
 	if s.ftsEnabled {
 		msgs, err := s.searchMessagesFTS(query, f)
 		if err == nil && len(msgs) > 0 {
-			return msgs, nil
+			return dropMatchedOutgoingPlaceholders(msgs), nil
 		}
 	}
-	return s.searchMessagesLike(query, f)
+	msgs, err := s.searchMessagesLike(query, f)
+	if err != nil {
+		return nil, err
+	}
+	return dropMatchedOutgoingPlaceholders(msgs), nil
 }
 
 func (s *Store) searchMessagesFTS(query string, f SearchFilter) ([]*Message, error) {

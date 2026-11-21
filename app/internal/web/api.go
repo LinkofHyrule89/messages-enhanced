@@ -466,7 +466,7 @@ func APIHandlerWithOptions(store *db.Store, cli *client.Client, logger zerolog.L
 	// Sending. Real copies from before the send started (minus clock slack)
 	// don't count, so an earlier identical message isn't mistaken for this one.
 	dropPlaceholderIfEchoed := func(placeholderID string, sendStartedMS int64) {
-		if !db.IsOutgoingPlaceholderID(placeholderID) {
+		if !db.IsOutgoingPlaceholderID(placeholderID) && !db.IsOpaqueClientPlaceholderID(placeholderID) {
 			return
 		}
 		realID, err := store.DeleteOutgoingPlaceholderIfEchoed(placeholderID, sendStartedMS-outgoingEchoClockSlackMS)

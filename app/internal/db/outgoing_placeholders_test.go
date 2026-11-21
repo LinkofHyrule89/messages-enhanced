@@ -7,6 +7,13 @@ import (
 
 const phBase = int64(1_790_738_307_000) // ~2026-09-29 21:18 MDT
 
+// androidSendUUID is the shape of IdempotencyKeys.newKey() on the Android app.
+// transportRequestID is the shape of messaging.CryptoIDSource.
+const (
+	androidSendUUID    = "6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+	transportRequestID = "0123456789abcdef0123456789abcdef"
+)
+
 func placeholderMsg(id, conv, body string, ts int64) *Message {
 	return &Message{MessageID: id, ConversationID: conv, Body: body, TimestampMS: ts, Status: "OUTGOING_SENDING", IsFromMe: true}
 }
@@ -59,6 +66,8 @@ func TestOutgoingPlaceholderMatches(t *testing.T) {
 		{"empty text never matches", placeholderMsg("tm-1", "5", "  ", phBase), realOwnMsg("g1", "5", "", phBase+1000), false},
 		{"failed placeholder", &Message{MessageID: "tm-1", ConversationID: "5", Body: "hi", TimestampMS: phBase, Status: "OUTGOING_FAILED:FAILURE_2", IsFromMe: true}, realOwnMsg("g1", "5", "hi", phBase+1000), false},
 		{"tmp_ server/MCP placeholder", placeholderMsg("tmp_000000000001", "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), true},
+		{"android uuid idempotency key", placeholderMsg(androidSendUUID, "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), true},
+		{"v2 transport request id", placeholderMsg(transportRequestID, "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), true},
 		{"not a placeholder id", placeholderMsg("msg-local-1", "5", "hi", phBase), realOwnMsg("g1", "5", "hi", phBase+1000), false},
 		{"real is another placeholder", placeholderMsg("tm-1", "5", "hi", phBase), placeholderMsg("tm-2", "5", "hi", phBase+1000), false},
 		{"real is incoming", placeholderMsg("tm-1", "5", "hi", phBase), &Message{MessageID: "g1", ConversationID: "5", Body: "hi", TimestampMS: phBase + 1000, Status: "INCOMING_COMPLETE"}, false},
@@ -178,6 +187,15 @@ func TestDeleteOutgoingPlaceholderIfEchoed(t *testing.T) {
 	if realID, _ := s.DeleteOutgoingPlaceholderIfEchoed("msg-not-a-placeholder", 0); realID != "" {
 		t.Fatalf("non-placeholder id handled: %q", realID)
 	}
+
+	// The Android app's idempotency key is a UUID, not tm-/tmp_. The echo can
+	// win the race for that row too.
+	mustStore(t, s, placeholderMsg(androidSendUUID, "5", "from the app", phBase+200000))
+	mustStore(t, s, realOwnMsg("g-android", "5", "from the app", phBase+200400))
+	if realID, err := s.DeleteOutgoingPlaceholderIfEchoed(androidSendUUID, phBase+200000-5000); err != nil || realID != "g-android" {
+		t.Fatalf("android uuid realID = %q, err = %v", realID, err)
+	}
+	assertPresent(t, s, androidSendUUID, false)
 }
 
 func TestDeleteKnownOutgoingPlaceholderIfEchoed(t *testing.T) {
@@ -247,6 +265,13 @@ func TestDedupePersonMessagesPrefersRealEcho(t *testing.T) {
 	})
 	if len(got) != 1 || got[0].MessageID != "200342" {
 		t.Fatalf("deduped = %+v", got)
+	}
+	got = dedupePersonMessages([]*Message{
+		{MessageID: androidSendUUID, Body: "from the app", TimestampMS: now, IsFromMe: true, Status: "OUTGOING_SENDING"},
+		{MessageID: "200500", Body: "from the app", TimestampMS: now + 400, IsFromMe: true, Status: "OUTGOING_COMPLETE", SenderNumber: "+15551230000"},
+	})
+	if len(got) != 1 || got[0].MessageID != "200500" {
+		t.Fatalf("android uuid deduped = %+v", got)
 	}
 }
 
@@ -322,6 +347,105 @@ func TestReconcileOwnEcho_TmpServerPlaceholder(t *testing.T) {
 	}
 	assertPresent(t, s, "tmp_012345678901", false)
 	assertPresent(t, s, "192500", true)
+}
+
+func TestAndroidUUIDPlaceholderDoesNotLeakIntoThreadReads(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UnixMilli()
+	withSender := placeholderMsg(transportRequestID, "5", "real still sending", now-10*60*1000)
+	withSender.SenderNumber = "+15551230000"
+	mustStore(t, s,
+		placeholderMsg(androidSendUUID, "5", "from the app", now-10*60*1000),
+		realOwnMsg("200500", "5", "from the app", now-10*60*1000+400),
+		placeholderMsg("11111111-2222-4333-8444-555555555555", "5", "still sending", now),
+		realOwnMsg("200501", "5", "still sending", now+300),
+		withSender,
+	)
+	// A Google id that happens to look like a transport request id, and still
+	// says Sending, is not an optimistic row when it has a sender.
+	if OutgoingPlaceholderMatches(withSender, realOwnMsg("200500", "5", "real still sending", now-10*60*1000+100)) {
+		t.Fatal("a sent Google row must not match as a placeholder")
+	}
+
+	msgs, err := s.GetMessagesByConversation("5", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, m := range msgs {
+		got[m.MessageID] = true
+	}
+	if got[androidSendUUID] || got["11111111-2222-4333-8444-555555555555"] {
+		t.Fatalf("thread read still contains placeholders: %+v", msgs)
+	}
+	if !got["200500"] || !got["200501"] || !got[transportRequestID] {
+		t.Fatalf("thread read = %+v", msgs)
+	}
+	// Older than the match window: the read deletes it. The fresh one is only
+	// hidden, so a send that is still in flight can still be reconciled.
+	assertPresent(t, s, androidSendUUID, false)
+	assertPresent(t, s, "11111111-2222-4333-8444-555555555555", true)
+	assertPresent(t, s, transportRequestID, true)
+}
+
+func TestReconcileOwnEcho_AndroidUUIDAndDoesNotDeleteRealTmpID(t *testing.T) {
+	s := newTestStore(t)
+	realNamed := placeholderMsg(transportRequestID, "5", "older", phBase)
+	realNamed.Status = "OUTGOING_SENDING"
+	realNamed.SenderNumber = "+15551230000"
+	mustStore(t, s,
+		placeholderMsg(androidSendUUID, "5", "on my way", phBase+1000),
+		realNamed,
+	)
+	echo := realOwnMsg("200100", "5", "on my way", phBase+1500)
+	mustStore(t, s, echo)
+	// The echo names the real message, the way a group/MMS update sometimes
+	// does. That row stays. The Android placeholder is removed by content.
+	removed, err := s.ReconcileOwnEchoIDs(echo, []string{transportRequestID}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != androidSendUUID {
+		t.Fatalf("removed = %q, want the android placeholder", removed)
+	}
+	assertPresent(t, s, transportRequestID, true)
+	assertPresent(t, s, "200100", true)
+
+	// The usual path: the echo's TmpID is the UUID itself.
+	mustStore(t, s, placeholderMsg(androidSendUUID, "5", "second", phBase+5000))
+	second := realOwnMsg("200101", "5", "second", phBase+5400)
+	removed, err = s.ReconcileOwnEchoIDs(second, []string{androidSendUUID}, true)
+	if err != nil || removed != androidSendUUID {
+		t.Fatalf("exact uuid removed = %q, err = %v", removed, err)
+	}
+	assertPresent(t, s, androidSendUUID, false)
+}
+
+func TestCleanupClientIdempotencyPlaceholdersOnce(t *testing.T) {
+	s := newTestStore(t)
+	now := time.Now().UnixMilli()
+	stuck := placeholderMsg(androidSendUUID, "5", "stuck sending", now-10*60*1000)
+	fresh := placeholderMsg("11111111-2222-4333-8444-555555555555", "5", "in flight", now-1000)
+	matched := placeholderMsg("cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa", "6", "hello", now-2000)
+	kept := placeholderMsg(transportRequestID, "5", "google id", now-10*60*1000)
+	kept.SenderNumber = "+15551230000"
+	mustStore(t, s, stuck, fresh, matched, realOwnMsg("g-hello", "6", "hello", now-1500), kept)
+
+	ran, n, err := s.CleanupClientIdempotencyPlaceholdersOnce(now)
+	if err != nil || !ran || n != 2 {
+		t.Fatalf("first run: ran=%v removed=%d err=%v", ran, n, err)
+	}
+	assertPresent(t, s, androidSendUUID, false)
+	assertPresent(t, s, matched.MessageID, false)
+	assertPresent(t, s, fresh.MessageID, true)
+	assertPresent(t, s, "g-hello", true)
+	assertPresent(t, s, transportRequestID, true)
+
+	ran, n, err = s.CleanupClientIdempotencyPlaceholdersOnce(now)
+	if err != nil || ran || n != 0 {
+		t.Fatalf("second run: ran=%v removed=%d err=%v", ran, n, err)
+	}
+	assertPresent(t, s, fresh.MessageID, true)
 }
 
 func TestReconcileOwnEcho_TmpExactID(t *testing.T) {

@@ -68,6 +68,37 @@ func TestHandleMessage_EchoWithoutTmpIDRemovesMatchingPlaceholder(t *testing.T) 
 	}
 }
 
+func TestHandleMessage_AndroidUUIDPlaceholderRemoved(t *testing.T) {
+	store, err := db.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	const ts = int64(1_790_738_307_000)
+	const uuid = "6ba7b810-9dad-41d1-80b4-00c04fd430c8"
+	if err := store.UpsertMessage(&db.Message{
+		MessageID: uuid, ConversationID: "dm-1", Body: "on my way",
+		TimestampMS: ts, Status: "OUTGOING_SENDING", IsFromMe: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := &EventHandler{Store: store, Logger: zerolog.Nop()}
+	h.handleMessage(ownEcho("200500", "dm-1", "on my way", ts+400, uuid, gmproto.MessageStatusType_OUTGOING_COMPLETE))
+	if m, _ := store.GetMessageByID(uuid); m != nil {
+		t.Fatal("android uuid placeholder should be removed when the echo names it")
+	}
+	if m, _ := store.GetMessageByID("200500"); m == nil || m.Status != "OUTGOING_COMPLETE" {
+		t.Fatalf("real echo = %+v", m)
+	}
+	msgs, err := store.GetMessagesByConversation("dm-1", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].MessageID != "200500" {
+		t.Fatalf("thread = %+v", msgs)
+	}
+}
+
 func TestHandleMessage_DirectEchoWithDifferentTmpIDReplacesPlaceholder(t *testing.T) {
 	store, err := db.New(":memory:")
 	if err != nil {
