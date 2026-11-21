@@ -2133,24 +2133,32 @@
 
   // ---------- pending send placeholders ----------
   // A send is stored by the server under its temporary ID ("tm-..." from this
-  // app, "tmp_..." from server/MCP sends) with
-  // status OUTGOING_SENDING until Google's real copy replaces it. If both are
-  // ever present (the server cleanup missed it), show only the real one, by
-  // the same rule the server uses (db.OutgoingPlaceholderMatches): same
-  // conversation, both from me, placeholder still sending, within 3 minutes,
-  // and the same trimmed text or media on both sides with a compatible type.
+  // app, "tmp_..." from server/MCP sends, a UUID from the Android app, or 32
+  // hex characters from a v2 transport request id) with status OUTGOING_SENDING
+  // until Google's real copy replaces it. If both are ever present (the server
+  // cleanup missed it), show only the real one, by the same rule the server
+  // uses (db.OutgoingPlaceholderMatches): same conversation, both from me,
+  // placeholder still sending, within 3 minutes, and the same trimmed text or
+  // media on both sides with a compatible type. UUID and 32-hex rows count
+  // only when they have no sender; a Google message carries one.
   var PLACEHOLDER_WINDOW_MS = 3 * 60 * 1000;
+  function isOpaqueSendID(id) {
+    return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id) ||
+      /^[0-9a-fA-F]{32}$/.test(id);
+  }
   function isSendPlaceholder(m) {
     var s = String(m.Status || "").toUpperCase();
-    return !!m.IsFromMe && /^(tm-|tmp_)/.test(String(m.MessageID || "")) &&
-      !/FAIL|CANCEL/.test(s) && /SENDING|YET_TO_SEND|VALIDATING|AWAITING_RETRY/.test(s);
+    var id = String(m.MessageID || "");
+    if (!m.IsFromMe || /FAIL|CANCEL/.test(s) || !/SENDING|YET_TO_SEND|VALIDATING|AWAITING_RETRY/.test(s)) return false;
+    if (/^(tm-|tmp_)/.test(id)) return true;
+    return isOpaqueSendID(id) && !String(m.SenderName || "").trim() && !String(m.SenderNumber || "").trim();
   }
   function mimeMajor(t) {
     t = String(t || "").toLowerCase().split(";")[0].trim();
     return !t || t === "application/octet-stream" ? "" : t.split("/")[0];
   }
   function placeholderMatches(p, r) {
-    if (!r.IsFromMe || /^(tm-|tmp_)/.test(String(r.MessageID || "")) || p.ConversationID !== r.ConversationID) return false;
+    if (!r.IsFromMe || isSendPlaceholder(r) || /^(tm-|tmp_)/.test(String(r.MessageID || "")) || p.ConversationID !== r.ConversationID) return false;
     if (!p.TimestampMS || !r.TimestampMS || Math.abs(p.TimestampMS - r.TimestampMS) > PLACEHOLDER_WINDOW_MS) return false;
     var pm = !!String(p.MediaID || "").trim(), rm = !!String(r.MediaID || "").trim();
     if (pm && rm) { var a = mimeMajor(p.MimeType), b = mimeMajor(r.MimeType); return !a || !b || a === b; }

@@ -199,7 +199,7 @@ func dedupePersonMessages(msgs []*Message) []*Message {
 				break
 			}
 			if diff >= 0 && m.Body == prev.Body && m.IsFromMe == prev.IsFromMe {
-				if IsOutgoingPlaceholderID(prev.MessageID) && !IsOutgoingPlaceholderID(m.MessageID) {
+				if PreferRealOverPlaceholder(prev, m) {
 					result[i] = m
 				}
 				dup = true

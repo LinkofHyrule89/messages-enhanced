@@ -18,7 +18,7 @@ const outgoingEchoClockSlackMS = int64(5000)
 // real copy already arrived (echo won the race). Covers both tm- (web) and
 // tmp_ (MCP / SendTextToConversation) IDs.
 func (a *App) DropPlaceholderIfEchoed(placeholderID string, sendStartedMS int64) {
-	if a == nil || a.Store == nil || !db.IsOutgoingPlaceholderID(placeholderID) {
+	if a == nil || a.Store == nil || (!db.IsOutgoingPlaceholderID(placeholderID) && !db.IsOpaqueClientPlaceholderID(placeholderID)) {
 		return
 	}
 	realID, err := a.Store.DeleteOutgoingPlaceholderIfEchoed(placeholderID, sendStartedMS-outgoingEchoClockSlackMS)

@@ -484,8 +484,8 @@ func deduplicateMessages(msgs []*db.Message) []*db.Message {
 				break // Too far apart in time
 			}
 			if tsDiff >= 0 && tsDiff <= 2000 && m.Body == prev.Body && m.IsFromMe == prev.IsFromMe {
-				// A tmp_/tm- placeholder is the earlier copy. Keep Google's row.
-				if db.IsOutgoingPlaceholderID(prev.MessageID) && !db.IsOutgoingPlaceholderID(m.MessageID) {
+				// A local send placeholder is the earlier copy. Keep Google's row.
+				if db.PreferRealOverPlaceholder(prev, m) {
 					result[i] = m
 				}
 				isDup = true

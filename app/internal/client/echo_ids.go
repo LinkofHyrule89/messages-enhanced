@@ -10,18 +10,21 @@ import (
 	"github.com/maxghenis/openmessage/internal/db"
 )
 
-// PlaceholderIDs returns every tm-/tmp_ id carried on a Google echo. Group and
+// PlaceholderIDs returns every temporary id carried on a Google echo. Group and
 // MMS echoes often leave Message.tmpID empty and put the send's temporary id
 // on another string field, including fields this proto build does not name.
+// Named id fields also include Android UUID keys and v2 transport request ids.
+// Unknown bytes are scanned for tm-/tmp_ only, so a binary field cannot look
+// like a UUID and delete some other row.
 func PlaceholderIDs(msg *gmproto.Message) []string {
 	if msg == nil {
 		return nil
 	}
 	seen := map[string]struct{}{}
 	var ids []string
-	add := func(id string) {
+	add := func(id string, allowOpaque bool) {
 		id = strings.TrimSpace(id)
-		if !db.IsOutgoingPlaceholderID(id) {
+		if !db.IsOutgoingPlaceholderID(id) && !(allowOpaque && db.IsOpaqueClientPlaceholderID(id)) {
 			return
 		}
 		if _, ok := seen[id]; ok {
@@ -30,12 +33,14 @@ func PlaceholderIDs(msg *gmproto.Message) []string {
 		seen[id] = struct{}{}
 		ids = append(ids, id)
 	}
-	add(msg.GetTmpID())
+	addKnown := func(id string) { add(id, true) }
+	addPrefix := func(id string) { add(id, false) }
+	addKnown(msg.GetTmpID())
 	if other := msg.GetAnotherMessageID(); other != nil {
-		add(other.GetMessageID())
-		add(other.GetAnotherID())
+		addKnown(other.GetMessageID())
+		addKnown(other.GetAnotherID())
 	}
-	walkPlaceholderIDs(msg.ProtoReflect(), add)
+	walkPlaceholderIDs(msg.ProtoReflect(), addPrefix)
 	return ids
 }
 

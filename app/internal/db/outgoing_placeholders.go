@@ -12,15 +12,19 @@ import (
 //
 // When a Google Messages send succeeds, the app stores a local row with
 // MessageID = the send's temporary ID and status OUTGOING_SENDING, so the
-// message shows immediately. Temporary IDs are either "tm-<ms>-<rand>" from
-// the car/web UI or "tmp_<digits>" from server-side sends (MCP tools,
-// app.SendTextToConversation, the scheduler). The real copy arrives later
-// from Google with its own message ID. Normally the echo carries the same
-// TmpID and the placeholder is deleted by ID, but that can miss: the echo
-// can be processed before the placeholder row is written (the send response
-// and the echo race over the same long-poll), and copies that come in
-// through the reconcile/backfill fetch path may not carry a TmpID at all.
-// The placeholder then stays forever as a duplicate stuck on "Sending".
+// message shows immediately. Temporary IDs are "tm-<ms>-<rand>" from the
+// car/web UI, "tmp_<digits>" from server-side sends (MCP tools,
+// app.SendTextToConversation, the scheduler), a UUID from the Android app's
+// idempotency key, or 32 hex characters from a v2 transport request id.
+// /api/send stores the caller's idempotency key as the row id and as Google's
+// TmpID. The real copy arrives later with its own message ID. Normally the
+// echo carries that same TmpID and the placeholder is deleted by ID, but that
+// can miss: the echo can be processed before the placeholder row is written
+// (the send response and the echo race over the same long-poll), and copies
+// that come in through the reconcile/backfill fetch path may not carry a
+// TmpID at all. The placeholder then stays forever as a duplicate stuck on
+// "Sending". Group and MMS echoes sometimes put some other message id in a
+// tmp field; only a row that is still an optimistic send is deleted for those.
 //
 // The helpers below remove such a placeholder by content instead: same
 // conversation, both from me, placeholder still in a sending state, timestamps
@@ -43,9 +47,82 @@ const (
 )
 
 // IsOutgoingPlaceholderID reports whether id is a local optimistic-send
-// placeholder (web "tm-…" or server/MCP "tmp_…").
+// placeholder with the web "tm-…" or server/MCP "tmp_…" prefix.
 func IsOutgoingPlaceholderID(id string) bool {
 	return strings.HasPrefix(id, OutgoingPlaceholderPrefix) || strings.HasPrefix(id, OutgoingServerTmpPrefix)
+}
+
+// IsOpaqueClientPlaceholderID reports a send id this server stores that is not
+// a tm-/tmp_ prefix. The Android app's idempotency key is a UUID. The v2
+// transport request id is 32 hex characters. Google message ids are neither.
+func IsOpaqueClientPlaceholderID(id string) bool {
+	return isCanonicalUUID(id) || isHex32(id)
+}
+
+func isCanonicalUUID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !isHexByte(c) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isHex32(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		if !isHexByte(id[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isHexByte(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+// localPlaceholderRow is an optimistic send still waiting for Google's copy.
+// tm-/tmp_ ids are always that row. A UUID or 32-hex id counts only when it
+// has no sender: /api/send and the legacy v2 placeholder write the row that
+// way, while a Google message carries the sender from the echo.
+func localPlaceholderRow(m *Message) bool {
+	if m == nil || !m.IsFromMe || !isPlaceholderSendingStatus(m.Status) {
+		return false
+	}
+	if IsOutgoingPlaceholderID(m.MessageID) {
+		return true
+	}
+	if !IsOpaqueClientPlaceholderID(m.MessageID) {
+		return false
+	}
+	return strings.TrimSpace(m.SenderName) == "" && strings.TrimSpace(m.SenderNumber) == ""
+}
+
+// PreferRealOverPlaceholder reports whether next should replace prev when the
+// two rows are the same send. Used by person-message dedupe so the optimistic
+// row does not hide Google's copy.
+func PreferRealOverPlaceholder(prev, next *Message) bool {
+	if prev == nil || next == nil {
+		return false
+	}
+	if IsOutgoingPlaceholderID(prev.MessageID) && !IsOutgoingPlaceholderID(next.MessageID) {
+		return true
+	}
+	return localPlaceholderRow(prev) && !localPlaceholderRow(next) && !IsOutgoingPlaceholderID(next.MessageID)
 }
 
 func isLocalOutgoingID(id string) bool {
@@ -109,10 +186,10 @@ func outgoingEchoMatch(placeholder, real *Message, requireLocalID bool) bool {
 	if placeholder == nil || real == nil {
 		return false
 	}
-	if placeholder.MessageID == real.MessageID || isLocalOutgoingID(real.MessageID) {
+	if placeholder.MessageID == real.MessageID || isLocalOutgoingID(real.MessageID) || localPlaceholderRow(real) {
 		return false
 	}
-	if requireLocalID && !IsOutgoingPlaceholderID(placeholder.MessageID) {
+	if requireLocalID && !localPlaceholderRow(placeholder) {
 		return false
 	}
 	if !placeholder.IsFromMe || !real.IsFromMe {
@@ -158,7 +235,7 @@ func placeholderCandidatesTx(tx *sql.Tx, conversationID string, fromMS, toMS int
 		FROM messages
 		WHERE conversation_id = ?
 		  AND is_from_me = 1
-		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ?)
+		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ? OR length(message_id) = 32 OR length(message_id) = 36)
 		  AND timestamp_ms BETWEEN ? AND ?
 		ORDER BY timestamp_ms ASC, message_id ASC
 	`, conversationID, OutgoingPlaceholderPrefix, OutgoingServerTmpPrefix, fromMS, toMS)
@@ -233,10 +310,16 @@ func (s *Store) DeleteMatchingOutgoingPlaceholder(real *Message) (string, error)
 // can't be mistaken for this one. Returns the ID of the matching real message,
 // or "" when the placeholder was kept.
 func (s *Store) DeleteOutgoingPlaceholderIfEchoed(placeholderID string, notBeforeMS int64) (string, error) {
-	if !IsOutgoingPlaceholderID(placeholderID) {
+	switch {
+	case IsOutgoingPlaceholderID(placeholderID):
+		return s.deleteOutgoingPlaceholderIfEchoed(placeholderID, notBeforeMS, true)
+	case IsOpaqueClientPlaceholderID(placeholderID):
+		// Android UUID keys and v2 transport request ids are not tm-/tmp_, but
+		// the send path just stored this row and the echo may already be here.
+		return s.deleteOutgoingPlaceholderIfEchoed(placeholderID, notBeforeMS, false)
+	default:
 		return "", nil
 	}
-	return s.deleteOutgoingPlaceholderIfEchoed(placeholderID, notBeforeMS, true)
 }
 
 // DeleteKnownOutgoingPlaceholderIfEchoed is DeleteOutgoingPlaceholderIfEchoed
@@ -300,9 +383,10 @@ func (s *Store) ReconcileOwnEcho(real *Message, tmpID string, isNew bool) (strin
 }
 
 // ReconcileOwnEchoIDs is ReconcileOwnEcho for every temporary id the echo
-// actually carries. Only tm-/tmp_ ids are deleted: a group/MMS echo sometimes
-// names some other message id in the tmp field, and deleting that row used to
-// skip the content fallback, leaving the real placeholder in the thread.
+// actually carries. tm-/tmp_ ids are deleted, and so are Android UUID keys and
+// v2 transport request ids when the stored row is still an optimistic send.
+// A group/MMS echo sometimes names some other message id in the tmp field;
+// that row is left in place so the content fallback can still run.
 // When the placeholder lives in the conversation the user sent to and the echo
 // was stored under a different id, the real row moves onto the send's
 // conversation before the placeholder is removed. allowContentMatch is false
@@ -315,7 +399,15 @@ func (s *Store) ReconcileOwnEchoIDs(real *Message, tmpIDs []string, allowContent
 	seen := map[string]struct{}{}
 	for _, tmpID := range tmpIDs {
 		tmpID = strings.TrimSpace(tmpID)
-		if tmpID == "" || tmpID == real.MessageID || !IsOutgoingPlaceholderID(tmpID) {
+		if tmpID == "" || tmpID == real.MessageID {
+			continue
+		}
+		// Skip ids that are not one of ours. A group/MMS echo sometimes names
+		// a real message id in the tmp field; deleting that row used to skip
+		// the content fallback. UUID and 32-hex ids are still ours (Android
+		// idempotency key, v2 transport request id) and are deleted only when
+		// the stored row is still an optimistic send.
+		if !IsOutgoingPlaceholderID(tmpID) && !IsOpaqueClientPlaceholderID(tmpID) {
 			continue
 		}
 		if _, ok := seen[tmpID]; ok {
@@ -351,7 +443,7 @@ func (s *Store) deletePlaceholderForEcho(real *Message, placeholderID string) (b
 		return false, err
 	}
 	placeholder := rows[0]
-	if !IsOutgoingPlaceholderID(placeholder.MessageID) {
+	if !IsOutgoingPlaceholderID(placeholder.MessageID) && !localPlaceholderRow(placeholder) {
 		return false, nil
 	}
 	if placeholder.ConversationID != "" && placeholder.ConversationID != real.ConversationID {
@@ -394,25 +486,25 @@ func (s *Store) ExpireUnmatchedOutgoingPlaceholders(conversationIDs []string, no
 	}
 	args = append(args, cutoff, OutgoingPlaceholderPrefix, OutgoingServerTmpPrefix)
 	rows, err := s.db.Query(`
-		SELECT message_id, status
+		SELECT message_id, status, sender_name, sender_number
 		FROM messages
 		WHERE conversation_id IN (`+strings.Join(holders, ",")+`)
 		  AND is_from_me = 1
 		  AND timestamp_ms > 0
 		  AND timestamp_ms < ?
-		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ?)
+		  AND (substr(message_id, 1, 3) = ? OR substr(message_id, 1, 4) = ? OR length(message_id) = 32 OR length(message_id) = 36)
 	`, args...)
 	if err != nil {
 		return 0, err
 	}
 	var ids []string
 	for rows.Next() {
-		var id, status string
-		if err := rows.Scan(&id, &status); err != nil {
+		var id, status, senderName, senderNumber string
+		if err := rows.Scan(&id, &status, &senderName, &senderNumber); err != nil {
 			rows.Close()
 			return 0, err
 		}
-		if isPlaceholderSendingStatus(status) {
+		if localPlaceholderRow(&Message{MessageID: id, Status: status, IsFromMe: true, SenderName: senderName, SenderNumber: senderNumber}) {
 			ids = append(ids, id)
 		}
 	}
@@ -458,7 +550,7 @@ func dropMatchedOutgoingPlaceholders(msgs []*Message) []*Message {
 	}
 	var pairs []pair
 	for _, placeholder := range msgs {
-		if placeholder == nil || !IsOutgoingPlaceholderID(placeholder.MessageID) || !isPlaceholderSendingStatus(placeholder.Status) {
+		if !localPlaceholderRow(placeholder) {
 			continue
 		}
 		for _, real := range msgs {
@@ -569,6 +661,138 @@ func (s *Store) CleanupMatchedOutgoingPlaceholdersOnce() (bool, int, error) {
 		return false, 0, err
 	}
 	return true, removed, nil
+}
+
+const clientIdempotencyPlaceholderCleanupTask = "cleanup_client_idempotency_placeholders_v1"
+
+// CleanupClientIdempotencyPlaceholdersOnce removes optimistic sends stored
+// under an Android UUID or a v2 transport request id. Those rows are not
+// tm-/tmp_, so the earlier prefix sweep left them next to Google's copy.
+// A still-sending row with a matching real message is deleted. One older than
+// the match window is deleted even without a match: the echo is not coming,
+// and the row is what the Android thread showed as a second bubble. A fresh
+// unmatched send is kept. The sweep is one-time; later echoes and thread
+// reads keep doing the same work.
+func (s *Store) CleanupClientIdempotencyPlaceholdersOnce(nowMS int64) (bool, int, error) {
+	if nowMS <= 0 {
+		nowMS = time.Now().UnixMilli()
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS store_maintenance_tasks (
+		name TEXT PRIMARY KEY,
+		done_at INTEGER NOT NULL DEFAULT 0,
+		result TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		return false, 0, err
+	}
+	var done int
+	err = tx.QueryRow(`SELECT 1 FROM store_maintenance_tasks WHERE name = ?`, clientIdempotencyPlaceholderCleanupTask).Scan(&done)
+	if err == nil {
+		return false, 0, nil
+	}
+	if err != sql.ErrNoRows {
+		return false, 0, err
+	}
+	removed, err := s.cleanupClientIdempotencyPlaceholdersTx(tx, nowMS)
+	if err != nil {
+		return false, 0, err
+	}
+	if _, err := tx.Exec(`INSERT INTO store_maintenance_tasks (name, done_at, result) VALUES (?, ?, ?)`,
+		clientIdempotencyPlaceholderCleanupTask, time.Now().UnixMilli(), fmt.Sprintf("removed=%d", removed)); err != nil {
+		return false, 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, 0, err
+	}
+	return true, removed, nil
+}
+
+func (s *Store) cleanupClientIdempotencyPlaceholdersTx(tx *sql.Tx, nowMS int64) (int, error) {
+	rows, err := queryMessagesTx(tx, `
+		SELECT `+messageColumns+`
+		FROM messages
+		WHERE is_from_me = 1
+		  AND (length(message_id) = 32 OR length(message_id) = 36)
+		ORDER BY conversation_id, timestamp_ms ASC, message_id ASC
+	`)
+	if err != nil {
+		return 0, err
+	}
+	var placeholders []*Message
+	for _, m := range rows {
+		if localPlaceholderRow(m) {
+			placeholders = append(placeholders, m)
+		}
+	}
+	if len(placeholders) == 0 {
+		return 0, nil
+	}
+	byConv := map[string][]*Message{}
+	var convOrder []string
+	for _, p := range placeholders {
+		if _, ok := byConv[p.ConversationID]; !ok {
+			convOrder = append(convOrder, p.ConversationID)
+		}
+		byConv[p.ConversationID] = append(byConv[p.ConversationID], p)
+	}
+	cutoff := nowMS - OutgoingPlaceholderMatchWindowMS
+	var toDelete []string
+	for _, conv := range convOrder {
+		ps := byConv[conv]
+		minTS, maxTS := ps[0].TimestampMS, ps[0].TimestampMS
+		for _, p := range ps {
+			if p.TimestampMS < minTS {
+				minTS = p.TimestampMS
+			}
+			if p.TimestampMS > maxTS {
+				maxTS = p.TimestampMS
+			}
+		}
+		reals, err := realOwnCandidatesTx(tx, conv, minTS-OutgoingPlaceholderMatchWindowMS, maxTS+OutgoingPlaceholderMatchWindowMS)
+		if err != nil {
+			return 0, err
+		}
+		type pair struct {
+			id, realID string
+			dist       int64
+		}
+		var pairs []pair
+		for _, p := range ps {
+			for _, r := range reals {
+				if !outgoingEchoMatch(p, r, false) {
+					continue
+				}
+				pairs = append(pairs, pair{id: p.MessageID, realID: r.MessageID, dist: absInt64(p.TimestampMS - r.TimestampMS)})
+			}
+		}
+		sort.SliceStable(pairs, func(i, j int) bool { return pairs[i].dist < pairs[j].dist })
+		usedP, usedR := map[string]bool{}, map[string]bool{}
+		for _, pr := range pairs {
+			if usedP[pr.id] || usedR[pr.realID] {
+				continue
+			}
+			usedP[pr.id], usedR[pr.realID] = true, true
+			toDelete = append(toDelete, pr.id)
+		}
+		for _, p := range ps {
+			if usedP[p.MessageID] {
+				continue
+			}
+			if p.TimestampMS > 0 && p.TimestampMS < cutoff {
+				toDelete = append(toDelete, p.MessageID)
+			}
+		}
+	}
+	for _, id := range toDelete {
+		if _, err := s.deleteMessages(tx, `message_id = ?`, id); err != nil {
+			return 0, err
+		}
+	}
+	return len(toDelete), nil
 }
 
 // CleanupMatchedOutgoingPlaceholders sweeps placeholders left behind before
